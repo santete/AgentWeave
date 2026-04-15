@@ -1,0 +1,131 @@
+/**
+ * Inner Harness events and Outer Harness commands.
+ * Events flow Inner -> Control Plane -> Outer (non-blocking).
+ * Commands flow Outer -> Control Plane -> Inner (async with ack).
+ */
+
+import type { ContentBlock, InjectableMessage } from "./messages";
+import type { TokenUsage } from "./metrics";
+
+// ─── Terminal Reasons ────────────────────────────────────────────
+
+export type TerminalReason =
+	| "completed" // LLM stopped calling tools
+	| "aborted" // User/Outer abort
+	| "max_turns" // Turn limit reached
+	| "budget_exceeded" // Cost limit reached
+	| "timeout" // Time limit reached
+	| "error" // Unrecoverable error
+	| "input_rejected"; // Input gate rejected
+
+// ─── Inner Events ────────────────────────────────────────────────
+
+export type InnerEventPayload =
+	// Turn lifecycle
+	| { type: "turn:start"; turnIndex: number }
+	| { type: "turn:end"; turnIndex: number; stopReason: string }
+	// LLM streaming
+	| { type: "llm:request_start"; model: string; estimatedInputTokens: number }
+	| {
+			type: "llm:stream_delta";
+			delta: string;
+			blockType: "text" | "thinking" | "tool_use";
+	  }
+	| { type: "llm:stream_end"; usage: TokenUsage; stopReason: string }
+	// Tool lifecycle
+	| {
+			type: "tool:requested";
+			toolName: string;
+			toolInput: unknown;
+			toolUseId: string;
+	  }
+	| { type: "tool:started"; toolUseId: string }
+	| {
+			type: "tool:completed";
+			toolUseId: string;
+			result: unknown;
+			durationMs: number;
+	  }
+	| { type: "tool:failed"; toolUseId: string; error: string; durationMs: number }
+	// Permission (emitted by Outer, observed by monitors)
+	| {
+			type: "permission:allowed";
+			toolName: string;
+			toolUseId: string;
+			source: string;
+	  }
+	| {
+			type: "permission:denied";
+			toolName: string;
+			toolUseId: string;
+			reason: string;
+			source: string;
+	  }
+	| {
+			type: "permission:asking";
+			toolName: string;
+			toolUseId: string;
+			askMessage: string;
+	  }
+	| {
+			type: "permission:ask_resolved";
+			toolName: string;
+			toolUseId: string;
+			behavior: "allow" | "deny";
+			source: string;
+	  }
+	| {
+			type: "permission:ask_timeout";
+			toolName: string;
+			toolUseId: string;
+			fallback: "allow" | "deny";
+	  }
+	// Messages
+	| { type: "message:assistant"; content: ContentBlock[] }
+	| {
+			type: "message:tool_result";
+			toolUseId: string;
+			content: string;
+			isError: boolean;
+	  }
+	// Context
+	| { type: "context:compacted"; freedTokens: number }
+	| { type: "context:usage"; usedTokens: number; maxTokens: number }
+	// Recovery
+	| { type: "recovery:retry"; reason: string; attempt: number }
+	| { type: "recovery:fallback"; fromModel: string; toModel: string }
+	// Terminal
+	| { type: "terminal"; reason: TerminalReason; usage: TokenUsage }
+	// Error
+	| { type: "error"; error: string; recoverable: boolean };
+
+export type InnerEvent = {
+	id: string;
+	timestamp: number;
+	sessionId: string;
+	agentId: string;
+} & InnerEventPayload;
+
+// ─── Outer Commands ──────────────────────────────────────────────
+
+export type OuterCommand =
+	| { type: "pause" }
+	| { type: "resume" }
+	| { type: "abort"; reason?: string }
+	| { type: "inject"; message: InjectableMessage }
+	| { type: "set_model"; model: string }
+	| { type: "set_max_turns"; maxTurns: number }
+	| { type: "set_budget"; budgetUsd: number }
+	| { type: "force_compact" };
+
+export interface CommandAck {
+	accepted: boolean;
+	reason?: string;
+}
+
+// ─── Terminal Result ─────────────────────────────────────────────
+
+export interface TerminalResult {
+	reason: TerminalReason;
+	usage?: TokenUsage;
+}

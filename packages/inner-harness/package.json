@@ -1,0 +1,35 @@
+{
+  "name": "@agentweave/inner-harness",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Inner Harness — Agent Loop execution engine for AgentWeave",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@agentweave/types": "workspace:*",
+    "@agentweave/control-plane": "workspace:*",
+    "ai": "^4.1.0",
+    "@ai-sdk/anthropic": "^1.2.0",
+    "@ai-sdk/openai": "^1.2.0",
+    "nanoid": "^5.0.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "tsup": "^8.3.0",
+    "vitest": "^2.1.0"
+  }
+}

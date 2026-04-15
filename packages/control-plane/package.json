@@ -1,0 +1,28 @@
+{
+  "name": "@agentweave/control-plane",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Control Plane — Event Bus, Command Bus, and Interceptor Registry for AgentWeave",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@agentweave/types": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsup": "^8.3.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,101 @@
+/**
+ * 'run' command — Execute an agent with a prompt.
+ *
+ * Usage: agentweave run "Fix the login bug" [--model sonnet] [--budget 5.00]
+ */
+
+import { createHarness } from "@agentweave/sdk";
+// TODO: Wire real Vercel AI SDK provider in Phase 2 (currently uses default empty LLM caller)
+import type { CreateHarnessOptions, InnerEvent } from "@agentweave/sdk";
+
+export interface RunCommandArgs {
+	prompt: string;
+	model: string;
+	budget?: number;
+	maxTurns?: number;
+	permissionMode?: "default" | "strict" | "permissive" | "plan";
+}
+
+export async function runCommand(args: RunCommandArgs): Promise<void> {
+	console.log(`\n  AgentWeave v0.1.0\n`);
+	console.log(`  Model:  ${args.model}`);
+	if (args.budget) console.log(`  Budget: $${args.budget}`);
+	console.log(`  Prompt: "${args.prompt}"`);
+	console.log("");
+
+	const options: CreateHarnessOptions = {
+		model: args.model,
+		maxTurns: args.maxTurns ?? 50,
+		permissions: {
+			mode: args.permissionMode ?? "default",
+			rules: [
+				{ pattern: "Bash(rm -rf *)", behavior: "deny", source: "policy", priority: 100, message: "Destructive deletion blocked" },
+				{ pattern: "FileWrite(*.env)", behavior: "deny", source: "policy", priority: 100, message: "Cannot write to .env files" },
+			],
+			failMode: "closed",
+		},
+		output: {
+			gateMode: "batch",
+			filters: [
+				{ type: "secret", name: "secrets", patterns: [], replacement: "[SECRET_REDACTED]" },
+				{ type: "pii", name: "pii", entities: ["email", "ssn"], replacement: "[PII_REDACTED]" },
+			],
+		},
+		budget: {
+			maxPerSession: args.budget,
+			warningThreshold: 0.8,
+		},
+	};
+
+	const harness = createHarness(options);
+
+	// Stream events to terminal
+	const gen = harness.stream(args.prompt, {
+		maxBudgetUsd: args.budget,
+	});
+
+	for (;;) {
+		const { value, done } = await gen.next();
+		if (done) {
+			const result = value;
+			console.log(`\n  ── Session Complete ──`);
+			console.log(`  Reason: ${result.reason}`);
+			if (result.usage) {
+				console.log(`  Tokens: ${result.usage.inputTokens} in / ${result.usage.outputTokens} out`);
+				console.log(`  Cost:   $${result.usage.totalCost.toFixed(4)}`);
+			}
+			console.log("");
+			break;
+		}
+
+		printEvent(value);
+	}
+}
+
+function printEvent(event: InnerEvent): void {
+	switch (event.type) {
+		case "turn:start":
+			console.log(`  ── Turn ${event.turnIndex} ──`);
+			break;
+		case "message:assistant":
+			for (const block of event.content) {
+				if (block.type === "text") {
+					console.log(`  ${block.text}`);
+				}
+			}
+			break;
+		case "tool:requested":
+			console.log(`  Tool: ${event.toolName}(${JSON.stringify(event.toolInput).slice(0, 80)})`);
+			break;
+		case "permission:denied":
+			console.log(`  DENIED: ${event.toolName} — ${event.reason}`);
+			break;
+		case "tool:completed":
+			console.log(`  Done: ${event.toolUseId} (${event.durationMs.toFixed(0)}ms)`);
+			break;
+		case "tool:failed":
+			console.log(`  FAILED: ${event.toolUseId} — ${event.error}`);
+			break;
+		// Other events: silent in default output
+	}
+}

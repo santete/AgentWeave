@@ -1,0 +1,26 @@
+# Changelog
+
+All notable changes to AgentWeave will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.0-alpha.1] - 2026-04-16
+
+### Added
+
+- **@agentweave/types** — Shared type contracts: InnerHarnessProvider, OuterHarnessConsumer, ControlPlane interfaces, InnerEvent/OuterCommand discriminated unions, PermissionDecision (allow/deny/ask), ToolDecision (allow/deny), HookDefinition (5 types as discriminated union), OutputFilter/OutputTransform discriminated unions, HarnessConfig, SessionInfo, TokenUsage
+- **@agentweave/control-plane** — EventBus (non-blocking pub/sub), CommandBus (async request/ack), InterceptorRegistry (blocking gates with timeout + fail-open/closed), `createControlPlane()` factory
+- **@agentweave/inner-harness** — AgentLoop (AsyncGenerator, pluggable LLM caller, abort/pause/resume, max turns, budget check, single-use guard), ToolRegistry (register/unregister), ToolExecutor (partition read/write, concurrent execution), MessageStore (conversation threading), TokenCounter (usage tracking + Opus/Sonnet/Haiku pricing), MockLLM (deterministic test helper + pre-built scenarios)
+- **@agentweave/outer-harness** — PermissionEngine (pre-compiled pattern matching, priority layers, 4 modes: default/strict/permissive/plan, ask flow), OutputPipeline (dual-mode streaming/batch, 7 built-in secret patterns, 4 PII patterns, regex/denylist filters, safe regex compilation), BudgetManager (per-session/daily limits, warning threshold, cost delta tracking), AuditLogger (append-only, category/action queries), OuterHarness (wires all modules, connects to ControlPlane)
+- **@agentweave/sdk** — `createHarness()` factory, `run()`/`stream()`/`abort()` API, re-exports key types + testing utilities
+- **@agentweave/cli** — `agentweave run "prompt"` with `--model`, `--budget`, `--max-turns`, `--mode` flags, event streaming to terminal
+- **Monorepo** — pnpm workspaces + turborepo, tsup build, vitest tests, biome linting, TypeScript strict ESM
+- **Documentation** — 13 product spec documents, 8 custom Claude Code commands (/architect, /po, /reviewer, /pm, /implement, /team, /standup, /spec)
+- **Git Flow** — Branch strategy (main/develop/feature/release/hotfix), PR template, issue templates (bug/feature/task), CONTRIBUTING.md, conventional commits
+
+### Stats
+
+- 6 packages, 51 TypeScript files, 5,264 lines of code
+- 16 test files, 136 tests, 0 failures
+- Build: 6/6 packages passing

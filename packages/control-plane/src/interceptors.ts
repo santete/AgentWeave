@@ -1,0 +1,108 @@
+/**
+ * InterceptorRegistry — Blocking gates for tool_request, output_ready, input_received.
+ * Each intercept type can have one handler. Supports timeout and fail-open/closed modes.
+ */
+
+import type {
+	InterceptType,
+	InterceptRequest,
+	InterceptResponse,
+	ToolDecision,
+	OutputDecision,
+	InputDecision,
+} from "@agentweave/types";
+
+type InterceptHandler<T extends InterceptType> = (
+	request: InterceptRequest[T],
+) => Promise<InterceptResponse[T]>;
+
+const DEFAULT_TIMEOUTS: Record<InterceptType, number> = {
+	tool_request: 30_000,
+	output_ready: 10_000,
+	input_received: 5_000,
+};
+
+function getDefaultDecision(
+	type: InterceptType,
+	failMode: "open" | "closed",
+): InterceptResponse[typeof type] {
+	switch (type) {
+		case "tool_request":
+			return {
+				behavior: failMode === "open" ? "allow" : "deny",
+				reason: failMode === "open" ? "No interceptor (fail-open)" : "No interceptor (fail-closed)",
+				source: "default",
+			} satisfies ToolDecision as InterceptResponse[typeof type];
+		case "output_ready":
+			return {
+				action: "approve",
+				reason: "No interceptor",
+				stages: [],
+			} satisfies OutputDecision as InterceptResponse[typeof type];
+		case "input_received":
+			return {
+				action: "pass",
+				reason: "No interceptor",
+			} satisfies InputDecision as InterceptResponse[typeof type];
+	}
+}
+
+export class InterceptorRegistry {
+	private handlers = new Map<InterceptType, InterceptHandler<InterceptType>>();
+	private failMode: "open" | "closed" = "closed";
+
+	registerInterceptor<T extends InterceptType>(
+		type: T,
+		handler: InterceptHandler<T>,
+	): void {
+		// Store as unknown to avoid variance issues; we ensure type safety at call sites
+		this.handlers.set(type, handler as unknown as InterceptHandler<InterceptType>);
+	}
+
+	async intercept<T extends InterceptType>(
+		type: T,
+		request: InterceptRequest[T],
+		options?: { timeoutMs?: number },
+	): Promise<InterceptResponse[T]> {
+		const handler = this.handlers.get(type) as InterceptHandler<T> | undefined;
+		if (!handler) {
+			return getDefaultDecision(type, this.failMode) as InterceptResponse[T];
+		}
+
+		const timeout = options?.timeoutMs ?? DEFAULT_TIMEOUTS[type];
+		let timer: ReturnType<typeof setTimeout> | undefined;
+
+		try {
+			const result = await Promise.race([
+				handler(request),
+				new Promise<never>((_, reject) => {
+					timer = setTimeout(
+						() => reject(new Error(`Interceptor timeout (${timeout}ms)`)),
+						timeout,
+					);
+				}),
+			]);
+			return result;
+		} catch {
+			return getDefaultDecision(type, this.failMode) as InterceptResponse[T];
+		} finally {
+			if (timer !== undefined) clearTimeout(timer);
+		}
+	}
+
+	hasInterceptor(type: InterceptType): boolean {
+		return this.handlers.has(type);
+	}
+
+	setFailMode(mode: "open" | "closed"): void {
+		this.failMode = mode;
+	}
+
+	getFailMode(): "open" | "closed" {
+		return this.failMode;
+	}
+
+	destroy(): void {
+		this.handlers.clear();
+	}
+}
