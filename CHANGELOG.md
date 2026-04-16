@@ -5,6 +5,23 @@ All notable changes to AgentWeave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-alpha.1] - 2026-04-16
+
+### Added
+
+- **MonitorCollector** — Real-time metrics aggregation: per-turn token usage, cost (delta tracking), tool call stats (success/error/avg duration), session duration, permission denial count
+- **SessionManager** — JSONL session persistence: auto-save events per-line, load/resume sessions, list all sessions, delete, export as formatted markdown. Path-traversal-safe session IDs.
+- **AlertEngine** — Rule-based alerting with configurable severity (info/warning/critical) and cooldown periods. Built-in defaults: budget_warning, budget_exceeded, high_error_rate, long_session. Listener subscription for real-time notifications.
+- **New types** — ToolMetrics, TurnMetrics, MonitorSnapshot, AlertRule, AlertEvent, AlertSeverity
+- **OuterHarness integration** — All three modules wired into lifecycle (onEvent, onSessionStart, onSessionEnd). Alert checks optimized to state-changing events only.
+
+### Stats
+
+- 6 packages, 19 test files, 164 tests, 0 failures
+- +1,114 lines from Phase 1
+
+---
+
 ## [0.1.0-alpha.1] - 2026-04-16
 
 ### Added
