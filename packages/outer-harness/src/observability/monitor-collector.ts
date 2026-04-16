@@ -21,6 +21,7 @@ export class MonitorCollector {
 	private errorCount = 0;
 	private permissionDeniedCount = 0;
 	private turnCount = 0;
+	private lastKnownCostForTurn = 0;
 
 	// Tracking current turn
 	private currentTurnStart = 0;
@@ -50,8 +51,10 @@ export class MonitorCollector {
 				this.totalUsage = { ...event.usage };
 				this.currentTurnTokens.input += event.usage.inputTokens;
 				this.currentTurnTokens.output += event.usage.outputTokens;
-				this.currentTurnCost = event.usage.totalCost;
-				this.currentTurnModel = event.stopReason; // will be overwritten
+				// Per-turn cost delta (not cumulative)
+				this.currentTurnCost = event.usage.totalCost - this.lastKnownCostForTurn;
+				this.lastKnownCostForTurn = event.usage.totalCost;
+				// Model is already set by llm:request_start — don't overwrite with stopReason
 				break;
 
 			case "llm:request_start":
@@ -135,6 +138,7 @@ export class MonitorCollector {
 		this.errorCount = 0;
 		this.permissionDeniedCount = 0;
 		this.turnCount = 0;
+		this.lastKnownCostForTurn = 0;
 		this.startTime = Date.now();
 	}
 

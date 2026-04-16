@@ -191,7 +191,9 @@ export class SessionManager {
 	// ─── Internal ────────────────────────────────────────────────
 
 	private sessionFilePath(sessionId: string): string {
-		return path.join(this.sessionsDir, `${sessionId}.jsonl`);
+		// Sanitize to prevent path traversal (e.g. "../" in sessionId)
+		const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
+		return path.join(this.sessionsDir, `${safe}.jsonl`);
 	}
 
 	private async ensureDir(): Promise<void> {

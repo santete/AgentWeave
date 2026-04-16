@@ -97,4 +97,46 @@ describe("MonitorCollector", () => {
 		expect(mc.getErrorCount()).toBe(0);
 		expect(mc.getAllToolMetrics().size).toBe(0);
 	});
+
+	it("should track per-turn cost as delta, not cumulative", () => {
+		const mc = new MonitorCollector();
+
+		// Turn 1: cumulative cost = 0.01
+		mc.collect(makeEvent("turn:start", { turnIndex: 1 }));
+		mc.collect(makeEvent("llm:request_start", { model: "sonnet", estimatedInputTokens: 100 }));
+		mc.collect(makeEvent("llm:stream_end", {
+			usage: { ...createEmptyTokenUsage(), totalCost: 0.01 },
+			stopReason: "end_turn",
+		}));
+		mc.collect(makeEvent("turn:end", { turnIndex: 1, stopReason: "continue" }));
+
+		// Turn 2: cumulative cost = 0.03 (delta = 0.02)
+		mc.collect(makeEvent("turn:start", { turnIndex: 2 }));
+		mc.collect(makeEvent("llm:request_start", { model: "sonnet", estimatedInputTokens: 200 }));
+		mc.collect(makeEvent("llm:stream_end", {
+			usage: { ...createEmptyTokenUsage(), totalCost: 0.03 },
+			stopReason: "end_turn",
+		}));
+		mc.collect(makeEvent("turn:end", { turnIndex: 2, stopReason: "continue" }));
+
+		const snap = mc.getSnapshot();
+		expect(snap.turnMetrics[0]!.cost).toBeCloseTo(0.01, 4);
+		expect(snap.turnMetrics[1]!.cost).toBeCloseTo(0.02, 4);
+	});
+
+	it("should track model from llm:request_start, not stopReason", () => {
+		const mc = new MonitorCollector();
+		mc.collect(makeEvent("turn:start", { turnIndex: 1 }));
+		mc.collect(makeEvent("llm:request_start", { model: "claude-sonnet-4-6", estimatedInputTokens: 100 }));
+		mc.collect(makeEvent("llm:stream_end", {
+			usage: { ...createEmptyTokenUsage(), totalCost: 0.01 },
+			stopReason: "end_turn",
+		}));
+		mc.collect(makeEvent("turn:end", { turnIndex: 1, stopReason: "continue" }));
+
+		const snap = mc.getSnapshot();
+		expect(snap.turnMetrics[0]!.model).toBe("claude-sonnet-4-6");
+		// Should NOT be "end_turn"
+		expect(snap.turnMetrics[0]!.model).not.toBe("end_turn");
+	});
 });

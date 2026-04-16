@@ -19,6 +19,7 @@ import type {
 	HookResult,
 	SessionInfo,
 	PermissionConfig,
+	AlertRule,
 } from "@agentweave/types";
 import { PermissionEngine } from "./governance/permission-engine";
 import { OutputPipeline } from "./governance/output-pipeline";
@@ -31,12 +32,21 @@ import { AlertEngine } from "./observability/alert-engine";
 import { SessionManager } from "./observability/session-manager";
 import type { SessionManagerConfig } from "./observability/session-manager";
 
+/** Events that can change alert-relevant state — skip noisy stream deltas */
+const ALERT_CHECK_EVENTS = new Set([
+	"turn:end",
+	"tool:failed",
+	"error",
+	"llm:stream_end",
+	"permission:denied",
+]);
+
 export interface OuterHarnessConfig {
 	permissions: PermissionConfig;
 	output: OutputPipelineConfig;
 	budget: BudgetConfig;
 	session?: SessionManagerConfig;
-	alertRules?: import("@agentweave/types").AlertRule[];
+	alertRules?: AlertRule[];
 }
 
 export class OuterHarness implements OuterHarnessConsumer {
@@ -161,8 +171,10 @@ export class OuterHarness implements OuterHarnessConsumer {
 			// Non-blocking — don't crash on I/O error
 		});
 
-		// Check alert rules after each event
-		this.alerts.check(this.monitor.getSnapshot());
+		// Check alerts only on state-changing events (skip noisy stream deltas)
+		if (ALERT_CHECK_EVENTS.has(event.type)) {
+			this.alerts.check(this.monitor.getSnapshot());
+		}
 	}
 
 	async executeHooks(_event: HookEvent): Promise<HookResult> {
