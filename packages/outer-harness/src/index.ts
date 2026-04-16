@@ -12,3 +12,7 @@ export type { BudgetConfig, BudgetStatus } from "./governance/budget-manager";
 // Observability
 export { AuditLogger } from "./observability/audit-logger";
 export type { AuditEntry } from "./observability/audit-logger";
+export { MonitorCollector } from "./observability/monitor-collector";
+export { AlertEngine, createDefaultAlertRules } from "./observability/alert-engine";
+export { SessionManager } from "./observability/session-manager";
+export type { SessionManagerConfig, SessionRecord } from "./observability/session-manager";

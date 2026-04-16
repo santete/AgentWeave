@@ -49,3 +49,60 @@ export function createEmptyContextUsage(maxTokens: number): ContextUsage {
 		compactionCount: 0,
 	};
 }
+
+// ─── Monitoring Metrics (Phase 2) ────────────────────────────────
+
+export interface ToolMetrics {
+	toolName: string;
+	callCount: number;
+	successCount: number;
+	errorCount: number;
+	totalDurationMs: number;
+	avgDurationMs: number;
+}
+
+export interface TurnMetrics {
+	turnIndex: number;
+	durationMs: number;
+	inputTokens: number;
+	outputTokens: number;
+	cost: number;
+	toolCallCount: number;
+	model: string;
+}
+
+export interface MonitorSnapshot {
+	sessionId: string;
+	timestamp: number;
+	turnCount: number;
+	totalUsage: TokenUsage;
+	turnMetrics: TurnMetrics[];
+	toolMetrics: Map<string, ToolMetrics>;
+	errorCount: number;
+	permissionDeniedCount: number;
+	sessionDurationMs: number;
+}
+
+// ─── Alert Types (Phase 2) ──────────────────────────────────────
+
+export type AlertSeverity = "info" | "warning" | "critical";
+
+export interface AlertRule {
+	name: string;
+	severity: AlertSeverity;
+	/** Cooldown in ms — don't fire again within this window */
+	cooldownMs: number;
+	/** Check function receives the current snapshot */
+	check: (snapshot: MonitorSnapshot) => boolean;
+	message?: string;
+}
+
+export interface AlertEvent {
+	ruleId: string;
+	ruleName: string;
+	severity: AlertSeverity;
+	message: string;
+	timestamp: number;
+	sessionId: string;
+	snapshot: MonitorSnapshot;
+}
