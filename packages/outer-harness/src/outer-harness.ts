@@ -31,6 +31,7 @@ import { MonitorCollector } from "./observability/monitor-collector";
 import { AlertEngine } from "./observability/alert-engine";
 import { SessionManager } from "./observability/session-manager";
 import type { SessionManagerConfig } from "./observability/session-manager";
+import { HookEngine } from "./governance/hook-engine";
 
 /** Events that can change alert-relevant state — skip noisy stream deltas */
 const ALERT_CHECK_EVENTS = new Set([
@@ -45,6 +46,7 @@ export interface OuterHarnessConfig {
 	permissions: PermissionConfig;
 	output: OutputPipelineConfig;
 	budget: BudgetConfig;
+	hooks?: Record<string, import("@agentweave/types").HookDefinition[]>;
 	session?: SessionManagerConfig;
 	alertRules?: AlertRule[];
 }
@@ -53,6 +55,7 @@ export class OuterHarness implements OuterHarnessConsumer {
 	private permissions: PermissionEngine;
 	private outputPipeline: OutputPipeline;
 	private budget: BudgetManager;
+	private hookEngine: HookEngine;
 	private audit: AuditLogger;
 	private monitor: MonitorCollector;
 	private alerts: AlertEngine;
@@ -63,6 +66,7 @@ export class OuterHarness implements OuterHarnessConsumer {
 		this.permissions = new PermissionEngine(config.permissions);
 		this.outputPipeline = new OutputPipeline(config.output);
 		this.budget = new BudgetManager(config.budget);
+		this.hookEngine = new HookEngine({ hooks: config.hooks ?? {} });
 		this.audit = new AuditLogger();
 		this.monitor = new MonitorCollector();
 		this.alerts = new AlertEngine();
@@ -177,9 +181,8 @@ export class OuterHarness implements OuterHarnessConsumer {
 		}
 	}
 
-	async executeHooks(_event: HookEvent): Promise<HookResult> {
-		// MVP: no hook engine yet — passthrough
-		return { outcome: "pass" };
+	async executeHooks(event: HookEvent): Promise<HookResult> {
+		return this.hookEngine.execute(event);
 	}
 
 	async onSessionStart(session: SessionInfo): Promise<void> {
@@ -220,6 +223,10 @@ export class OuterHarness implements OuterHarnessConsumer {
 
 	getAuditLogger(): AuditLogger {
 		return this.audit;
+	}
+
+	getHookEngine(): HookEngine {
+		return this.hookEngine;
 	}
 
 	getMonitorCollector(): MonitorCollector {

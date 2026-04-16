@@ -8,6 +8,12 @@ export { OutputPipeline } from "./governance/output-pipeline";
 export type { OutputPipelineConfig } from "./governance/output-pipeline";
 export { BudgetManager } from "./governance/budget-manager";
 export type { BudgetConfig, BudgetStatus } from "./governance/budget-manager";
+export { HookEngine } from "./governance/hook-engine";
+export type { HookEngineConfig } from "./governance/hook-engine";
+
+// Orchestration
+export { ConfigHierarchy, getDefaultConfig } from "./orchestration/config-hierarchy";
+export type { ConfigSource } from "./orchestration/config-hierarchy";
 
 // Observability
 export { AuditLogger } from "./observability/audit-logger";
