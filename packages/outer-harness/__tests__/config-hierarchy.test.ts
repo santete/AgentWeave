@@ -79,14 +79,14 @@ describe("ConfigHierarchy", () => {
 		hierarchy.addSource(2, "user", {
 			hooks: {
 				PostToolUse: [
-					{ type: "function", event: "PostToolUse", inline: "return { outcome: 'pass' }" } as any,
+					{ type: "function", event: "PostToolUse", inline: "return { outcome: 'pass' }" } as import("@agentweave/types").HookDefinition,
 				],
 			},
 		});
 		hierarchy.addSource(3, "project", {
 			hooks: {
 				PostToolUse: [
-					{ type: "command", event: "PostToolUse", command: "npm test" } as any,
+					{ type: "command", event: "PostToolUse", command: "npm test" } as import("@agentweave/types").HookDefinition,
 				],
 			},
 		});

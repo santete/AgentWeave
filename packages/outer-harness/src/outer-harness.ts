@@ -20,6 +20,7 @@ import type {
 	SessionInfo,
 	PermissionConfig,
 	AlertRule,
+	HookDefinition,
 } from "@agentweave/types";
 import { PermissionEngine } from "./governance/permission-engine";
 import { OutputPipeline } from "./governance/output-pipeline";
@@ -46,7 +47,7 @@ export interface OuterHarnessConfig {
 	permissions: PermissionConfig;
 	output: OutputPipelineConfig;
 	budget: BudgetConfig;
-	hooks?: Record<string, import("@agentweave/types").HookDefinition[]>;
+	hooks?: Record<string, HookDefinition[]>;
 	session?: SessionManagerConfig;
 	alertRules?: AlertRule[];
 }

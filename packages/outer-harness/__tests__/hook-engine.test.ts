@@ -167,4 +167,40 @@ describe("HookEngine", () => {
 		expect(result.outcome).toBe("error");
 		expect(result.message).toContain("timeout");
 	}, 5000);
+
+	it("should resolve async inline function hooks", async () => {
+		const engine = new HookEngine({
+			hooks: {
+				PreToolUse: [
+					{
+						type: "function",
+						event: "PreToolUse",
+						inline: 'return Promise.resolve({ outcome: "pass", additionalContext: "async worked" })',
+					} as FunctionHook,
+				],
+			},
+		});
+
+		const result = await engine.execute(makeEvent());
+		expect(result.outcome).toBe("pass");
+		expect(result.additionalContext).toBe("async worked");
+	});
+
+	it("should execute command hook (echo)", async () => {
+		const engine = new HookEngine({
+			hooks: {
+				PreToolUse: [
+					{
+						type: "command",
+						event: "PreToolUse",
+						command: "echo ok",
+						timeout: 5000,
+					} as import("@agentweave/types").CommandHook,
+				],
+			},
+		});
+
+		const result = await engine.execute(makeEvent());
+		expect(result.outcome).toBe("pass");
+	}, 10000);
 });

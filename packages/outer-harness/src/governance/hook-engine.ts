@@ -119,13 +119,17 @@ export class HookEngine {
 		event: HookEvent,
 	): Promise<HookResult> {
 		const timeout = hook.timeout ?? 30_000;
+		let timer: ReturnType<typeof setTimeout> | undefined;
 
 		try {
 			const result = await Promise.race([
 				this.dispatch(hook, event),
-				new Promise<HookResult>((_, reject) =>
-					setTimeout(() => reject(new Error(`Hook timeout (${timeout}ms)`)), timeout),
-				),
+				new Promise<HookResult>((_, reject) => {
+					timer = setTimeout(
+						() => reject(new Error(`Hook timeout (${timeout}ms)`)),
+						timeout,
+					);
+				}),
 			]);
 			return result;
 		} catch (err) {
@@ -133,6 +137,8 @@ export class HookEngine {
 				outcome: "error",
 				message: err instanceof Error ? err.message : "Hook execution error",
 			};
+		} finally {
+			if (timer !== undefined) clearTimeout(timer);
 		}
 	}
 
@@ -158,19 +164,27 @@ export class HookEngine {
 		hook: Extract<HookDefinition, { type: "command" }>,
 		event: HookEvent,
 	): Promise<HookResult> {
-		const env: Record<string, string> = {
-			...process.env as Record<string, string>,
-			TOOL_NAME: event.toolName ?? "",
-			TOOL_INPUT: JSON.stringify(event.toolInput ?? {}),
-			TOOL_USE_ID: event.toolUseId ?? "",
-			SESSION_ID: event.sessionId ?? "",
-		};
+		const env: Record<string, string> = {};
+		for (const [k, v] of Object.entries(process.env)) {
+			if (v !== undefined) env[k] = v;
+		}
+		env.TOOL_NAME = event.toolName ?? "";
+		env.TOOL_INPUT = JSON.stringify(event.toolInput ?? {});
+		env.TOOL_USE_ID = event.toolUseId ?? "";
+		env.SESSION_ID = event.sessionId ?? "";
 
 		try {
+			const shellOpt =
+				hook.shell === "powershell"
+					? "powershell"
+					: process.platform === "win32"
+						? "cmd.exe"
+						: "/bin/bash";
+
 			const { stdout, stderr } = await execAsync(hook.command, {
 				timeout: hook.timeout ?? 30_000,
 				env,
-				shell: hook.shell === "powershell" ? "powershell" : "/bin/bash",
+				shell: shellOpt,
 			});
 
 			return this.parseHookOutput(stdout.trim(), stderr.trim());
@@ -186,20 +200,24 @@ export class HookEngine {
 	): Promise<HookResult> {
 		if (hook.inline) {
 			try {
-				// Create function from inline code
+				// SECURITY: new Function() executes arbitrary code from config.
+				// Only enable function hooks from trusted sources (user config).
+				// Phase 5 will add trust dialog + sandbox isolation for project-level hooks.
 				const fn = new Function("input", "output", "event", hook.inline) as (
 					input: unknown,
 					output: unknown,
 					event: HookEvent,
-				) => HookResult | { decision: string } | undefined;
+				) => HookResult | { decision: string } | Promise<unknown> | undefined;
 
-				const result = fn(event.toolInput, event.toolResult, event);
-				if (!result) return { outcome: "pass" };
+				// Await in case inline code returns a Promise
+				const result = await fn(event.toolInput, event.toolResult, event);
+				if (!result || typeof result !== "object") return { outcome: "pass" };
 
 				// Normalize decision-style return
-				if ("decision" in result) {
-					if (result.decision === "deny" || result.decision === "block") {
-						return { outcome: "block", permissionDecision: "deny", message: (result as { reason?: string }).reason };
+				const obj = result as Record<string, unknown>;
+				if ("decision" in obj) {
+					if (obj.decision === "deny" || obj.decision === "block") {
+						return { outcome: "block", permissionDecision: "deny", message: obj.reason as string | undefined };
 					}
 					return { outcome: "pass" };
 				}
