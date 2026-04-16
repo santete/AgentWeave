@@ -8,7 +8,17 @@ export type {
 } from "./messages";
 
 // Metrics
-export type { TokenUsage, ContextUsage, SessionMetrics } from "./metrics";
+export type {
+	TokenUsage,
+	ContextUsage,
+	SessionMetrics,
+	ToolMetrics,
+	TurnMetrics,
+	MonitorSnapshot,
+	AlertSeverity,
+	AlertRule,
+	AlertEvent,
+} from "./metrics";
 export { createEmptyTokenUsage, createEmptyContextUsage } from "./metrics";
 
 // Events & Commands

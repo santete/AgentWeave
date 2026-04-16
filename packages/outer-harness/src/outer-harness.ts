@@ -26,11 +26,17 @@ import type { OutputPipelineConfig } from "./governance/output-pipeline";
 import { BudgetManager } from "./governance/budget-manager";
 import type { BudgetConfig } from "./governance/budget-manager";
 import { AuditLogger } from "./observability/audit-logger";
+import { MonitorCollector } from "./observability/monitor-collector";
+import { AlertEngine } from "./observability/alert-engine";
+import { SessionManager } from "./observability/session-manager";
+import type { SessionManagerConfig } from "./observability/session-manager";
 
 export interface OuterHarnessConfig {
 	permissions: PermissionConfig;
 	output: OutputPipelineConfig;
 	budget: BudgetConfig;
+	session?: SessionManagerConfig;
+	alertRules?: import("@agentweave/types").AlertRule[];
 }
 
 export class OuterHarness implements OuterHarnessConsumer {
@@ -38,6 +44,9 @@ export class OuterHarness implements OuterHarnessConsumer {
 	private outputPipeline: OutputPipeline;
 	private budget: BudgetManager;
 	private audit: AuditLogger;
+	private monitor: MonitorCollector;
+	private alerts: AlertEngine;
+	private sessions: SessionManager;
 	private lastKnownCost = 0;
 
 	constructor(config: OuterHarnessConfig) {
@@ -45,6 +54,15 @@ export class OuterHarness implements OuterHarnessConsumer {
 		this.outputPipeline = new OutputPipeline(config.output);
 		this.budget = new BudgetManager(config.budget);
 		this.audit = new AuditLogger();
+		this.monitor = new MonitorCollector();
+		this.alerts = new AlertEngine();
+		this.sessions = new SessionManager(config.session);
+
+		if (config.alertRules) {
+			for (const rule of config.alertRules) {
+				this.alerts.addRule(rule);
+			}
+		}
 	}
 
 	/** Connect to a ControlPlane — register interceptors. */
@@ -126,6 +144,7 @@ export class OuterHarness implements OuterHarnessConsumer {
 
 	onEvent(event: InnerEvent): void {
 		this.audit.logEvent(event);
+		this.monitor.collect(event);
 
 		// Track cost DELTA from LLM usage events (not cumulative total)
 		if (event.type === "llm:stream_end") {
@@ -136,6 +155,14 @@ export class OuterHarness implements OuterHarnessConsumer {
 				this.lastKnownCost = currentTotal;
 			}
 		}
+
+		// Persist event to session transcript
+		this.sessions.onEvent(event).catch(() => {
+			// Non-blocking — don't crash on I/O error
+		});
+
+		// Check alert rules after each event
+		this.alerts.check(this.monitor.getSnapshot());
 	}
 
 	async executeHooks(_event: HookEvent): Promise<HookResult> {
@@ -148,6 +175,9 @@ export class OuterHarness implements OuterHarnessConsumer {
 		this.audit.log("session_start", { session }, "lifecycle");
 		this.budget.resetSession();
 		this.lastKnownCost = 0;
+		this.monitor.setSessionId(session.sessionId);
+		this.monitor.reset();
+		await this.sessions.onSessionStart(session);
 	}
 
 	async onSessionEnd(
@@ -159,6 +189,7 @@ export class OuterHarness implements OuterHarnessConsumer {
 			{ session, result, budgetStatus: this.budget.getStatus() },
 			"lifecycle",
 		);
+		await this.sessions.onSessionEnd(session, result);
 	}
 
 	// ─── Accessors ───────────────────────────────────────────────
@@ -177,5 +208,17 @@ export class OuterHarness implements OuterHarnessConsumer {
 
 	getAuditLogger(): AuditLogger {
 		return this.audit;
+	}
+
+	getMonitorCollector(): MonitorCollector {
+		return this.monitor;
+	}
+
+	getAlertEngine(): AlertEngine {
+		return this.alerts;
+	}
+
+	getSessionManager(): SessionManager {
+		return this.sessions;
 	}
 }
