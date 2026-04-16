@@ -5,6 +5,21 @@ All notable changes to AgentWeave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0-alpha.1] - 2026-04-16
+
+### Added
+
+- **HookEngine** — 5 hook types: command (shell exec with env vars), function (inline JS eval), http (webhook POST), prompt (LLM eval — deferred to real provider), agent (spawn — deferred to Phase 4). Event+matcher filtering, sequential execution with timeout, block-stops-chain semantics, JSON output parsing.
+- **ConfigHierarchy** — 7-level config merge: defaults < user < project < local < CLI < env < policy. Permission rules and hooks merge by append (not replace). Cache with invalidation. Policy detection.
+- **OuterHarness integration** — `executeHooks()` now delegates to HookEngine. Config accepts `hooks` field.
+
+### Stats
+
+- 6 packages, 21 test files, 184 tests (+20 new), 0 failures
+- +855 lines from Phase 2
+
+---
+
 ## [0.2.0-alpha.1] - 2026-04-16
 
 ### Added
