@@ -31,6 +31,7 @@ export interface GatewayConfig {
 // ─── Gateway ────────────────────────────────────────────────────
 
 export class GatewayServer {
+	private static readonly MAX_EVENT_LOG = 10_000;
 	private server: AWOCPServer;
 	private outer: OuterHarness;
 	private eventLog: InnerEvent[] = [];
@@ -59,10 +60,13 @@ export class GatewayServer {
 			return this.outer.onOutputReady(payload as Parameters<typeof this.outer.onOutputReady>[0]);
 		});
 
-		// Wire events → collect for observability
+		// Wire events → collect for observability (capped ring buffer)
 		this.server.onEvent((event) => {
 			this.outer.onEvent(event);
 			this.eventLog.push(event);
+			if (this.eventLog.length > GatewayServer.MAX_EVENT_LOG) {
+				this.eventLog.splice(0, this.eventLog.length - GatewayServer.MAX_EVENT_LOG);
+			}
 		});
 	}
 

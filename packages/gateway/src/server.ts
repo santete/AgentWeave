@@ -213,14 +213,28 @@ export class AWOCPServer {
 		msg: AWOCPMessage,
 		client: ClientConnection,
 	): Promise<void> {
-		if (!this.interceptHandler || !msg.correlationId) return;
+		const responseType = msg.type === "intercept:tool_request"
+			? "intercept:tool_response"
+			: "intercept:output_response";
+
+		// Reject requests without correlationId — client can't match response
+		if (!msg.correlationId) {
+			const errorPayload = msg.type === "intercept:tool_request"
+				? { behavior: "deny" as const, reason: "Missing correlationId", source: "gateway" }
+				: { action: "approve" as const, stages: [], reason: "Missing correlationId" };
+			client.ws.send(JSON.stringify({
+				id: randomUUID(), ts: new Date().toISOString(),
+				type: responseType, sessionId: msg.sessionId, agentId: msg.agentId,
+				payload: errorPayload,
+			}));
+			return;
+		}
+
+		if (!this.interceptHandler) return;
 
 		const interceptType = msg.type === "intercept:tool_request"
 			? "tool_request" as const
 			: "output_request" as const;
-		const responseType = msg.type === "intercept:tool_request"
-			? "intercept:tool_response"
-			: "intercept:output_response";
 
 		try {
 			const result = await this.interceptHandler(
