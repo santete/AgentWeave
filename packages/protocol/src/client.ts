@@ -172,15 +172,20 @@ export class AWOCPClient {
 
 	/** Forward an inner event to Gateway (fire-and-forget). */
 	sendEvent(event: InnerEvent): void {
-		if (!this._authenticated || !this.ws) return;
+		if (!this.canSend()) return;
 		const msg = this.makeMessage("event:inner", event);
-		this.ws.send(JSON.stringify(msg));
+		this.ws!.send(JSON.stringify(msg));
 	}
 
 	// ─── State ──────────────────────────────────────────────────
 
 	isConnected(): boolean {
 		return this._connected && this._authenticated;
+	}
+
+	/** Check if socket is authenticated and ready to send. */
+	private canSend(): boolean {
+		return this._authenticated && !!this.ws && this.ws.readyState === WebSocket.OPEN;
 	}
 
 	onDisconnect(handler: () => void): void {
@@ -193,7 +198,7 @@ export class AWOCPClient {
 		requestType: string,
 		payload: unknown,
 	): Promise<T> {
-		if (!this._authenticated || !this.ws) {
+		if (!this.canSend()) {
 			throw new Error("Not connected to Gateway");
 		}
 
@@ -219,8 +224,23 @@ export class AWOCPClient {
 	private setupMessageHandler(): void {
 		if (!this.ws) return;
 
-		// Replace the initial auth handler with the main handler
+		// Replace ALL auth-phase handlers with post-auth handlers
 		this.ws.removeAllListeners("message");
+		this.ws.removeAllListeners("close");
+		this.ws.removeAllListeners("error");
+
+		this.ws.on("close", () => {
+			this.cleanup();
+			this.disconnectHandler?.();
+			if (this.config.reconnect && !this._destroyed) {
+				this.scheduleReconnect();
+			}
+		});
+
+		this.ws.on("error", () => {
+			// Logged implicitly via close event — no action needed
+		});
+
 		this.ws.on("message", (data) => {
 			const msg = this.parseMessage(data);
 			if (!msg) return;

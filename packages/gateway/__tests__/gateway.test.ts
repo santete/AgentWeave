@@ -1,7 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
+import WebSocket from "ws";
 import { GatewayServer } from "../src/gateway";
 import { AWOCPClient } from "@agentweave/protocol";
 import type { InnerEvent } from "@agentweave/types";
+import type { AWOCPMessage } from "@agentweave/protocol";
 
 const TEST_TOKEN = "test-secret-token";
 const TEST_PORT = 19100; // High port to avoid conflicts
@@ -237,5 +239,90 @@ describe("GatewayServer", () => {
 		c1.disconnect();
 		c2.disconnect();
 		client = c1; // for afterEach
+	});
+
+	// ─── Edge Cases (from review round 8) ───────────────────────
+
+	it("should not crash on malformed JSON message", async () => {
+		gw = makeGateway(19109);
+		await gw.start();
+
+		// Raw WebSocket — send garbage after auth
+		const ws = new WebSocket(`ws://127.0.0.1:19109/awocp/v1`);
+		await new Promise<void>((resolve) => ws.on("open", resolve));
+
+		// Send valid auth first
+		const authMsg: AWOCPMessage = {
+			id: "a1", ts: new Date().toISOString(), type: "auth:request",
+			sessionId: "s1", agentId: "ag1",
+			payload: {
+				token: TEST_TOKEN, clientVersion: "0.4.0",
+				sessionInfo: { sessionId: "s1", userId: "u1", model: "mock" },
+			},
+		};
+		ws.send(JSON.stringify(authMsg));
+		await new Promise((r) => setTimeout(r, 100));
+
+		// Send garbage — server should not crash
+		ws.send("NOT JSON {{{");
+		ws.send(JSON.stringify({ broken: true })); // valid JSON but missing fields
+		await new Promise((r) => setTimeout(r, 100));
+
+		// Server still alive — new client can connect
+		client = makeClient(19109);
+		const auth = await client.connect();
+		expect(auth.status).toBe("ok");
+
+		ws.close();
+	});
+
+	it("should return error response when interceptHandler throws", async () => {
+		// Create gateway with a permission config that will work
+		gw = makeGateway(19110);
+		await gw.start();
+
+		// Override the intercept handler to throw
+		gw.getServer().onIntercept(async () => {
+			throw new Error("handler boom");
+		});
+
+		client = makeClient(19110);
+		await client.connect();
+
+		// Client should get a deny response (not timeout)
+		const decision = await client.interceptTool({
+			toolName: "Bash", toolInput: { command: "echo hi" },
+			toolUseId: "tu_err", turnIndex: 1, isReadOnly: false, isDestructive: false,
+		});
+
+		expect(decision.behavior).toBe("deny");
+		expect(decision.reason).toBe("Gateway error");
+	});
+
+	it("should handle intercept timeout when server is slow", async () => {
+		gw = makeGateway(19111);
+		await gw.start();
+
+		// Override with a very slow handler
+		gw.getServer().onIntercept(async () => {
+			await new Promise((r) => setTimeout(r, 10_000)); // 10s
+			return { behavior: "allow" as const, reason: "late", source: "test" };
+		});
+
+		client = new AWOCPClient({
+			url: `ws://127.0.0.1:19111/awocp/v1`,
+			token: TEST_TOKEN,
+			sessionId: "ses_test", agentId: "agent_test", userId: "user_test",
+			reconnect: false, pingIntervalMs: 60_000,
+			interceptTimeoutMs: 200, // Very short timeout
+		});
+		await client.connect();
+
+		await expect(
+			client.interceptTool({
+				toolName: "Bash", toolInput: {}, toolUseId: "tu_slow",
+				turnIndex: 1, isReadOnly: false, isDestructive: false,
+			}),
+		).rejects.toThrow("Intercept timeout");
 	});
 });
