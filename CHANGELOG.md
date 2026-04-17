@@ -5,6 +5,21 @@ All notable changes to AgentWeave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc.1] - 2026-04-17
+
+### Added
+
+- **@agentweave/adapters** — New package for wrapping external AI agents as InnerHarnessProvider.
+  - **ProcessAdapter**: Generic CLI wrapper. Spawns child process, sends prompt via stdin or arg, parses stdout JSON events, maps to InnerEvent. Supports abort (SIGTERM), single-use guard, inject via stdin.
+  - **createClaudeCodeAdapter()**: Preset for Claude Code CLI (`claude --print --output-format stream-json`).
+- **Gateway Dashboard** — Self-contained HTML monitoring page served at GET `/` on the REST API port. Shows connected clients, permission rules, health status. Auto-refreshes every 5s via fetch to /api/* endpoints. No build tools, no dependencies — inline CSS+JS.
+
+### Stats
+
+- 9 packages, 318 tests, 0 failures. First release candidate.
+
+---
+
 ## [0.6.0-beta.1] - 2026-04-17
 
 ### Added

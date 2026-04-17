@@ -1,0 +1,37 @@
+{
+  "name": "@agentweave/adapters",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Adapters to wrap external AI agents (Claude Code, OpenAI) as InnerHarnessProvider",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/santete/AgentWeave.git",
+    "directory": "packages/adapters"
+  },
+  "homepage": "https://github.com/santete/AgentWeave",
+  "keywords": ["agentweave", "ai-agent", "adapter", "claude-code", "openai"],
+  "publishConfig": { "access": "public" },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@agentweave/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "tsup": "^8.3.0",
+    "vitest": "^2.1.0"
+  }
+}

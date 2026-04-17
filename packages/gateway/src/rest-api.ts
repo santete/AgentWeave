@@ -86,6 +86,11 @@ export class RestApi {
 			return this.jsonResponse(res, 200, { status: "ok", clients: this.wsServer.getClientCount() });
 		}
 
+		// Dashboard — no auth required (the page itself fetches API with JWT)
+		if ((url === "/" || url === "/dashboard") && method === "GET") {
+			return this.serveDashboard(res);
+		}
+
 		// All other endpoints require JWT auth
 		const jwt = this.authenticate(req);
 		if (!jwt) {
@@ -207,6 +212,13 @@ export class RestApi {
 		this.jsonResponse(res, 200, { snapshot: monitor.getSnapshot() });
 	}
 
+	// ─── Dashboard ──────────────────────────────────────────────
+
+	private serveDashboard(res: ServerResponse): void {
+		res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+		res.end(DASHBOARD_HTML);
+	}
+
 	// ─── Helpers ─────────────────────────────────────────────────
 
 	private jsonResponse(res: ServerResponse, status: number, data: unknown): void {
@@ -232,3 +244,91 @@ export class RestApi {
 		});
 	}
 }
+
+// ─── Dashboard HTML (self-contained, no build tools) ────────────
+
+const DASHBOARD_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentWeave Gateway Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 24px; }
+  h1 { font-size: 1.5rem; margin-bottom: 4px; color: #38bdf8; }
+  .subtitle { color: #64748b; font-size: 0.85rem; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .card { background: #1e293b; border-radius: 8px; padding: 16px; border: 1px solid #334155; }
+  .card h2 { font-size: 0.95rem; color: #94a3b8; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat { font-size: 2rem; font-weight: 700; color: #f1f5f9; }
+  .stat-label { font-size: 0.8rem; color: #64748b; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { text-align: left; color: #64748b; padding: 6px 8px; border-bottom: 1px solid #334155; }
+  td { padding: 6px 8px; border-bottom: 1px solid #1e293b; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+  .badge-allow { background: #064e3b; color: #6ee7b7; }
+  .badge-deny { background: #7f1d1d; color: #fca5a5; }
+  .badge-ask { background: #78350f; color: #fde68a; }
+  .empty { color: #475569; font-style: italic; }
+  #status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; margin-right: 6px; }
+  #error { color: #f87171; margin-top: 8px; display: none; }
+</style>
+</head>
+<body>
+<h1><span id="status"></span>AgentWeave Gateway</h1>
+<p class="subtitle">Real-time monitoring dashboard &mdash; auto-refreshes every 5s</p>
+<div id="error"></div>
+<div class="grid">
+  <div class="card"><h2>Health</h2><div id="health">Loading...</div></div>
+  <div class="card"><h2>Connected Clients</h2><div id="clients">Loading...</div></div>
+  <div class="card"><h2>Permission Rules</h2><div id="rules">Loading...</div></div>
+</div>
+<script>
+const TOKEN = localStorage.getItem('agentweave_token') || '';
+const headers = TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {};
+
+async function fetchJson(path) {
+  try {
+    const r = await fetch(path, { headers });
+    if (!r.ok) return { _error: r.status };
+    return r.json();
+  } catch { return { _error: 'network' }; }
+}
+
+async function refresh() {
+  const health = await fetchJson('/api/health');
+  document.getElementById('health').innerHTML = health._error
+    ? '<span class="empty">Auth required. Set token: localStorage.setItem("agentweave_token", "your-jwt")</span>'
+    : '<div class="stat">' + health.clients + '</div><div class="stat-label">connected agents</div>';
+
+  const clients = await fetchJson('/api/clients');
+  if (clients._error) {
+    document.getElementById('clients').innerHTML = '<span class="empty">Requires JWT</span>';
+  } else {
+    const rows = (clients.clients || []).map(c =>
+      '<tr><td>' + c.userId + '</td><td>' + c.role + '</td><td>' + c.sessionId + '</td></tr>'
+    ).join('');
+    document.getElementById('clients').innerHTML = rows
+      ? '<table><tr><th>User</th><th>Role</th><th>Session</th></tr>' + rows + '</table>'
+      : '<span class="empty">No clients connected</span>';
+  }
+
+  const rules = await fetchJson('/api/rules');
+  if (rules._error) {
+    document.getElementById('rules').innerHTML = '<span class="empty">Requires JWT</span>';
+  } else {
+    const rows = (rules.rules || []).map(r =>
+      '<tr><td>' + r.pattern + '</td><td><span class="badge badge-' + r.behavior + '">' + r.behavior + '</span></td><td>' + (r.source||'') + '</td></tr>'
+    ).join('');
+    document.getElementById('rules').innerHTML = rows
+      ? '<table><tr><th>Pattern</th><th>Behavior</th><th>Source</th></tr>' + rows + '</table>'
+      : '<span class="empty">No rules configured</span>';
+  }
+}
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>`;
