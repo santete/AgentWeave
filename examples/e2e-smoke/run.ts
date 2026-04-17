@@ -23,24 +23,28 @@ import type { InnerEvent } from "../../packages/types/src/index";
 
 async function main() {
 	// Auto-detect provider from env vars
+	const hasOpenRouter = !!process.env.OPENROUTER_API_KEY;
 	const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
 	const hasGoogle = !!process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 	const hasOpenAI = !!process.env.OPENAI_API_KEY;
 
-	if (!hasAnthropic && !hasGoogle && !hasOpenAI) {
+	if (!hasOpenRouter && !hasAnthropic && !hasGoogle && !hasOpenAI) {
 		console.error("ERROR: Set one of these API key env vars:");
+		console.error("  export OPENROUTER_API_KEY=sk-or-...");
 		console.error("  export ANTHROPIC_API_KEY=sk-ant-...");
 		console.error("  export GOOGLE_GENERATIVE_AI_API_KEY=AI...");
 		console.error("  export OPENAI_API_KEY=sk-...");
 		process.exit(1);
 	}
 
-	// Pick cheapest model per provider
-	const model = hasGoogle
-		? "gemini-2.0-flash"
-		: hasAnthropic
-			? "claude-haiku-4-5"
-			: "gpt-4o-mini";
+	// Pick model per provider (OpenRouter supports any model name)
+	const model = hasOpenRouter
+		? (process.env.OPENROUTER_MODEL ?? "nvidia/nemotron-nano-9b-v2:free")
+		: hasGoogle
+			? "gemini-2.0-flash"
+			: hasAnthropic
+				? "claude-haiku-4-5"
+				: "gpt-4o-mini";
 
 	console.log("\n  AgentWeave E2E Smoke Test");
 	console.log("  ────────────────────────\n");

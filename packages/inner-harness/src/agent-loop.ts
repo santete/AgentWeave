@@ -361,11 +361,13 @@ export class AgentLoop implements InnerHarnessProvider {
 			return this.llmCaller(this.messages.getMessages(), this.model);
 		}
 
-		// Default: try real Vercel AI SDK if anthropic provider available
+		// Default: try real Vercel AI SDK
 		try {
+			console.log("  [debug] Calling real LLM with model:", this.model);
 			return await this.callRealLLM();
-		} catch {
-			// No API key or provider not available — return empty (terminal)
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			console.error(`[AgentWeave] LLM call failed: ${msg}`);
 			return { text: "", toolCalls: [], stopReason: "end_turn", usage: undefined };
 		}
 	}
@@ -396,6 +398,14 @@ export class AgentLoop implements InnerHarnessProvider {
 			abortSignal: this.abortController?.signal,
 		});
 
+		// Debug: log raw result for troubleshooting
+		if (process.env.AGENTWEAVE_DEBUG) {
+			console.error(`[AgentWeave:debug] text=${(result.text ?? "").slice(0, 100)}`);
+			console.error(`[AgentWeave:debug] toolCalls=${JSON.stringify(result.toolCalls ?? [])}`);
+			console.error(`[AgentWeave:debug] finishReason=${result.finishReason}`);
+			console.error(`[AgentWeave:debug] usage=${JSON.stringify(result.usage)}`);
+		}
+
 		const toolCalls = (result.toolCalls ?? []).map((tc) => ({
 			toolUseId: tc.toolCallId,
 			toolName: tc.toolName,
@@ -419,6 +429,20 @@ export class AgentLoop implements InnerHarnessProvider {
 	 */
 	private async resolveModel(): Promise<Parameters<typeof import("ai").generateText>[0]["model"]> {
 		const m = this.model;
+
+		// OpenRouter: use if OPENROUTER_API_KEY is set (any model name)
+		if (process.env.OPENROUTER_API_KEY) {
+			const { createOpenAI } = await import("@ai-sdk/openai");
+			const openrouter = createOpenAI({
+				baseURL: "https://openrouter.ai/api/v1",
+				apiKey: process.env.OPENROUTER_API_KEY,
+				headers: {
+					"HTTP-Referer": "https://github.com/santete/AgentWeave",
+					"X-Title": "AgentWeave",
+				},
+			});
+			return openrouter(m);
+		}
 
 		if (m.startsWith("gemini")) {
 			const { google } = await import("@ai-sdk/google");
