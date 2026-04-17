@@ -1,11 +1,10 @@
 /**
- * 'run' command — Execute an agent with a prompt.
- *
- * Usage: agentweave run "Fix the login bug" [--model sonnet] [--budget 5.00]
+ * 'run' command — Execute an agent with full governance visibility.
  */
 
 import { createInterface } from "node:readline";
 import { createHarness } from "@agentweave/sdk";
+import { BUILT_IN_TOOLS } from "@agentweave/inner-harness";
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import type { CreateHarnessOptions, InnerEvent } from "@agentweave/sdk";
 
@@ -17,29 +16,63 @@ export interface RunCommandArgs {
 	permissionMode?: "default" | "strict" | "permissive" | "plan";
 }
 
+// ─── ANSI Colors ────────────────────────────────────────────────
+
+const C = {
+	reset: "\x1b[0m",
+	dim: "\x1b[2m",
+	bold: "\x1b[1m",
+	green: "\x1b[32m",
+	red: "\x1b[31m",
+	yellow: "\x1b[33m",
+	blue: "\x1b[34m",
+	cyan: "\x1b[36m",
+	magenta: "\x1b[35m",
+	gray: "\x1b[90m",
+	bgRed: "\x1b[41m",
+	bgGreen: "\x1b[42m",
+	bgYellow: "\x1b[43m",
+	white: "\x1b[37m",
+};
+
+// ─── Session State ──────────────────────────────────────────────
+
+let toolCallCount = 0;
+let permissionAllowed = 0;
+let permissionDenied = 0;
+let turnCount = 0;
+const startTime = Date.now();
+
+// ─── Main ───────────────────────────────────────────────────────
+
 export async function runCommand(args: RunCommandArgs): Promise<void> {
-	console.log(`\n  AgentWeave v${AGENTWEAVE_VERSION}\n`);
-	console.log(`  Model:  ${args.model}`);
-	if (args.budget) console.log(`  Budget: $${args.budget}`);
-	console.log(`  Prompt: "${args.prompt}"`);
-	console.log("");
+	printHeader(args);
 
 	const options: CreateHarnessOptions = {
 		model: args.model,
+		tools: BUILT_IN_TOOLS,
 		maxTurns: args.maxTurns ?? 50,
 		permissions: {
 			mode: args.permissionMode ?? "default",
 			rules: [
 				{ pattern: "Bash(rm -rf *)", behavior: "deny", source: "policy", priority: 100, message: "Destructive deletion blocked" },
-				{ pattern: "FileWrite(*.env)", behavior: "deny", source: "policy", priority: 100, message: "Cannot write to .env files" },
+				{ pattern: "Bash(sudo *)", behavior: "deny", source: "policy", priority: 100, message: "Sudo blocked" },
+				{ pattern: "FileWrite(*.env)", behavior: "deny", source: "policy", priority: 100, message: "Cannot write .env" },
+				{ pattern: "FileRead(*)", behavior: "allow", source: "project", priority: 50 },
+				{ pattern: "Grep(*)", behavior: "allow", source: "project", priority: 50 },
+				{ pattern: "Glob(*)", behavior: "allow", source: "project", priority: 50 },
+				{ pattern: "Bash(ls *)", behavior: "allow", source: "project", priority: 50 },
+				{ pattern: "Bash(cat *)", behavior: "allow", source: "project", priority: 50 },
+				{ pattern: "Bash(echo *)", behavior: "allow", source: "project", priority: 50 },
+				{ pattern: "Bash(git *)", behavior: "allow", source: "project", priority: 50 },
 			],
 			failMode: "closed",
 		},
 		output: {
 			gateMode: "batch",
 			filters: [
-				{ type: "secret", name: "secrets", patterns: [], replacement: "[SECRET_REDACTED]" },
-				{ type: "pii", name: "pii", entities: ["email", "ssn"], replacement: "[PII_REDACTED]" },
+				{ type: "secret", name: "secrets", patterns: [], replacement: "[SECRET]" },
+				{ type: "pii", name: "pii", entities: ["email", "ssn"], replacement: "[PII]" },
 			],
 		},
 		budget: {
@@ -51,69 +84,160 @@ export async function runCommand(args: RunCommandArgs): Promise<void> {
 
 	const harness = createHarness(options);
 
-	// Stream events to terminal
-	const gen = harness.stream(args.prompt, {
-		maxBudgetUsd: args.budget,
-	});
+	const gen = harness.stream(args.prompt, { maxBudgetUsd: args.budget });
 
 	for (;;) {
 		const { value, done } = await gen.next();
 		if (done) {
-			const result = value;
-			console.log(`\n  ── Session Complete ──`);
-			console.log(`  Reason: ${result.reason}`);
-			if (result.usage) {
-				console.log(`  Tokens: ${result.usage.inputTokens} in / ${result.usage.outputTokens} out`);
-				console.log(`  Cost:   $${result.usage.totalCost.toFixed(4)}`);
-			}
-			console.log("");
+			printFooter(value, harness);
 			break;
 		}
-
 		printEvent(value);
 	}
 }
 
+// ─── Header ─────────────────────────────────────────────────────
+
+function printHeader(args: RunCommandArgs): void {
+	console.log("");
+	console.log(`  ${C.cyan}${C.bold}AgentWeave${C.reset} ${C.dim}v${AGENTWEAVE_VERSION}${C.reset}`);
+	console.log(`  ${C.dim}The Control Layer for AI Agents${C.reset}`);
+	console.log("");
+	console.log(`  ${C.gray}┌─────────────────────────────────────────────┐${C.reset}`);
+	console.log(`  ${C.gray}│${C.reset} Model:      ${C.bold}${args.model}${C.reset}`);
+	console.log(`  ${C.gray}│${C.reset} Mode:       ${C.yellow}${args.permissionMode ?? "default"}${C.reset}`);
+	console.log(`  ${C.gray}│${C.reset} Budget:     ${args.budget ? `$${args.budget}` : "unlimited"}`);
+	console.log(`  ${C.gray}│${C.reset} Max turns:  ${args.maxTurns ?? 50}`);
+	console.log(`  ${C.gray}│${C.reset} Tools:      ${C.dim}Bash, FileRead, FileWrite, FileEdit, Grep, Glob${C.reset}`);
+	console.log(`  ${C.gray}│${C.reset} Filters:    ${C.dim}secrets, PII${C.reset}`);
+	console.log(`  ${C.gray}│${C.reset} Sandbox:    ${C.dim}deny /etc, .env, .ssh, .aws${C.reset}`);
+	console.log(`  ${C.gray}└─────────────────────────────────────────────┘${C.reset}`);
+	console.log("");
+	console.log(`  ${C.bold}Prompt:${C.reset} ${args.prompt}`);
+	console.log("");
+}
+
+// ─── Event Printer ──────────────────────────────────────────────
+
 function printEvent(event: InnerEvent): void {
 	switch (event.type) {
 		case "turn:start":
-			console.log(`  ── Turn ${event.turnIndex} ──`);
+			turnCount = event.turnIndex;
+			console.log(`  ${C.cyan}── Turn ${event.turnIndex} ──${C.reset}`);
 			break;
+
+		case "llm:request_start":
+			console.log(`  ${C.dim}  LLM request → ${event.model} (est. ${event.estimatedInputTokens} tokens)${C.reset}`);
+			break;
+
+		case "llm:stream_end":
+			console.log(`  ${C.dim}  LLM response ← ${event.usage.inputTokens}in/${event.usage.outputTokens}out (${event.stopReason})${C.reset}`);
+			break;
+
+		case "tool:requested":
+			console.log(`  ${C.yellow}  ⚡ TOOL${C.reset} ${C.bold}${event.toolName}${C.reset}(${redactSecrets(JSON.stringify(event.toolInput)).slice(0, 100)})`);
+			break;
+
+		case "permission:allowed":
+			permissionAllowed++;
+			console.log(`  ${C.green}  ✓ ALLOW${C.reset} ${event.toolName} ${C.dim}[${event.source}]${C.reset}`);
+			break;
+
+		case "permission:denied":
+			permissionDenied++;
+			console.log(`  ${C.red}  ✗ DENY${C.reset}  ${event.toolName} — ${event.reason} ${C.dim}[${event.source}]${C.reset}`);
+			break;
+
+		case "permission:asking":
+			console.log(`  ${C.yellow}  ? ASK${C.reset}   ${event.toolName} — ${event.askMessage}`);
+			break;
+
+		case "tool:completed":
+			toolCallCount++;
+			const preview = typeof event.result === "string" ? event.result.slice(0, 120) : JSON.stringify(event.result).slice(0, 120);
+			console.log(`  ${C.green}  ✓ DONE${C.reset}  ${event.durationMs.toFixed(0)}ms`);
+			console.log(`  ${C.dim}  ↳ ${preview.replace(/\n/g, "\\n")}${preview.length >= 120 ? "..." : ""}${C.reset}`);
+			break;
+
+		case "tool:failed":
+			toolCallCount++;
+			console.log(`  ${C.red}  ✗ FAIL${C.reset}  ${event.error} ${C.dim}(${event.durationMs.toFixed(0)}ms)${C.reset}`);
+			break;
+
 		case "message:assistant":
 			for (const block of event.content) {
-				if (block.type === "text") {
-					console.log(`  ${block.text}`);
+				if (block.type === "text" && block.text.trim()) {
+					console.log("");
+					console.log(`  ${C.bold}${C.white}Agent:${C.reset} ${block.text}`);
+					console.log("");
 				}
 			}
 			break;
-		case "tool:requested":
-			// Redact sensitive patterns from tool input before logging
-			console.log(`  Tool: ${event.toolName}(${redactSecrets(JSON.stringify(event.toolInput)).slice(0, 80)})`);
+
+		case "message:tool_result":
+			// Already shown in tool:completed preview
 			break;
-		case "permission:denied":
-			console.log(`  DENIED: ${event.toolName} — ${event.reason}`);
+
+		case "error":
+			console.log(`  ${C.bgRed}${C.white} ERROR ${C.reset} ${event.error} ${event.recoverable ? C.dim + "(recoverable)" + C.reset : ""}`);
 			break;
-		case "tool:completed":
-			console.log(`  Done: ${event.toolUseId} (${event.durationMs.toFixed(0)}ms)`);
-			break;
-		case "tool:failed":
-			console.log(`  FAILED: ${event.toolUseId} — ${event.error}`);
-			break;
+
 		case "agent:spawned":
-			console.log(`  Agent: ${event.name} spawned [${event.childAgentId}]`);
+			console.log(`  ${C.magenta}  ◆ SPAWN${C.reset} ${event.name} [${event.childAgentId}]`);
 			break;
 		case "agent:completed":
-			console.log(`  Agent: ${event.name} completed`);
+			console.log(`  ${C.green}  ◆ DONE${C.reset}  ${event.name}`);
 			break;
 		case "agent:failed":
-			console.log(`  Agent: ${event.name} FAILED — ${event.error}`);
+			console.log(`  ${C.red}  ◆ FAIL${C.reset}  ${event.name} — ${event.error}`);
 			break;
 		case "agent:aborted":
-			console.log(`  Agent: ${event.name} aborted`);
+			console.log(`  ${C.yellow}  ◆ ABORT${C.reset} ${event.name}`);
 			break;
-		// Other events: silent in default output
+
+		// Silently tracked (visible in footer summary)
+		case "turn:end":
+		case "context:compacted":
+		case "context:usage":
+		case "recovery:retry":
+		case "recovery:fallback":
+		case "terminal":
+			break;
 	}
 }
+
+// ─── Footer ─────────────────────────────────────────────────────
+
+function printFooter(result: import("@agentweave/types").TerminalResult, harness: import("@agentweave/sdk").HarnessInstance): void {
+	const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+	const usage = harness.getUsage();
+	const audit = harness.outer.getAuditLogger().size();
+
+	const reasonColor = result.reason === "completed" ? C.green
+		: result.reason === "aborted" ? C.yellow
+		: C.red;
+
+	console.log(`  ${C.cyan}═══════════════════════════════════════════════${C.reset}`);
+	console.log(`  ${C.bold}Session Summary${C.reset}`);
+	console.log(`  ${C.cyan}═══════════════════════════════════════════════${C.reset}`);
+	console.log("");
+	console.log(`  Status:       ${reasonColor}${C.bold}${result.reason.toUpperCase()}${C.reset}`);
+	console.log(`  Duration:     ${elapsed}s (${turnCount} turns)`);
+	console.log("");
+	console.log(`  ${C.bold}Governance${C.reset}`);
+	console.log(`  ├─ Tools called:     ${toolCallCount}`);
+	console.log(`  ├─ Permissions:      ${C.green}${permissionAllowed} allowed${C.reset} / ${C.red}${permissionDenied} denied${C.reset}`);
+	console.log(`  ├─ Audit log:        ${audit} entries`);
+	console.log(`  └─ Output filters:   secrets, PII active`);
+	console.log("");
+	console.log(`  ${C.bold}Usage${C.reset}`);
+	console.log(`  ├─ Input tokens:     ${usage.inputTokens.toLocaleString()}`);
+	console.log(`  ├─ Output tokens:    ${usage.outputTokens.toLocaleString()}`);
+	console.log(`  └─ Cost:             $${usage.totalCost.toFixed(4)}`);
+	console.log("");
+}
+
+// ─── Ask Prompt ─────────────────────────────────────────────────
 
 async function terminalAskPrompt(
 	toolName: string,
@@ -121,19 +245,29 @@ async function terminalAskPrompt(
 	message: string,
 ): Promise<{ allow: boolean; alwaysAllow?: boolean }> {
 	const inputPreview = redactSecrets(JSON.stringify(toolInput)).slice(0, 60);
-	console.log(`\n  ASK: ${message}`);
-	console.log(`  Tool: ${toolName}(${inputPreview})`);
-	console.log("  [y] Allow  [n] Deny  [a] Always Allow");
+	console.log("");
+	console.log(`  ${C.bgYellow}${C.bold} ASK ${C.reset} ${message}`);
+	console.log(`  Tool: ${C.bold}${toolName}${C.reset}(${inputPreview})`);
+	console.log(`  ${C.green}[y]${C.reset} Allow  ${C.red}[n]${C.reset} Deny  ${C.cyan}[a]${C.reset} Always Allow`);
 
 	const rl = createInterface({ input: process.stdin, output: process.stdout });
 	const answer = await new Promise<string>((resolve) => {
-		rl.question("  > ", (ans) => { rl.close(); resolve(ans.trim().toLowerCase()); });
+		rl.question(`  ${C.bold}>${C.reset} `, (ans) => { rl.close(); resolve(ans.trim().toLowerCase()); });
 	});
 
-	if (answer === "a") return { allow: true, alwaysAllow: true };
-	if (answer === "y" || answer === "yes") return { allow: true };
+	if (answer === "a") {
+		console.log(`  ${C.cyan}→ Always allowed${C.reset}`);
+		return { allow: true, alwaysAllow: true };
+	}
+	if (answer === "y" || answer === "yes") {
+		console.log(`  ${C.green}→ Allowed${C.reset}`);
+		return { allow: true };
+	}
+	console.log(`  ${C.red}→ Denied${C.reset}`);
 	return { allow: false };
 }
+
+// ─── Helpers ────────────────────────────────────────────────────
 
 const SECRET_PATTERNS = [
 	/sk-[a-zA-Z0-9]{20,}/g,

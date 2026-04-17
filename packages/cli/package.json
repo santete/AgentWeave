@@ -35,7 +35,8 @@
   },
   "dependencies": {
     "@agentweave/sdk": "workspace:*",
-    "@agentweave/types": "workspace:*"
+    "@agentweave/types": "workspace:*",
+    "@agentweave/inner-harness": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
