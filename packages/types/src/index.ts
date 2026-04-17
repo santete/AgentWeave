@@ -97,3 +97,14 @@ export type {
 	InterceptResponse,
 	ControlPlane,
 } from "./control-plane";
+
+// Multi-Agent
+export type {
+	AgentState,
+	AgentSpawnConfig,
+	AgentInfo,
+	AgentMessageType,
+	AgentMessage,
+	MultiAgentConfig,
+	AgentLifecycleEvent,
+} from "./multi-agent";

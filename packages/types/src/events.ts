@@ -6,6 +6,7 @@
 
 import type { ContentBlock, InjectableMessage } from "./messages";
 import type { TokenUsage } from "./metrics";
+import type { AgentMessage } from "./multi-agent";
 
 // ─── Terminal Reasons ────────────────────────────────────────────
 
@@ -97,7 +98,28 @@ export type InnerEventPayload =
 	// Terminal
 	| { type: "terminal"; reason: TerminalReason; usage: TokenUsage }
 	// Error
-	| { type: "error"; error: string; recoverable: boolean };
+	| { type: "error"; error: string; recoverable: boolean }
+	// Multi-agent
+	| {
+			type: "agent:spawned";
+			childAgentId: string;
+			name: string;
+			parentId: string;
+	  }
+	| {
+			type: "agent:completed";
+			childAgentId: string;
+			name: string;
+			result?: unknown;
+	  }
+	| {
+			type: "agent:failed";
+			childAgentId: string;
+			name: string;
+			error: string;
+	  }
+	| { type: "agent:aborted"; childAgentId: string; name: string }
+	| { type: "agent:message"; message: AgentMessage };
 
 export type InnerEvent = {
 	id: string;

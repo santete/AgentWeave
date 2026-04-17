@@ -21,6 +21,7 @@ import type {
 	PermissionConfig,
 	AlertRule,
 	HookDefinition,
+	MultiAgentConfig,
 } from "@agentweave/types";
 import { PermissionEngine } from "./governance/permission-engine";
 import { OutputPipeline } from "./governance/output-pipeline";
@@ -33,6 +34,7 @@ import { AlertEngine } from "./observability/alert-engine";
 import { SessionManager } from "./observability/session-manager";
 import type { SessionManagerConfig } from "./observability/session-manager";
 import { HookEngine } from "./governance/hook-engine";
+import { MultiAgentOrchestrator } from "./orchestration/multi-agent-orchestrator";
 
 /** Events that can change alert-relevant state — skip noisy stream deltas */
 const ALERT_CHECK_EVENTS = new Set([
@@ -50,6 +52,7 @@ export interface OuterHarnessConfig {
 	hooks?: Record<string, HookDefinition[]>;
 	session?: SessionManagerConfig;
 	alertRules?: AlertRule[];
+	multiAgent?: MultiAgentConfig;
 }
 
 export class OuterHarness implements OuterHarnessConsumer {
@@ -61,6 +64,7 @@ export class OuterHarness implements OuterHarnessConsumer {
 	private monitor: MonitorCollector;
 	private alerts: AlertEngine;
 	private sessions: SessionManager;
+	private orchestrator: MultiAgentOrchestrator | null;
 	private lastKnownCost = 0;
 
 	constructor(config: OuterHarnessConfig) {
@@ -72,6 +76,9 @@ export class OuterHarness implements OuterHarnessConsumer {
 		this.monitor = new MonitorCollector();
 		this.alerts = new AlertEngine();
 		this.sessions = new SessionManager(config.session);
+		this.orchestrator = config.multiAgent
+			? new MultiAgentOrchestrator(config.multiAgent)
+			: null;
 
 		if (config.alertRules) {
 			for (const rule of config.alertRules) {
@@ -240,5 +247,9 @@ export class OuterHarness implements OuterHarnessConsumer {
 
 	getSessionManager(): SessionManager {
 		return this.sessions;
+	}
+
+	getOrchestrator(): MultiAgentOrchestrator | null {
+		return this.orchestrator;
 	}
 }

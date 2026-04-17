@@ -5,6 +5,7 @@
 
 import type { PermissionConfig } from "./permissions";
 import type { HookDefinition } from "./hooks";
+import type { MultiAgentConfig } from "./multi-agent";
 
 export interface HarnessConfig {
 	// Inner
@@ -62,6 +63,9 @@ export interface HarnessConfig {
 		transcriptDir: string;
 		autoSave: boolean;
 	};
+
+	// Outer - Multi-Agent (optional)
+	multiAgent?: MultiAgentConfig;
 }
 
 // ─── Output Validation Rules (discriminated union) ───────────────
