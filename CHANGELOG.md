@@ -5,6 +5,21 @@ All notable changes to AgentWeave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0-alpha.1] - 2026-04-17
+
+### Added
+
+- **@agentweave/protocol** — AWOCP (AgentWeave Outer Control Protocol) message types and WebSocket client. AWOCPMessage envelope with 8 message types (auth, intercept, event, health). AWOCPClient: connect + auth handshake, interceptTool/interceptOutput with correlation ID + timeout, sendEvent fire-and-forget, ping/pong health checks, exponential backoff reconnection.
+- **@agentweave/gateway** — AWOCP WebSocket server with shared governance. AWOCPServer: client auth (MVP bearer token), message routing, client registry. GatewayServer: wires AWOCPServer + shared OuterHarness (PermissionEngine, OutputPipeline, BudgetManager). Dev Nodes connect via WebSocket and get centralized governance decisions.
+- **Auth module** — Bearer token verification (MVP). JWT signing/verification and mTLS deferred to post-MVP.
+
+### Stats
+
+- 8 packages, 25 test files, 251 tests (+10 new), 0 failures
+- +2 new packages (protocol, gateway)
+
+---
+
 ## [0.4.0-alpha.1] - 2026-04-17
 
 ### Added
