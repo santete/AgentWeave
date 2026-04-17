@@ -314,7 +314,7 @@ describe("createHarness", () => {
 	// ─── Plugins ─────────────────────────────────────────────────
 
 	describe("plugins", () => {
-		it("should load plugin and register its tools", async () => {
+		it("should load plugin and register its tools before first run", async () => {
 			const pluginTool = makeReadTool("PluginGrep");
 			const plugin: PluginManifest = {
 				name: "grep-plugin",
@@ -329,17 +329,17 @@ describe("createHarness", () => {
 				permissions: { mode: "permissive" },
 				plugins: [plugin],
 			});
+			harness.setLLMCaller(createMockLLMCaller(MockScenarios.simpleResponse));
 
-			// Give plugin time to activate (fire-and-forget)
-			await new Promise((r) => setTimeout(r, 50));
+			// run() awaits pluginsReady — tools are registered before execution
+			await harness.run("trigger plugin load");
 
-			// Tool should be registered
 			const tools = harness.inner.getTools();
 			const found = tools.find((t) => t.name === "PluginGrep");
 			expect(found).toBeDefined();
 		});
 
-		it("should report loaded plugins via getPlugins()", async () => {
+		it("should report loaded plugins via getPlugins() after run", async () => {
 			const plugin: PluginManifest = {
 				name: "info-plugin",
 				version: "2.0.0",
@@ -349,10 +349,13 @@ describe("createHarness", () => {
 
 			const harness = createHarness({
 				model: "mock",
+				permissions: { mode: "permissive" },
 				plugins: [plugin],
 			});
+			harness.setLLMCaller(createMockLLMCaller(MockScenarios.simpleResponse));
 
-			await new Promise((r) => setTimeout(r, 50));
+			// run() awaits pluginsReady
+			await harness.run("trigger");
 
 			const loaded = harness.getPlugins();
 			expect(loaded).toHaveLength(1);

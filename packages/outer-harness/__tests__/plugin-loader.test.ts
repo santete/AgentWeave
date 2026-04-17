@@ -238,6 +238,15 @@ describe("PluginLoader", () => {
 		await expect(loader.deactivateAll()).resolves.not.toThrow();
 	});
 
+	it("should reject loading same plugin name twice", async () => {
+		loader = new PluginLoader();
+		await loader.loadFromManifest(makeToolPlugin("dup-plugin"), TEST_CONTEXT);
+
+		await expect(
+			loader.loadFromManifest(makeToolPlugin("dup-plugin"), TEST_CONTEXT),
+		).rejects.toThrow('Plugin "dup-plugin" is already loaded');
+	});
+
 	// ─── Multiple plugins ───────────────────────────────────────
 
 	it("should load multiple plugins", async () => {
