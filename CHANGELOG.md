@@ -5,6 +5,21 @@ All notable changes to AgentWeave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-04-17
+
+### Added — "Make It Real" Sprint
+
+- **Built-in 6 tools** — Real implementations: Bash (exec with timeout), FileRead (fs.readFile with line range), FileWrite (create + mkdir -p), FileEdit (exact string replace), Grep (recursive regex search), Glob (file pattern match). All with proper ToolDefinition metadata. 11 tests.
+- **Real Vercel AI SDK wiring** — AgentLoop now calls Anthropic API via `generateText()` when no mock LLM is set. Dynamic import — falls back gracefully if no API key. Tools registered as Vercel AI SDK tools.
+- **Ask flow UX** — Permission "ask" behavior now prompts user in terminal: `[y] Allow [n] Deny [a] Always Allow`. "Always allow" persists as runtime rule. SDK accepts `onAsk` handler. CLI wires readline prompt.
+- **E2E smoke test** — `examples/e2e-smoke/run.ts`: runnable script with real Claude API + built-in tools + permission rules + output filters + budget cap. Proves the entire governance pipeline works end-to-end.
+
+### Stats
+
+- 9 packages, 343 tests (342 + 1 skipped), 0 failures
+
+---
+
 ## [1.0.0] - 2026-04-17
 
 ### Added

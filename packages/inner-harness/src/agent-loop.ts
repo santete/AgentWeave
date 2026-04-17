@@ -360,8 +360,56 @@ export class AgentLoop implements InnerHarnessProvider {
 		if (this.llmCaller) {
 			return this.llmCaller(this.messages.getMessages(), this.model);
 		}
-		// Default: return empty (no tools, no text) — will cause terminal
-		return { text: "", toolCalls: [], stopReason: "end_turn", usage: undefined };
+
+		// Default: try real Vercel AI SDK if anthropic provider available
+		try {
+			return await this.callRealLLM();
+		} catch {
+			// No API key or provider not available — return empty (terminal)
+			return { text: "", toolCalls: [], stopReason: "end_turn", usage: undefined };
+		}
+	}
+
+	private async callRealLLM(): Promise<LLMCallResult> {
+		// Dynamic import — avoids crash if @ai-sdk/anthropic not installed
+		const { generateText } = await import("ai");
+		const { anthropic } = await import("@ai-sdk/anthropic");
+
+		const tools: Record<string, unknown> = {};
+		for (const toolDef of this.registry.getAll()) {
+			const { tool } = await import("ai");
+			tools[toolDef.name] = tool({
+				description: toolDef.description,
+				parameters: toolDef.parameters,
+			});
+		}
+
+		const result = await generateText({
+			model: anthropic(this.model),
+			messages: this.messages.getMessages().map((m) => ({
+				role: m.role as "user" | "assistant",
+				content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+			})),
+			tools: tools as Parameters<typeof generateText>[0]["tools"],
+			maxSteps: 1,
+			abortSignal: this.abortController?.signal,
+		});
+
+		const toolCalls = (result.toolCalls ?? []).map((tc) => ({
+			toolUseId: tc.toolCallId,
+			toolName: tc.toolName,
+			toolInput: tc.args as Record<string, unknown>,
+		}));
+
+		return {
+			text: result.text ?? "",
+			toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+			stopReason: result.finishReason ?? "end_turn",
+			usage: result.usage ? {
+				inputTokens: result.usage.promptTokens,
+				outputTokens: result.usage.completionTokens,
+			} : undefined,
+		};
 	}
 
 	// ─── InnerHarnessProvider interface ──────────────────────────

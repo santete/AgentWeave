@@ -73,6 +73,9 @@ export interface CreateHarnessOptions {
 
 	/** Plugins — inline manifests for direct registration. */
 	plugins?: PluginManifest[];
+
+	/** Handler for permission "ask" flow (terminal prompt in CLI mode). */
+	onAsk?: (toolName: string, toolInput: Record<string, unknown>, message: string) => Promise<{ allow: boolean; alwaysAllow?: boolean }>;
 }
 
 // ─── Harness Instance ────────────────────────────────────────────
@@ -191,6 +194,7 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 					conflictStrategy: "sequential",
 				}
 			: undefined,
+		onAsk: options.onAsk,
 	};
 
 	// 3. Create Outer Harness and connect to Control Plane

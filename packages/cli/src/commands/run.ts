@@ -4,6 +4,7 @@
  * Usage: agentweave run "Fix the login bug" [--model sonnet] [--budget 5.00]
  */
 
+import { createInterface } from "node:readline";
 import { createHarness } from "@agentweave/sdk";
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import type { CreateHarnessOptions, InnerEvent } from "@agentweave/sdk";
@@ -45,6 +46,7 @@ export async function runCommand(args: RunCommandArgs): Promise<void> {
 			maxPerSession: args.budget,
 			warningThreshold: 0.8,
 		},
+		onAsk: terminalAskPrompt,
 	};
 
 	const harness = createHarness(options);
@@ -111,6 +113,26 @@ function printEvent(event: InnerEvent): void {
 			break;
 		// Other events: silent in default output
 	}
+}
+
+async function terminalAskPrompt(
+	toolName: string,
+	toolInput: Record<string, unknown>,
+	message: string,
+): Promise<{ allow: boolean; alwaysAllow?: boolean }> {
+	const inputPreview = redactSecrets(JSON.stringify(toolInput)).slice(0, 60);
+	console.log(`\n  ASK: ${message}`);
+	console.log(`  Tool: ${toolName}(${inputPreview})`);
+	console.log("  [y] Allow  [n] Deny  [a] Always Allow");
+
+	const rl = createInterface({ input: process.stdin, output: process.stdout });
+	const answer = await new Promise<string>((resolve) => {
+		rl.question("  > ", (ans) => { rl.close(); resolve(ans.trim().toLowerCase()); });
+	});
+
+	if (answer === "a") return { allow: true, alwaysAllow: true };
+	if (answer === "y" || answer === "yes") return { allow: true };
+	return { allow: false };
 }
 
 const SECRET_PATTERNS = [

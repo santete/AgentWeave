@@ -56,6 +56,8 @@ export interface OuterHarnessConfig {
 	alertRules?: AlertRule[];
 	multiAgent?: MultiAgentConfig;
 	inputGate?: InputGateConfig;
+	/** Handler for permission "ask" flow. If not set, falls back to failMode. */
+	onAsk?: (toolName: string, toolInput: Record<string, unknown>, message: string) => Promise<{ allow: boolean; alwaysAllow?: boolean }>;
 }
 
 export class OuterHarness implements OuterHarnessConsumer {
@@ -64,6 +66,7 @@ export class OuterHarness implements OuterHarnessConsumer {
 	private budget: BudgetManager;
 	private hookEngine: HookEngine;
 	private inputGate: InputGate;
+	private askHandler: OuterHarnessConfig["onAsk"];
 	private audit: AuditLogger;
 	private monitor: MonitorCollector;
 	private alerts: AlertEngine;
@@ -77,6 +80,7 @@ export class OuterHarness implements OuterHarnessConsumer {
 		this.budget = new BudgetManager(config.budget);
 		this.hookEngine = new HookEngine({ hooks: config.hooks ?? {} });
 		this.inputGate = new InputGate(config.inputGate);
+		this.askHandler = config.onAsk;
 		this.audit = new AuditLogger();
 		this.monitor = new MonitorCollector();
 		this.alerts = new AlertEngine();
@@ -114,17 +118,37 @@ export class OuterHarness implements OuterHarnessConsumer {
 			source: permDecision.source,
 		});
 
-		// 2. Resolve ask -> for MVP, use failMode (no user interaction gate yet)
+		// 2. Resolve ask via handler or failMode fallback
 		let toolDecision: ToolDecision;
 		if (permDecision.behavior === "ask") {
-			const fallback =
-				this.permissions.config.failMode === "open" ? "allow" : "deny";
-			toolDecision = {
-				behavior: fallback,
-				reason: `Ask resolved to ${fallback} (no interaction gate in MVP)`,
-				source: "default",
-				resolvedFromAsk: true,
-			};
+			if (this.askHandler) {
+				const askMsg = permDecision.askMessage ?? `Allow ${request.toolName}?`;
+				const response = await this.askHandler(request.toolName, request.toolInput, askMsg);
+				toolDecision = {
+					behavior: response.allow ? "allow" : "deny",
+					reason: response.allow ? "User approved" : "User denied",
+					source: "user",
+					resolvedFromAsk: true,
+				};
+				// Persist "always allow" as runtime rule
+				if (response.allow && response.alwaysAllow) {
+					this.permissions.addRule({
+						pattern: `${request.toolName}(*)`,
+						behavior: "allow",
+						source: "runtime",
+						priority: 75,
+					});
+				}
+			} else {
+				const fallback =
+					this.permissions.config.failMode === "open" ? "allow" : "deny";
+				toolDecision = {
+					behavior: fallback,
+					reason: `Ask resolved to ${fallback} (no ask handler configured)`,
+					source: "default",
+					resolvedFromAsk: true,
+				};
+			}
 		} else {
 			toolDecision = {
 				behavior: permDecision.behavior,
