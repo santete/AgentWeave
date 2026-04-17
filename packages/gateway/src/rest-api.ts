@@ -288,6 +288,8 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
 const TOKEN = localStorage.getItem('agentweave_token') || '';
 const headers = TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {};
 
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
 async function fetchJson(path) {
   try {
     const r = await fetch(path, { headers });
@@ -307,7 +309,7 @@ async function refresh() {
     document.getElementById('clients').innerHTML = '<span class="empty">Requires JWT</span>';
   } else {
     const rows = (clients.clients || []).map(c =>
-      '<tr><td>' + c.userId + '</td><td>' + c.role + '</td><td>' + c.sessionId + '</td></tr>'
+      '<tr><td>' + esc(c.userId) + '</td><td>' + esc(c.role) + '</td><td>' + esc(c.sessionId) + '</td></tr>'
     ).join('');
     document.getElementById('clients').innerHTML = rows
       ? '<table><tr><th>User</th><th>Role</th><th>Session</th></tr>' + rows + '</table>'
@@ -319,7 +321,7 @@ async function refresh() {
     document.getElementById('rules').innerHTML = '<span class="empty">Requires JWT</span>';
   } else {
     const rows = (rules.rules || []).map(r =>
-      '<tr><td>' + r.pattern + '</td><td><span class="badge badge-' + r.behavior + '">' + r.behavior + '</span></td><td>' + (r.source||'') + '</td></tr>'
+      '<tr><td>' + esc(r.pattern) + '</td><td><span class="badge badge-' + esc(r.behavior) + '">' + esc(r.behavior) + '</span></td><td>' + esc(r.source||'') + '</td></tr>'
     ).join('');
     document.getElementById('rules').innerHTML = rows
       ? '<table><tr><th>Pattern</th><th>Behavior</th><th>Source</th></tr>' + rows + '</table>'

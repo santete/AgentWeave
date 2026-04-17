@@ -152,4 +152,27 @@ describe("REST API", () => {
 		const { status } = await apiFetch(p.rest, "/api/unknown", { token: adminToken });
 		expect(status).toBe(404);
 	});
+
+	it("GET / — serves dashboard HTML", async () => {
+		const p = allocPorts();
+		gw = makeGateway(p);
+		await gw.start();
+
+		const result = await new Promise<{ status: number; contentType: string; body: string }>((resolve, reject) => {
+			http.get(`http://127.0.0.1:${p.rest}/`, (res) => {
+				const chunks: Buffer[] = [];
+				res.on("data", (c: Buffer) => chunks.push(c));
+				res.on("end", () => resolve({
+					status: res.statusCode ?? 0,
+					contentType: res.headers["content-type"] ?? "",
+					body: Buffer.concat(chunks).toString("utf-8"),
+				}));
+			}).on("error", reject);
+		});
+
+		expect(result.status).toBe(200);
+		expect(result.contentType).toContain("text/html");
+		expect(result.body).toContain("AgentWeave Gateway");
+		expect(result.body).toContain("esc("); // XSS escaping function present
+	});
 });
