@@ -14,6 +14,8 @@ export type { HookEngineConfig } from "./governance/hook-engine";
 // Orchestration
 export { ConfigHierarchy, getDefaultConfig } from "./orchestration/config-hierarchy";
 export type { ConfigSource } from "./orchestration/config-hierarchy";
+export { LockManager } from "./orchestration/lock-manager";
+export { MultiAgentOrchestrator } from "./orchestration/multi-agent-orchestrator";
 
 // Observability
 export { AuditLogger } from "./observability/audit-logger";
