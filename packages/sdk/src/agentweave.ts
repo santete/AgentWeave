@@ -16,12 +16,14 @@ import type {
 	AgentInfo,
 	AgentMessage,
 	AgentMessageType,
+	PluginManifest,
+	PluginContext,
 } from "@agentweave/types";
 import { createControlPlane } from "@agentweave/control-plane";
 import { AgentLoop } from "@agentweave/inner-harness";
 import type { LLMCallResult } from "@agentweave/inner-harness";
-import { OuterHarness, MultiAgentOrchestrator } from "@agentweave/outer-harness";
-import type { OuterHarnessConfig } from "@agentweave/outer-harness";
+import { OuterHarness, MultiAgentOrchestrator, PluginLoader } from "@agentweave/outer-harness";
+import type { OuterHarnessConfig, LoadedPlugin } from "@agentweave/outer-harness";
 
 // ─── Public Config (simplified for SDK consumers) ────────────────
 
@@ -65,6 +67,9 @@ export interface CreateHarnessOptions {
 		maxConcurrentAgents?: number;
 		totalBudgetUsd?: number;
 	};
+
+	/** Plugins — inline manifests for direct registration. */
+	plugins?: PluginManifest[];
 }
 
 // ─── Harness Instance ────────────────────────────────────────────
@@ -101,6 +106,9 @@ export interface HarnessInstance {
 
 	/** Get the multi-agent orchestrator (null if not configured). */
 	getOrchestrator(): MultiAgentOrchestrator | null;
+
+	/** Get loaded plugins. */
+	getPlugins(): ReadonlyArray<LoadedPlugin>;
 
 	/** Access inner components for advanced usage. */
 	inner: AgentLoop;
@@ -202,7 +210,36 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 		| ((messages: ReadonlyArray<Message>, model: string) => Promise<LLMCallResult>)
 		| null = null;
 
-	// 5. Build the instance
+	// 5. Load plugins (sync: inline manifests only — path-based is async via activateAll)
+	const pluginLoader = new PluginLoader();
+	const pluginContext: PluginContext = {
+		version: "0.5.1",
+		projectRoot: process.cwd(),
+		dataDir: "",
+	};
+
+	/** Load and activate all inline plugins. Registers tools + hooks. */
+	async function loadPlugins(): Promise<void> {
+		if (!options.plugins) return;
+		for (const manifest of options.plugins) {
+			const loaded = await pluginLoader.loadFromManifest(manifest, pluginContext);
+			if (loaded.registration.tools) {
+				for (const tool of loaded.registration.tools) {
+					inner.registerTool(tool);
+				}
+			}
+			if (loaded.registration.hooks) {
+				for (const hook of loaded.registration.hooks) {
+					outer.getHookEngine().addHook(hook.event, hook.definition);
+				}
+			}
+		}
+	}
+
+	// Auto-load plugins eagerly (fire-and-forget — errors surface on first use)
+	void loadPlugins();
+
+	// 6. Build the instance
 	const instance: HarnessInstance = {
 		async run(prompt, runOpts) {
 			const events: InnerEvent[] = [];
@@ -263,6 +300,10 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 
 		getOrchestrator() {
 			return outer.getOrchestrator();
+		},
+
+		getPlugins() {
+			return pluginLoader.getLoaded();
 		},
 
 		inner,
