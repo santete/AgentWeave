@@ -1,5 +1,5 @@
 // Version — single source of truth for all packages
-export const AGENTWEAVE_VERSION = "0.5.1";
+export const AGENTWEAVE_VERSION = "1.0.0";
 
 // Messages & Content
 export type {

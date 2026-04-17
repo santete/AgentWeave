@@ -5,6 +5,22 @@ All notable changes to AgentWeave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-04-17
+
+### Added
+
+- **Performance benchmarks** — EventBus.emit (10 handlers) p99 verified < 0.5ms, PermissionEngine.evaluate (10 rules) p99 < 3ms, OutputPipeline.applyFilters (1KB) p99 < 3ms.
+- **InputGate** — Input validation/transformation: max length, empty rejection, whitespace trim, deny patterns (prompt injection defense), context injection. Wired into OuterHarness.onInputReceived (replaces passthrough).
+- **CLI `monitor` subcommand** — `agentweave monitor --gateway <url>` polls REST API health every 2s.
+- **CLI `session` subcommand** — `agentweave session list` displays JSONL session files with size and timestamp.
+- **Real LLM test** — Integration test with actual Anthropic API (skipped when no ANTHROPIC_API_KEY).
+
+### Stats
+
+- 9 packages, 332 tests (331 + 1 skipped), 0 failures. v1.0.0 stable.
+
+---
+
 ## [1.0.0-rc.1] - 2026-04-17
 
 ### Added

@@ -13,6 +13,8 @@
 
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import { runCommand } from "./commands/run.js";
+import { monitorCommand } from "./commands/monitor.js";
+import { sessionCommand } from "./commands/session.js";
 
 const args = process.argv.slice(2);
 
@@ -23,18 +25,24 @@ function printHelp(): void {
 
   USAGE:
     agentweave run <prompt> [options]
+    agentweave monitor [--gateway <url>]
+    agentweave session list [--dir <path>]
 
-  OPTIONS:
+  RUN OPTIONS:
     --model <model>       LLM model (default: claude-sonnet-4-6)
     --budget <usd>        Max budget in USD
     --max-turns <n>       Max turns (default: 50)
     --mode <mode>         Permission mode: default|strict|permissive|plan
+
+  GLOBAL:
     --help                Show this help
     --version             Show version
 
   EXAMPLES:
     agentweave run "Fix the login bug"
     agentweave run "Refactor auth module" --model claude-opus-4-6 --budget 10
+    agentweave monitor --gateway http://localhost:9101
+    agentweave session list
     agentweave run "Review code quality" --mode plan
 `);
 }
@@ -128,6 +136,14 @@ async function main(): Promise<void> {
 			maxTurns: parsed.maxTurns,
 			permissionMode: parsed.permissionMode,
 		});
+	} else if (parsed.command === "monitor") {
+		const gwIdx = args.indexOf("--gateway");
+		const gateway = gwIdx >= 0 ? args[gwIdx + 1] ?? "http://localhost:9101" : "http://localhost:9101";
+		await monitorCommand({ gateway });
+	} else if (parsed.command === "session") {
+		const dirIdx = args.indexOf("--dir");
+		const dir = dirIdx >= 0 ? args[dirIdx + 1] : undefined;
+		await sessionCommand({ action: "list", dir });
 	} else {
 		console.error(`Unknown command: ${parsed.command}`);
 		printHelp();

@@ -10,6 +10,8 @@ export { BudgetManager } from "./governance/budget-manager";
 export type { BudgetConfig, BudgetStatus } from "./governance/budget-manager";
 export { HookEngine } from "./governance/hook-engine";
 export type { HookEngineConfig } from "./governance/hook-engine";
+export { InputGate } from "./governance/input-gate";
+export type { InputGateConfig, InputGateResult } from "./governance/input-gate";
 
 // Orchestration
 export { ConfigHierarchy, getDefaultConfig } from "./orchestration/config-hierarchy";

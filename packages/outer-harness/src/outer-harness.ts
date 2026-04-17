@@ -28,6 +28,8 @@ import { OutputPipeline } from "./governance/output-pipeline";
 import type { OutputPipelineConfig } from "./governance/output-pipeline";
 import { BudgetManager } from "./governance/budget-manager";
 import type { BudgetConfig } from "./governance/budget-manager";
+import { InputGate } from "./governance/input-gate";
+import type { InputGateConfig } from "./governance/input-gate";
 import { AuditLogger } from "./observability/audit-logger";
 import { MonitorCollector } from "./observability/monitor-collector";
 import { AlertEngine } from "./observability/alert-engine";
@@ -53,6 +55,7 @@ export interface OuterHarnessConfig {
 	session?: SessionManagerConfig;
 	alertRules?: AlertRule[];
 	multiAgent?: MultiAgentConfig;
+	inputGate?: InputGateConfig;
 }
 
 export class OuterHarness implements OuterHarnessConsumer {
@@ -60,6 +63,7 @@ export class OuterHarness implements OuterHarnessConsumer {
 	private outputPipeline: OutputPipeline;
 	private budget: BudgetManager;
 	private hookEngine: HookEngine;
+	private inputGate: InputGate;
 	private audit: AuditLogger;
 	private monitor: MonitorCollector;
 	private alerts: AlertEngine;
@@ -72,6 +76,7 @@ export class OuterHarness implements OuterHarnessConsumer {
 		this.outputPipeline = new OutputPipeline(config.output);
 		this.budget = new BudgetManager(config.budget);
 		this.hookEngine = new HookEngine({ hooks: config.hooks ?? {} });
+		this.inputGate = new InputGate(config.inputGate);
 		this.audit = new AuditLogger();
 		this.monitor = new MonitorCollector();
 		this.alerts = new AlertEngine();
@@ -157,8 +162,22 @@ export class OuterHarness implements OuterHarnessConsumer {
 		return decision;
 	}
 
-	async onInputReceived(_input: UserInput): Promise<InputDecision> {
-		// MVP: passthrough — no input gate logic yet
+	async onInputReceived(input: UserInput): Promise<InputDecision> {
+		const result = this.inputGate.process(input.text);
+
+		if (result.action === "reject") {
+			this.audit.log("input_rejected", { reason: result.reason });
+			return { action: "reject", reason: result.reason };
+		}
+
+		if (result.action === "transform") {
+			return {
+				action: "transform",
+				transformedInput: result.transformedInput,
+				injectedContext: result.injectedContext,
+			};
+		}
+
 		return { action: "pass" };
 	}
 
