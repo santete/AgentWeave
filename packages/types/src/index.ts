@@ -1,3 +1,6 @@
+// Version — single source of truth for all packages
+export const AGENTWEAVE_VERSION = "0.5.1";
+
 // Messages & Content
 export type {
 	ContentBlock,

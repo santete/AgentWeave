@@ -11,13 +11,14 @@
  *   agentweave --help                 Show help
  */
 
+import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import { runCommand } from "./commands/run.js";
 
 const args = process.argv.slice(2);
 
 function printHelp(): void {
 	console.log(`
-  AgentWeave CLI v0.1.0
+  AgentWeave CLI v${AGENTWEAVE_VERSION}
   The Control Layer for AI Agents
 
   USAGE:
@@ -38,7 +39,7 @@ function printHelp(): void {
 `);
 }
 
-function parseArgs(args: string[]): {
+export function parseArgs(args: string[]): {
 	command: string;
 	prompt: string;
 	model: string;
@@ -91,7 +92,7 @@ function parseArgs(args: string[]): {
 
 async function main(): Promise<void> {
 	if (args.includes("--version")) {
-		console.log("0.1.0");
+		console.log(AGENTWEAVE_VERSION);
 		return;
 	}
 

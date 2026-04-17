@@ -10,6 +10,7 @@ import type {
 	AuthRequestPayload,
 	AuthResponsePayload,
 } from "@agentweave/protocol";
+import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import type { ToolRequest, ToolDecision, RawOutput, OutputDecision, InnerEvent } from "@agentweave/types";
 import { verifyAuth } from "./auth";
 import type { AuthConfig } from "./auth";
@@ -138,7 +139,7 @@ export class AWOCPServer {
 					payload: {
 						...authResult,
 						serverId: this.config.serverId ?? "gateway-1",
-						serverVersion: this.config.serverVersion ?? "0.5.0",
+						serverVersion: this.config.serverVersion ?? AGENTWEAVE_VERSION,
 					},
 				};
 				ws.send(JSON.stringify(response));

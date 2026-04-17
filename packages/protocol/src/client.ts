@@ -6,6 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
+import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import type { ToolRequest, ToolDecision, RawOutput, OutputDecision, InnerEvent } from "@agentweave/types";
 import type {
 	AWOCPMessage,
@@ -64,7 +65,7 @@ export class AWOCPClient {
 
 	constructor(config: AWOCPClientConfig) {
 		this.config = {
-			clientVersion: "0.4.0",
+			clientVersion: AGENTWEAVE_VERSION,
 			model: "unknown",
 			reconnect: true,
 			pingIntervalMs: 30_000,

@@ -3,6 +3,9 @@
  * Wires Inner Harness + Control Plane + Outer Harness into a single governed agent.
  */
 
+import {
+	AGENTWEAVE_VERSION,
+} from "@agentweave/types";
 import type {
 	InnerEvent,
 	TerminalResult,
@@ -213,7 +216,7 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 	// 5. Load plugins (sync: inline manifests only — path-based is async via activateAll)
 	const pluginLoader = new PluginLoader();
 	const pluginContext: PluginContext = {
-		version: "0.5.1",
+		version: AGENTWEAVE_VERSION,
 		projectRoot: process.cwd(),
 		dataDir: "",
 	};

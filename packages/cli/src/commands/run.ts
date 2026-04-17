@@ -5,7 +5,7 @@
  */
 
 import { createHarness } from "@agentweave/sdk";
-// TODO: Wire real Vercel AI SDK provider in Phase 2 (currently uses default empty LLM caller)
+import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import type { CreateHarnessOptions, InnerEvent } from "@agentweave/sdk";
 
 export interface RunCommandArgs {
@@ -17,7 +17,7 @@ export interface RunCommandArgs {
 }
 
 export async function runCommand(args: RunCommandArgs): Promise<void> {
-	console.log(`\n  AgentWeave v0.1.0\n`);
+	console.log(`\n  AgentWeave v${AGENTWEAVE_VERSION}\n`);
 	console.log(`  Model:  ${args.model}`);
 	if (args.budget) console.log(`  Budget: $${args.budget}`);
 	console.log(`  Prompt: "${args.prompt}"`);
