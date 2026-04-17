@@ -2,6 +2,7 @@ export { createHarness } from "./agentweave";
 export type {
 	CreateHarnessOptions,
 	HarnessInstance,
+	AgentHandle,
 	RunInstanceOptions,
 	RunResult,
 } from "./agentweave";
@@ -19,6 +20,9 @@ export type {
 	HookDefinition,
 	ContentBlock,
 	Message,
+	AgentSpawnConfig,
+	AgentInfo,
+	AgentMessage,
 } from "@agentweave/types";
 
 // Re-export testing utilities

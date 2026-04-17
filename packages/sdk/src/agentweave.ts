@@ -12,11 +12,15 @@ import type {
 	TokenUsage,
 	InnerState,
 	Message,
+	AgentSpawnConfig,
+	AgentInfo,
+	AgentMessage,
+	AgentMessageType,
 } from "@agentweave/types";
 import { createControlPlane } from "@agentweave/control-plane";
 import { AgentLoop } from "@agentweave/inner-harness";
 import type { LLMCallResult } from "@agentweave/inner-harness";
-import { OuterHarness } from "@agentweave/outer-harness";
+import { OuterHarness, MultiAgentOrchestrator } from "@agentweave/outer-harness";
 import type { OuterHarnessConfig } from "@agentweave/outer-harness";
 
 // ─── Public Config (simplified for SDK consumers) ────────────────
@@ -55,6 +59,12 @@ export interface CreateHarnessOptions {
 		maxPerDay?: number;
 		warningThreshold?: number;
 	};
+
+	/** Multi-agent orchestration */
+	multiAgent?: {
+		maxConcurrentAgents?: number;
+		totalBudgetUsd?: number;
+	};
 }
 
 // ─── Harness Instance ────────────────────────────────────────────
@@ -86,9 +96,45 @@ export interface HarnessInstance {
 		) => Promise<LLMCallResult>,
 	): void;
 
+	/** Spawn a child agent (requires multiAgent config). */
+	spawnAgent(config: AgentSpawnConfig): AgentHandle;
+
+	/** Get the multi-agent orchestrator (null if not configured). */
+	getOrchestrator(): MultiAgentOrchestrator | null;
+
 	/** Access inner components for advanced usage. */
 	inner: AgentLoop;
 	outer: OuterHarness;
+}
+
+// ─── Agent Handle (child agent) ─────────────────────────────────
+
+export interface AgentHandle {
+	/** Agent ID from orchestrator. */
+	readonly id: string;
+	/** Agent name. */
+	readonly name: string;
+	/** Run the child agent to completion. */
+	run(options?: RunInstanceOptions): Promise<RunResult>;
+	/** Stream events from the child agent. */
+	stream(options?: RunInstanceOptions): AsyncGenerator<InnerEvent, TerminalResult, void>;
+	/** Abort the child agent. */
+	abort(reason?: string): void;
+	/** Get agent info snapshot from orchestrator. */
+	getInfo(): AgentInfo;
+	/** Send a message to this agent's queue. */
+	send(from: string, type: AgentMessageType, payload: unknown): void;
+	/** Drain pending messages for this agent. */
+	receive(): AgentMessage[];
+	/** Set a custom LLM caller for this child. */
+	setLLMCaller(
+		caller: (
+			messages: ReadonlyArray<Message>,
+			model: string,
+		) => Promise<LLMCallResult>,
+	): void;
+	/** The child's inner AgentLoop (advanced). */
+	inner: AgentLoop;
 }
 
 export interface RunInstanceOptions {
@@ -127,6 +173,13 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 			maxPerDay: options.budget?.maxPerDay,
 			warningThreshold: options.budget?.warningThreshold ?? 0.8,
 		},
+		multiAgent: options.multiAgent
+			? {
+					maxConcurrentAgents: options.multiAgent.maxConcurrentAgents ?? 5,
+					totalBudgetUsd: options.multiAgent.totalBudgetUsd ?? 50,
+					conflictStrategy: "sequential",
+				}
+			: undefined,
 	};
 
 	// 3. Create Outer Harness and connect to Control Plane
@@ -143,6 +196,11 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 		maxTurns: options.maxTurns,
 		thinkingEnabled: options.thinkingEnabled,
 	});
+
+	// Track the current LLM caller so children can inherit it
+	let currentLLMCaller:
+		| ((messages: ReadonlyArray<Message>, model: string) => Promise<LLMCallResult>)
+		| null = null;
 
 	// 5. Build the instance
 	const instance: HarnessInstance = {
@@ -189,7 +247,22 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 		},
 
 		setLLMCaller(caller) {
+			currentLLMCaller = caller;
 			inner.setLLMCaller(caller);
+		},
+
+		spawnAgent(config) {
+			return createAgentHandle(config, {
+				orchestrator: outer.getOrchestrator(),
+				parentOptions: options,
+				outerConfig,
+				failMode,
+				currentLLMCaller,
+			});
+		},
+
+		getOrchestrator() {
+			return outer.getOrchestrator();
 		},
 
 		inner,
@@ -197,4 +270,210 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 	};
 
 	return instance;
+}
+
+// ─── Child Agent Factory ────────────────────────────────────────
+
+interface SpawnContext {
+	orchestrator: MultiAgentOrchestrator | null;
+	parentOptions: CreateHarnessOptions;
+	outerConfig: OuterHarnessConfig;
+	failMode: "open" | "closed";
+	currentLLMCaller:
+		| ((messages: ReadonlyArray<Message>, model: string) => Promise<LLMCallResult>)
+		| null;
+}
+
+function createAgentHandle(
+	config: AgentSpawnConfig,
+	ctx: SpawnContext,
+): AgentHandle {
+	const { orchestrator, parentOptions, failMode } = ctx;
+
+	if (!orchestrator) {
+		throw new Error(
+			"multiAgent not configured. Pass multiAgent option to createHarness().",
+		);
+	}
+
+	// Register with orchestrator (validates budget + concurrency)
+	const agentInfo = orchestrator.spawn(config);
+
+	// Create child ControlPlane
+	const childCP = createControlPlane({ failMode });
+
+	// Create child OuterHarness — inherits parent output config, uses child permissions/budget
+	const childOuter = new OuterHarness({
+		permissions: {
+			mode: config.permissions?.mode ?? ctx.outerConfig.permissions.mode,
+			rules: config.permissions?.rules ?? ctx.outerConfig.permissions.rules,
+			failMode,
+			timeoutMs: 5000,
+			askTimeoutMs: 60000,
+		},
+		output: ctx.outerConfig.output,
+		budget: {
+			maxPerSession: config.budgetUsd,
+			warningThreshold: 0.8,
+		},
+	});
+	childOuter.connectToControlPlane(childCP);
+
+	// Create child AgentLoop
+	const childInner = new AgentLoop({
+		controlPlane: childCP,
+		model: config.model ?? parentOptions.model,
+		tools: parentOptions.tools,
+		systemPrompt: parentOptions.systemPrompt,
+		maxTurns: config.maxTurns,
+	});
+
+	// Inherit parent LLM caller
+	if (ctx.currentLLMCaller) {
+		childInner.setLLMCaller(ctx.currentLLMCaller);
+	}
+
+	// Timeout management
+	let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+
+	const handle: AgentHandle = {
+		id: agentInfo.id,
+		name: agentInfo.name,
+
+		async run(runOpts) {
+			orchestrator.markRunning(agentInfo.id);
+
+			if (config.timeoutMs) {
+				timeoutTimer = setTimeout(() => {
+					childInner.abort("timeout");
+				}, config.timeoutMs);
+			}
+
+			try {
+				const events: InnerEvent[] = [];
+				let terminalResult: TerminalResult = { reason: "completed" };
+
+				const gen = childInner.run(config.prompt, {
+					maxTurns: runOpts?.maxTurns ?? config.maxTurns,
+					maxBudgetUsd: config.budgetUsd,
+					signal: runOpts?.signal,
+				});
+
+				for (;;) {
+					const { value, done } = await gen.next();
+					if (done) {
+						terminalResult = value;
+						break;
+					}
+					events.push(value);
+
+					// Track cost delta in orchestrator
+					if (value.type === "llm:stream_end" && value.usage) {
+						const cost = value.usage.totalCost;
+						if (cost > 0) {
+							orchestrator.addCost(agentInfo.id, cost);
+						}
+					}
+				}
+
+				if (!isTerminal(orchestrator.getAgent(agentInfo.id))) {
+					if (terminalResult.reason === "aborted") {
+						orchestrator.markAborted(agentInfo.id);
+					} else {
+						orchestrator.markCompleted(agentInfo.id, terminalResult);
+					}
+				}
+				return { result: terminalResult, events };
+			} catch (err) {
+				if (!isTerminal(orchestrator.getAgent(agentInfo.id))) {
+					orchestrator.markFailed(agentInfo.id, err instanceof Error ? err.message : String(err));
+				}
+				throw err;
+			} finally {
+				if (timeoutTimer) clearTimeout(timeoutTimer);
+			}
+		},
+
+		async *stream(runOpts) {
+			orchestrator.markRunning(agentInfo.id);
+
+			if (config.timeoutMs) {
+				timeoutTimer = setTimeout(() => {
+					childInner.abort("timeout");
+				}, config.timeoutMs);
+			}
+
+			try {
+				const gen = childInner.run(config.prompt, {
+					maxTurns: runOpts?.maxTurns ?? config.maxTurns,
+					maxBudgetUsd: config.budgetUsd,
+					signal: runOpts?.signal,
+				});
+
+				for (;;) {
+					const { value, done } = await gen.next();
+					if (done) {
+						if (!isTerminal(orchestrator.getAgent(agentInfo.id))) {
+							if (value.reason === "aborted") {
+								orchestrator.markAborted(agentInfo.id);
+							} else {
+								orchestrator.markCompleted(agentInfo.id, value);
+							}
+						}
+						return value;
+					}
+
+					if (value.type === "llm:stream_end" && value.usage) {
+						const cost = value.usage.totalCost;
+						if (cost > 0) {
+							orchestrator.addCost(agentInfo.id, cost);
+						}
+					}
+
+					yield value;
+				}
+			} catch (err) {
+				if (!isTerminal(orchestrator.getAgent(agentInfo.id))) {
+					orchestrator.markFailed(agentInfo.id, err instanceof Error ? err.message : String(err));
+				}
+				throw err;
+			} finally {
+				if (timeoutTimer) clearTimeout(timeoutTimer);
+			}
+		},
+
+		abort(reason) {
+			childInner.abort(reason);
+			try {
+				orchestrator.markAborted(agentInfo.id);
+			} catch {
+				// Already in terminal state — ignore
+			}
+		},
+
+		getInfo() {
+			return orchestrator.getAgent(agentInfo.id)!;
+		},
+
+		send(from, type, payload) {
+			orchestrator.send(from, agentInfo.id, type, payload);
+		},
+
+		receive() {
+			return orchestrator.receive(agentInfo.id);
+		},
+
+		setLLMCaller(caller) {
+			childInner.setLLMCaller(caller);
+		},
+
+		inner: childInner,
+	};
+
+	return handle;
+}
+
+function isTerminal(agent: AgentInfo | undefined): boolean {
+	if (!agent) return true;
+	return agent.state === "completed" || agent.state === "failed" || agent.state === "aborted";
 }

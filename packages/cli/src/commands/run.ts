@@ -96,6 +96,18 @@ function printEvent(event: InnerEvent): void {
 		case "tool:failed":
 			console.log(`  FAILED: ${event.toolUseId} — ${event.error}`);
 			break;
+		case "agent:spawned":
+			console.log(`  Agent: ${event.name} spawned [${event.childAgentId}]`);
+			break;
+		case "agent:completed":
+			console.log(`  Agent: ${event.name} completed`);
+			break;
+		case "agent:failed":
+			console.log(`  Agent: ${event.name} FAILED — ${event.error}`);
+			break;
+		case "agent:aborted":
+			console.log(`  Agent: ${event.name} aborted`);
+			break;
 		// Other events: silent in default output
 	}
 }
