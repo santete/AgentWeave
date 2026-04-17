@@ -108,3 +108,12 @@ export type {
 	MultiAgentConfig,
 	AgentLifecycleEvent,
 } from "./multi-agent";
+
+// Plugins
+export type {
+	PluginManifest,
+	PluginPermissions,
+	PluginContext,
+	PluginRegistration,
+	PluginConfig,
+} from "./plugin";

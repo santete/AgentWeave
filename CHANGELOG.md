@@ -5,6 +5,21 @@ All notable changes to AgentWeave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1-alpha.1] - 2026-04-17
+
+### Added
+
+- **Plugin System** — Extensible plugin architecture for AgentWeave.
+  - **Plugin types** — PluginManifest, PluginContext, PluginRegistration, PluginPermissions, PluginConfig in @agentweave/types. HarnessConfig.plugins field.
+  - **PluginLoader** — Load plugins from manifests (inline) or file paths (dynamic import). Validate manifest (name, version, activate). Validate permissions (tools/hooks declared vs registered). Activate/deactivate lifecycle with reverse-order cleanup.
+  - **SDK integration** — `createHarness({ plugins: [...] })` auto-activates plugins, registers tools with inner ToolRegistry, registers hooks with outer HookEngine. `getPlugins()` returns loaded plugin list.
+
+### Stats
+
+- 8 packages, 27 test files, 270 tests (+16 new), 0 failures
+
+---
+
 ## [0.5.0-alpha.1] - 2026-04-17
 
 ### Added

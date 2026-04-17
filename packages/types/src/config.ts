@@ -6,6 +6,7 @@
 import type { PermissionConfig } from "./permissions";
 import type { HookDefinition } from "./hooks";
 import type { MultiAgentConfig } from "./multi-agent";
+import type { PluginConfig } from "./plugin";
 
 export interface HarnessConfig {
 	// Inner
@@ -66,6 +67,9 @@ export interface HarnessConfig {
 
 	// Outer - Multi-Agent (optional)
 	multiAgent?: MultiAgentConfig;
+
+	// Plugins (optional)
+	plugins?: PluginConfig[];
 }
 
 // ─── Output Validation Rules (discriminated union) ───────────────

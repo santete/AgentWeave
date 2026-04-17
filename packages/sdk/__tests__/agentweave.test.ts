@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import { createHarness, createMockLLMCaller, MockScenarios } from "../src/index";
-import type { ToolDefinition, InnerEvent, AgentLifecycleEvent } from "@agentweave/types";
+import type { ToolDefinition, InnerEvent, AgentLifecycleEvent, PluginManifest } from "@agentweave/types";
 
 function makeReadTool(name: string): ToolDefinition {
 	return {
@@ -308,6 +308,98 @@ describe("createHarness", () => {
 			expect(types).toContain("spawned");
 			expect(types).toContain("running");
 			expect(types).toContain("completed");
+		});
+	});
+
+	// ─── Plugins ─────────────────────────────────────────────────
+
+	describe("plugins", () => {
+		it("should load plugin and register its tools", async () => {
+			const pluginTool = makeReadTool("PluginGrep");
+			const plugin: PluginManifest = {
+				name: "grep-plugin",
+				version: "1.0.0",
+				description: "Adds PluginGrep tool",
+				permissions: { tools: { register: ["PluginGrep"] } },
+				activate: async () => ({ tools: [pluginTool] }),
+			};
+
+			const harness = createHarness({
+				model: "mock",
+				permissions: { mode: "permissive" },
+				plugins: [plugin],
+			});
+
+			// Give plugin time to activate (fire-and-forget)
+			await new Promise((r) => setTimeout(r, 50));
+
+			// Tool should be registered
+			const tools = harness.inner.getTools();
+			const found = tools.find((t) => t.name === "PluginGrep");
+			expect(found).toBeDefined();
+		});
+
+		it("should report loaded plugins via getPlugins()", async () => {
+			const plugin: PluginManifest = {
+				name: "info-plugin",
+				version: "2.0.0",
+				description: "Just info",
+				activate: async () => ({}),
+			};
+
+			const harness = createHarness({
+				model: "mock",
+				plugins: [plugin],
+			});
+
+			await new Promise((r) => setTimeout(r, 50));
+
+			const loaded = harness.getPlugins();
+			expect(loaded).toHaveLength(1);
+			expect(loaded[0]!.manifest.name).toBe("info-plugin");
+		});
+
+		it("should run agent using plugin-registered tool", async () => {
+			const pluginTool: ToolDefinition = {
+				name: "EchoTool",
+				description: "Echoes input",
+				parameters: z.object({}).passthrough(),
+				execute: async () => "echoed!",
+				metadata: { isReadOnly: true, isDestructive: false, isConcurrencySafe: true, category: "custom" },
+			};
+
+			const plugin: PluginManifest = {
+				name: "echo-plugin",
+				version: "1.0.0",
+				description: "Echo plugin",
+				permissions: { tools: { register: ["EchoTool"] } },
+				activate: async () => ({ tools: [pluginTool] }),
+			};
+
+			const harness = createHarness({
+				model: "mock",
+				tools: [],
+				permissions: { mode: "permissive" },
+				plugins: [plugin],
+			});
+
+			await new Promise((r) => setTimeout(r, 50));
+
+			harness.setLLMCaller(createMockLLMCaller([
+				{ toolCalls: [{ toolName: "EchoTool", toolInput: {} }] },
+				{ text: "Done with echo." },
+			]));
+
+			const { result, events } = await harness.run("Use echo");
+			expect(result.reason).toBe("completed");
+
+			const completed = events.find((e) => e.type === "tool:completed");
+			expect(completed).toBeDefined();
+		});
+
+		it("should work with no plugins configured", () => {
+			const harness = createHarness({ model: "mock" });
+			expect(harness.getPlugins()).toHaveLength(0);
 		});
 	});
 

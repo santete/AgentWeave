@@ -23,6 +23,8 @@ export type {
 	AgentSpawnConfig,
 	AgentInfo,
 	AgentMessage,
+	PluginManifest,
+	PluginRegistration,
 } from "@agentweave/types";
 
 // Re-export testing utilities
