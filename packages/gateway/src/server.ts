@@ -126,7 +126,11 @@ export class AWOCPServer {
 			// ── Auth phase ──
 			if (!authenticated && msg.type === "auth:request") {
 				clearTimeout(authTimeout);
-				const authPayload = msg.payload as AuthRequestPayload;
+				if (!isAuthRequest(msg.payload)) {
+					ws.close(4002, "Malformed auth request");
+					return;
+				}
+				const authPayload = msg.payload;
 				const authResult = verifyAuth(authPayload, this.config.auth);
 
 				// Send auth response
@@ -178,7 +182,9 @@ export class AWOCPServer {
 			// ── Events ──
 			if (msg.type === "event:inner") {
 				try {
-					this.eventHandler?.(msg.payload as InnerEvent, client);
+					if (isInnerEvent(msg.payload)) {
+						this.eventHandler?.(msg.payload, client);
+					}
 				} catch {
 					// Non-blocking
 				}
@@ -237,10 +243,22 @@ export class AWOCPServer {
 			? "tool_request" as const
 			: "output_request" as const;
 
+		if (!isInterceptPayload(msg.payload)) {
+			client.ws.send(JSON.stringify({
+				id: randomUUID(), ts: new Date().toISOString(),
+				type: responseType, sessionId: msg.sessionId, agentId: msg.agentId,
+				correlationId: msg.correlationId,
+				payload: interceptType === "tool_request"
+					? { behavior: "deny" as const, reason: "Malformed payload", source: "gateway" }
+					: { action: "approve" as const, stages: [], reason: "Malformed payload" },
+			}));
+			return;
+		}
+
 		try {
 			const result = await this.interceptHandler(
 				interceptType,
-				msg.payload as ToolRequest | RawOutput,
+				msg.payload,
 				client,
 			);
 
@@ -273,9 +291,38 @@ export class AWOCPServer {
 
 	private parseMessage(data: unknown): AWOCPMessage | null {
 		try {
-			return JSON.parse(String(data)) as AWOCPMessage;
+			const parsed: unknown = JSON.parse(String(data));
+			if (!isAWOCPMessage(parsed)) return null;
+			return parsed;
 		} catch {
 			return null;
 		}
 	}
+}
+
+// ─── Runtime Type Guards (replace `as` casts on untrusted JSON) ──
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+	return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function isAWOCPMessage(v: unknown): v is AWOCPMessage {
+	if (!isRecord(v)) return false;
+	return typeof v.type === "string" && typeof v.sessionId === "string" && "payload" in v;
+}
+
+function isAuthRequest(v: unknown): v is AuthRequestPayload {
+	if (!isRecord(v)) return false;
+	return typeof v.token === "string" && typeof v.clientVersion === "string" && isRecord(v.sessionInfo);
+}
+
+function isInnerEvent(v: unknown): v is InnerEvent {
+	if (!isRecord(v)) return false;
+	return typeof v.type === "string" && typeof v.sessionId === "string" && typeof v.agentId === "string";
+}
+
+function isInterceptPayload(v: unknown): v is ToolRequest | RawOutput {
+	if (!isRecord(v)) return false;
+	// ToolRequest has toolName; RawOutput has text — at least one must be present
+	return typeof v.toolName === "string" || typeof v.text === "string";
 }

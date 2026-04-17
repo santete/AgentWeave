@@ -3,7 +3,7 @@
  * Wires AWOCPServer with a shared OuterHarness for centralized governance.
  */
 
-import type { PermissionConfig, InnerEvent } from "@agentweave/types";
+import type { PermissionConfig, InnerEvent, ToolRequest, RawOutput } from "@agentweave/types";
 import { OuterHarness } from "@agentweave/outer-harness";
 import type { OuterHarnessConfig } from "@agentweave/outer-harness";
 import type { BudgetConfig } from "@agentweave/outer-harness";
@@ -53,11 +53,12 @@ export class GatewayServer {
 		});
 
 		// Wire intercepts → OuterHarness governance
+		// Narrowing: server.ts validates payload shape before calling handler
 		this.server.onIntercept(async (type, payload) => {
 			if (type === "tool_request") {
-				return this.outer.onToolRequested(payload as Parameters<typeof this.outer.onToolRequested>[0]);
+				return this.outer.onToolRequested(payload as ToolRequest);
 			}
-			return this.outer.onOutputReady(payload as Parameters<typeof this.outer.onOutputReady>[0]);
+			return this.outer.onOutputReady(payload as RawOutput);
 		});
 
 		// Wire events → collect for observability (capped ring buffer)

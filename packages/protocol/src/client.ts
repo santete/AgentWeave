@@ -113,7 +113,12 @@ export class AWOCPClient {
 				// Auth response (first message)
 				if (msg.type === "auth:response" && !this._authenticated) {
 					clearTimeout(authTimeout);
-					const payload = msg.payload as AuthResponsePayload;
+					const payload = asAuthResponse(msg.payload);
+					if (!payload) {
+						ws.close();
+						reject(new Error("Malformed auth response"));
+						return;
+					}
 					if (payload.status === "ok") {
 						this._authenticated = true;
 						this.startPing();
@@ -196,7 +201,7 @@ export class AWOCPClient {
 	// ─── Internal ───────────────────────────────────────────────
 
 	private async sendIntercept<T>(
-		requestType: string,
+		requestType: AWOCPMessage["type"],
 		payload: unknown,
 	): Promise<T> {
 		if (!this.canSend()) {
@@ -204,7 +209,7 @@ export class AWOCPClient {
 		}
 
 		const correlationId = randomUUID();
-		const msg = this.makeMessage(requestType as AWOCPMessage["type"], payload, correlationId);
+		const msg = this.makeMessage(requestType, payload, correlationId);
 
 		return new Promise<T>((resolve, reject) => {
 			const timer = setTimeout(() => {
@@ -279,7 +284,9 @@ export class AWOCPClient {
 
 	private parseMessage(data: WebSocket.RawData): AWOCPMessage | null {
 		try {
-			return JSON.parse(String(data)) as AWOCPMessage;
+			const parsed: unknown = JSON.parse(String(data));
+			if (!isAWOCPMessage(parsed)) return null;
+			return parsed;
 		} catch {
 			return null;
 		}
@@ -331,4 +338,27 @@ export class AWOCPClient {
 			});
 		}, delay);
 	}
+}
+
+// ─── Runtime Type Guards ────────────────────────────────────────
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+	return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function isAWOCPMessage(v: unknown): v is AWOCPMessage {
+	if (!isRecord(v)) return false;
+	return typeof v.type === "string" && typeof v.sessionId === "string" && "payload" in v;
+}
+
+function asAuthResponse(v: unknown): AuthResponsePayload | null {
+	if (!isRecord(v)) return null;
+	const status = v.status;
+	if (status !== "ok" && status !== "denied" && status !== "version_mismatch") return null;
+	return {
+		status,
+		serverId: typeof v.serverId === "string" ? v.serverId : undefined,
+		serverVersion: typeof v.serverVersion === "string" ? v.serverVersion : undefined,
+		error: typeof v.error === "string" ? v.error : undefined,
+	};
 }
