@@ -371,13 +371,14 @@ export class AgentLoop implements InnerHarnessProvider {
 	}
 
 	private async callRealLLM(): Promise<LLMCallResult> {
-		// Dynamic import — avoids crash if @ai-sdk/anthropic not installed
-		const { generateText } = await import("ai");
-		const { anthropic } = await import("@ai-sdk/anthropic");
+		// Dynamic import — avoids crash if provider SDK not installed
+		const { generateText, tool } = await import("ai");
+
+		// Auto-detect provider from model name
+		const llmModel = await this.resolveModel();
 
 		const tools: Record<string, unknown> = {};
 		for (const toolDef of this.registry.getAll()) {
-			const { tool } = await import("ai");
 			tools[toolDef.name] = tool({
 				description: toolDef.description,
 				parameters: toolDef.parameters,
@@ -385,7 +386,7 @@ export class AgentLoop implements InnerHarnessProvider {
 		}
 
 		const result = await generateText({
-			model: anthropic(this.model),
+			model: llmModel,
 			messages: this.messages.getMessages().map((m) => ({
 				role: m.role as "user" | "assistant",
 				content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
@@ -410,6 +411,26 @@ export class AgentLoop implements InnerHarnessProvider {
 				outputTokens: result.usage.completionTokens,
 			} : undefined,
 		};
+	}
+
+	/**
+	 * Auto-detect LLM provider from model name.
+	 * Supports: gemini-* → @ai-sdk/google, gpt-* → @ai-sdk/openai, default → @ai-sdk/anthropic
+	 */
+	private async resolveModel(): Promise<Parameters<typeof import("ai").generateText>[0]["model"]> {
+		const m = this.model;
+
+		if (m.startsWith("gemini")) {
+			const { google } = await import("@ai-sdk/google");
+			return google(m);
+		}
+		if (m.startsWith("gpt") || m.startsWith("o1") || m.startsWith("o3") || m.startsWith("o4")) {
+			const { openai } = await import("@ai-sdk/openai");
+			return openai(m);
+		}
+		// Default: Anthropic (claude-*)
+		const { anthropic } = await import("@ai-sdk/anthropic");
+		return anthropic(m);
 	}
 
 	// ─── InnerHarnessProvider interface ──────────────────────────

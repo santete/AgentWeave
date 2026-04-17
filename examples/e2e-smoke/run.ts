@@ -22,17 +22,31 @@ import { BUILT_IN_TOOLS } from "../../packages/inner-harness/src/built-in-tools/
 import type { InnerEvent } from "../../packages/types/src/index";
 
 async function main() {
-	if (!process.env.ANTHROPIC_API_KEY) {
-		console.error("ERROR: Set ANTHROPIC_API_KEY env var first");
+	// Auto-detect provider from env vars
+	const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
+	const hasGoogle = !!process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+	const hasOpenAI = !!process.env.OPENAI_API_KEY;
+
+	if (!hasAnthropic && !hasGoogle && !hasOpenAI) {
+		console.error("ERROR: Set one of these API key env vars:");
 		console.error("  export ANTHROPIC_API_KEY=sk-ant-...");
+		console.error("  export GOOGLE_GENERATIVE_AI_API_KEY=AI...");
+		console.error("  export OPENAI_API_KEY=sk-...");
 		process.exit(1);
 	}
+
+	// Pick cheapest model per provider
+	const model = hasGoogle
+		? "gemini-2.0-flash"
+		: hasAnthropic
+			? "claude-haiku-4-5"
+			: "gpt-4o-mini";
 
 	console.log("\n  AgentWeave E2E Smoke Test");
 	console.log("  ────────────────────────\n");
 
 	const harness = createHarness({
-		model: "claude-haiku-4-5", // Cheapest model
+		model,
 		tools: BUILT_IN_TOOLS,
 		permissions: {
 			mode: "default",
@@ -60,7 +74,7 @@ async function main() {
 	});
 
 	console.log("  Config:");
-	console.log("    Model:  claude-haiku-4-5");
+	console.log(`    Model:  ${model}`);
 	console.log("    Tools:  " + BUILT_IN_TOOLS.map((t) => t.name).join(", "));
 	console.log("    Budget: $0.50 max");
 	console.log("    Mode:   default (closed failMode)\n");
