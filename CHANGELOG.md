@@ -5,6 +5,24 @@ All notable changes to AgentWeave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0-alpha.1] - 2026-04-17
+
+### Added
+
+- **MultiAgentOrchestrator** — Agent registry with lifecycle state machine (pending/running/completed/failed/aborted). Inter-agent message queue (send/receive/peek). Per-agent budget tracking with inheritance constraints (child cannot exceed parent remaining). Concurrent agent limit enforcement. AgentLifecycleEvent listener subscriptions.
+- **LockManager** — Sequential file locking for multi-agent conflict resolution. Async acquire with configurable timeout, FIFO wait queue, reentrant locks (no depth tracking), releaseAll for agent cleanup, destroy rejects all waiters.
+- **SDK spawnAgent()** — `createHarness({ multiAgent })` enables multi-agent mode. `spawnAgent(config)` returns an `AgentHandle` with `run()`, `stream()`, `abort()`, `send()`, `receive()`, `setLLMCaller()`. Each child gets its own ControlPlane + OuterHarness + AgentLoop. Timeout auto-abort, LLM caller inheritance, terminal-state guards.
+- **New types** — AgentState, AgentSpawnConfig, AgentInfo, AgentMessage, MultiAgentConfig, AgentLifecycleEvent, AgentHandle. 5 new InnerEvent types: agent:spawned, agent:completed, agent:failed, agent:aborted, agent:message.
+- **CLI agent events** — Terminal output now displays agent:spawned, agent:completed, agent:failed, agent:aborted events.
+- **HarnessConfig.multiAgent** — Optional multi-agent config field in framework configuration.
+
+### Stats
+
+- 6 packages, 23 test files, 241 tests (+55 new), 0 failures
+- +1,700 lines from Phase 3
+
+---
+
 ## [0.3.0-alpha.1] - 2026-04-16
 
 ### Added

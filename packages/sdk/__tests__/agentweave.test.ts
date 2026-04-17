@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import { createHarness, createMockLLMCaller, MockScenarios } from "../src/index";
-import type { ToolDefinition, InnerEvent } from "@agentweave/types";
+import type { ToolDefinition, InnerEvent, AgentLifecycleEvent } from "@agentweave/types";
 
 function makeReadTool(name: string): ToolDefinition {
 	return {
@@ -167,6 +167,148 @@ describe("createHarness", () => {
 
 		const { result } = await harness.run("Do something long");
 		expect(result.reason).toBe("aborted");
+	});
+
+	// ─── Multi-Agent ─────────────────────────────────────────────
+
+	describe("spawnAgent", () => {
+		it("should throw if multiAgent not configured", () => {
+			const harness = createHarness({ model: "mock" });
+			expect(() =>
+				harness.spawnAgent({ name: "w", prompt: "p" }),
+			).toThrow("multiAgent not configured");
+		});
+
+		it("should return null orchestrator when not configured", () => {
+			const harness = createHarness({ model: "mock" });
+			expect(harness.getOrchestrator()).toBeNull();
+		});
+
+		it("should return orchestrator when configured", () => {
+			const harness = createHarness({
+				model: "mock",
+				multiAgent: { maxConcurrentAgents: 3, totalBudgetUsd: 20 },
+			});
+			expect(harness.getOrchestrator()).not.toBeNull();
+		});
+
+		it("should spawn and run a child agent to completion", async () => {
+			const harness = createHarness({
+				model: "mock",
+				multiAgent: { maxConcurrentAgents: 3, totalBudgetUsd: 20 },
+				permissions: { mode: "permissive" },
+			});
+			harness.setLLMCaller(createMockLLMCaller(MockScenarios.simpleResponse));
+
+			const child = harness.spawnAgent({
+				name: "worker-1",
+				prompt: "Do something",
+				budgetUsd: 5,
+			});
+
+			expect(child.id).toMatch(/^agent_/);
+			expect(child.name).toBe("worker-1");
+
+			// Child inherits parent LLM caller
+			const { result } = await child.run();
+
+			expect(result.reason).toBe("completed");
+
+			// Orchestrator should track completion
+			const info = child.getInfo();
+			expect(info.state).toBe("completed");
+		});
+
+		it("should enforce budget overflow on spawn", () => {
+			const harness = createHarness({
+				model: "mock",
+				multiAgent: { maxConcurrentAgents: 5, totalBudgetUsd: 10 },
+			});
+
+			harness.spawnAgent({ name: "a1", prompt: "p", budgetUsd: 8 });
+			expect(() =>
+				harness.spawnAgent({ name: "a2", prompt: "p", budgetUsd: 5 }),
+			).toThrow("Budget overflow");
+		});
+
+		it("should enforce max concurrent agents", () => {
+			const harness = createHarness({
+				model: "mock",
+				multiAgent: { maxConcurrentAgents: 1, totalBudgetUsd: 50 },
+			});
+
+			harness.spawnAgent({ name: "a1", prompt: "p" });
+			expect(() =>
+				harness.spawnAgent({ name: "a2", prompt: "p" }),
+			).toThrow("Max concurrent agents");
+		});
+
+		it("should support send/receive messages between agents", () => {
+			const harness = createHarness({
+				model: "mock",
+				multiAgent: { maxConcurrentAgents: 3, totalBudgetUsd: 20 },
+			});
+
+			const a1 = harness.spawnAgent({ name: "coord", prompt: "p" });
+			const a2 = harness.spawnAgent({ name: "worker", prompt: "p" });
+
+			a2.send(a1.id, "instruction", { task: "research" });
+			const messages = a2.receive();
+
+			expect(messages).toHaveLength(1);
+			expect(messages[0].from).toBe(a1.id);
+			expect(messages[0].payload).toEqual({ task: "research" });
+		});
+
+		it("should abort child agent", async () => {
+			const harness = createHarness({
+				model: "mock",
+				tools: [makeReadTool("FileRead")],
+				multiAgent: { maxConcurrentAgents: 3, totalBudgetUsd: 20 },
+				permissions: { mode: "permissive" },
+			});
+
+			const child = harness.spawnAgent({
+				name: "slow",
+				prompt: "Do something slow",
+			});
+
+			// LLM caller that keeps returning tool calls (keeps loop alive)
+			child.setLLMCaller(async () => {
+				await new Promise((r) => setTimeout(r, 200));
+				return {
+					toolCalls: [{ toolUseId: "t1", toolName: "FileRead", toolInput: {} }],
+					stopReason: "tool_use",
+				};
+			});
+
+			// Abort after 50ms
+			setTimeout(() => child.abort("test"), 50);
+
+			const { result } = await child.run();
+			expect(result.reason).toBe("aborted");
+			expect(child.getInfo().state).toBe("aborted");
+		});
+
+		it("should track agent lifecycle events via orchestrator", async () => {
+			const harness = createHarness({
+				model: "mock",
+				multiAgent: { maxConcurrentAgents: 3, totalBudgetUsd: 20 },
+				permissions: { mode: "permissive" },
+			});
+			harness.setLLMCaller(createMockLLMCaller(MockScenarios.simpleResponse));
+
+			const events: AgentLifecycleEvent[] = [];
+			harness.getOrchestrator()!.onAgentEvent("*", (e) => events.push(e));
+
+			const child = harness.spawnAgent({ name: "w", prompt: "p" });
+			await child.run();
+
+			const types = events.map((e) => e.type);
+			expect(types).toContain("spawned");
+			expect(types).toContain("running");
+			expect(types).toContain("completed");
+		});
 	});
 
 	it("E2E: full flow — prompt -> tool -> permission -> filter -> complete", async () => {
