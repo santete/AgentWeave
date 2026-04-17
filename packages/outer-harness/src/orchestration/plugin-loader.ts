@@ -34,6 +34,11 @@ export class PluginLoader {
 	): Promise<LoadedPlugin> {
 		this.validateManifest(manifest);
 
+		// Reject duplicate plugin names
+		if (this.loaded.some((p) => p.manifest.name === manifest.name)) {
+			throw new Error(`Plugin "${manifest.name}" is already loaded`);
+		}
+
 		const registration = await manifest.activate(context);
 		this.validateRegistration(manifest, registration);
 

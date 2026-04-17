@@ -236,12 +236,13 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 		}
 	}
 
-	// Auto-load plugins eagerly (fire-and-forget — errors surface on first use)
-	void loadPlugins();
+	// Kick off plugin loading — awaited before first run()/stream()
+	const pluginsReady = loadPlugins();
 
 	// 6. Build the instance
 	const instance: HarnessInstance = {
 		async run(prompt, runOpts) {
+			await pluginsReady; // Ensure plugins loaded before execution
 			const events: InnerEvent[] = [];
 			let terminalResult: TerminalResult = { reason: "completed" };
 
@@ -263,12 +264,18 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 			return { result: terminalResult, events };
 		},
 
-		stream(prompt, runOpts) {
-			return inner.run(prompt, {
+		async *stream(prompt, runOpts) {
+			await pluginsReady; // Ensure plugins loaded before execution
+			const gen = inner.run(prompt, {
 				maxTurns: runOpts?.maxTurns,
 				maxBudgetUsd: runOpts?.maxBudgetUsd,
 				signal: runOpts?.signal,
 			});
+			for (;;) {
+				const { value, done } = await gen.next();
+				if (done) return value;
+				yield value;
+			}
 		},
 
 		abort(reason) {
