@@ -57,14 +57,26 @@ export function verifyJWT(token: string, secret: string): JWTPayload | null {
 	if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) return null;
 
 	try {
-		const payload = JSON.parse(base64urlDecode(body)) as JWTPayload;
+		const raw: unknown = JSON.parse(base64urlDecode(body));
+		if (typeof raw !== "object" || raw === null) return null;
+		const obj = raw as Record<string, unknown>;
+
+		// Validate required fields
+		if (typeof obj.sub !== "string") return null;
+		if (typeof obj.role !== "string") return null;
+		if (typeof obj.exp !== "number") return null;
 
 		// Check expiry
-		if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+		if (obj.exp < Math.floor(Date.now() / 1000)) {
 			return null; // expired
 		}
 
-		return payload;
+		return {
+			sub: obj.sub,
+			role: obj.role as Role,
+			iat: typeof obj.iat === "number" ? obj.iat : 0,
+			exp: obj.exp,
+		};
 	} catch {
 		return null;
 	}

@@ -65,10 +65,10 @@ export class GatewayServer {
 			return this.outer.onOutputReady(payload as RawOutput);
 		});
 
-		// REST API (optional)
+		// REST API (optional) — shares same JWT secret as WS auth
 		const restPort = config.restPort ?? config.port + 1;
 		if (restPort !== 0) {
-			this.restApi = new RestApi({ port: restPort }, this.outer, this.server);
+			this.restApi = new RestApi({ port: restPort, secret: config.auth.secret }, this.outer, this.server);
 		}
 
 		// Wire events → collect for observability (capped ring buffer)

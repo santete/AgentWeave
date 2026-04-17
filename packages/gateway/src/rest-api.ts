@@ -1,25 +1,33 @@
 /**
  * REST API — HTTP endpoints for Gateway management.
  * Minimal implementation using Node.js built-in http (no express).
+ * All endpoints require JWT auth. Write ops require team_lead or admin role.
  *
  * Endpoints:
+ *   GET  /api/health      — Health check (no auth)
  *   GET  /api/rules       — List permission rules
- *   POST /api/rules       — Add a permission rule
- *   DELETE /api/rules/:id — Remove a rule by index
+ *   POST /api/rules       — Add a permission rule (team_lead+)
+ *   DELETE /api/rules/:id — Remove a rule by index (team_lead+)
  *   GET  /api/clients     — List connected WebSocket clients
  *   GET  /api/metrics     — Monitor snapshot
- *   GET  /api/health      — Health check
  */
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 import type { OuterHarness } from "@agentweave/outer-harness";
 import type { AWOCPServer } from "./server";
 import type { PermissionRule } from "@agentweave/types";
+import { verifyJWT } from "./auth";
+import type { JWTPayload } from "./auth";
 
 export interface RestApiConfig {
 	/** HTTP port (default: gateway WS port + 1) */
 	port: number;
+	/** JWT secret (same as gateway auth secret). */
+	secret: string;
 }
+
+const VALID_BEHAVIORS = new Set(["allow", "deny", "ask"]);
+const WRITE_ROLES = new Set(["team_lead", "admin"]);
 
 export class RestApi {
 	private httpServer: Server | null = null;
@@ -65,7 +73,7 @@ export class RestApi {
 		// CORS headers
 		res.setHeader("Access-Control-Allow-Origin", "*");
 		res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-		res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+		res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
 		if (method === "OPTIONS") {
 			res.writeHead(204);
@@ -73,20 +81,33 @@ export class RestApi {
 			return;
 		}
 
-		// Route
+		// Health check — no auth required
 		if (url === "/api/health" && method === "GET") {
 			return this.jsonResponse(res, 200, { status: "ok", clients: this.wsServer.getClientCount() });
 		}
 
+		// All other endpoints require JWT auth
+		const jwt = this.authenticate(req);
+		if (!jwt) {
+			return this.jsonResponse(res, 401, { error: "Unauthorized — Bearer JWT required" });
+		}
+
+		// Route
 		if (url === "/api/rules" && method === "GET") {
 			return this.handleGetRules(res);
 		}
 
 		if (url === "/api/rules" && method === "POST") {
+			if (!WRITE_ROLES.has(jwt.role)) {
+				return this.jsonResponse(res, 403, { error: "Forbidden — team_lead or admin role required" });
+			}
 			return this.handleAddRule(req, res);
 		}
 
 		if (url.startsWith("/api/rules/") && method === "DELETE") {
+			if (!WRITE_ROLES.has(jwt.role)) {
+				return this.jsonResponse(res, 403, { error: "Forbidden — team_lead or admin role required" });
+			}
 			const index = Number.parseInt(url.split("/")[3] ?? "", 10);
 			return this.handleDeleteRule(res, index);
 		}
@@ -101,6 +122,14 @@ export class RestApi {
 
 		res.writeHead(404, { "Content-Type": "application/json" });
 		res.end(JSON.stringify({ error: "Not found" }));
+	}
+
+	// ─── Auth ────────────────────────────────────────────────────
+
+	private authenticate(req: IncomingMessage): JWTPayload | null {
+		const auth = req.headers.authorization;
+		if (!auth?.startsWith("Bearer ")) return null;
+		return verifyJWT(auth.slice(7), this.config.secret);
 	}
 
 	// ─── Handlers ───────────────────────────────────────────────
@@ -118,10 +147,28 @@ export class RestApi {
 		}
 
 		try {
-			const rule = JSON.parse(body) as PermissionRule;
-			if (!rule.pattern || !rule.behavior) {
-				return this.jsonResponse(res, 400, { error: "Rule must have pattern and behavior" });
+			const raw: unknown = JSON.parse(body);
+			if (typeof raw !== "object" || raw === null) {
+				return this.jsonResponse(res, 400, { error: "Body must be a JSON object" });
 			}
+			const obj = raw as Record<string, unknown>;
+
+			// Validate required fields
+			if (typeof obj.pattern !== "string" || !obj.pattern) {
+				return this.jsonResponse(res, 400, { error: "Rule must have a non-empty 'pattern' string" });
+			}
+			if (typeof obj.behavior !== "string" || !VALID_BEHAVIORS.has(obj.behavior)) {
+				return this.jsonResponse(res, 400, { error: "Rule 'behavior' must be one of: allow, deny, ask" });
+			}
+
+			const rule: PermissionRule = {
+				pattern: obj.pattern,
+				behavior: obj.behavior as "allow" | "deny" | "ask",
+				source: typeof obj.source === "string" ? obj.source as PermissionRule["source"] : "runtime",
+				priority: typeof obj.priority === "number" ? obj.priority : 0,
+				message: typeof obj.message === "string" ? obj.message : undefined,
+			};
+
 			this.outer.getPermissionEngine().addRule(rule);
 			return this.jsonResponse(res, 201, { ok: true, rule });
 		} catch {

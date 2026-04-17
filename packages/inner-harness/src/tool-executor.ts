@@ -132,12 +132,17 @@ export class ToolExecutor {
 const DEFAULT_DENIED = ["/etc", "/var", "/root", "/sys", "/proc"];
 const SENSITIVE_GLOBS = [".env", ".ssh", ".aws", ".gnupg", "credentials"];
 
+/**
+ * Check tool input for sandbox violations.
+ * LIMITATION: Only inspects known field names (path, file_path, filePath, file,
+ * directory, command). Tools with custom path field names (e.g. target, destination)
+ * bypass this check. Post-MVP: let tools declare path fields in metadata.
+ */
 function checkSandbox(
 	input: Record<string, unknown>,
 	sandbox: SandboxConfig,
 	cwd: string,
 ): string | null {
-	// Extract file paths from common tool input fields
 	const paths: string[] = [];
 	for (const key of ["path", "file_path", "filePath", "file", "directory", "command"]) {
 		const val = input[key];
