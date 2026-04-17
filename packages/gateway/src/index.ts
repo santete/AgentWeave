@@ -6,6 +6,10 @@ export type { GatewayConfig } from "./gateway";
 export { AWOCPServer } from "./server";
 export type { AWOCPServerConfig, ClientConnection, InterceptHandler, EventHandler } from "./server";
 
+// REST API
+export { RestApi } from "./rest-api";
+export type { RestApiConfig } from "./rest-api";
+
 // Auth
-export { verifyAuth } from "./auth";
-export type { AuthConfig } from "./auth";
+export { verifyAuth, signJWT, verifyJWT, issueToken } from "./auth";
+export type { AuthConfig, Role, JWTPayload } from "./auth";

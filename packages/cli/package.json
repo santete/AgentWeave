@@ -6,6 +6,25 @@
   "bin": {
     "agentweave": "./dist/bin.js"
   },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/santete/AgentWeave.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/santete/AgentWeave",
+  "keywords": [
+    "agentweave",
+    "ai-agent",
+    "governance",
+    "harness",
+    "cli",
+    "terminal",
+    "command-line"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "files": ["dist"],
   "scripts": {
     "build": "tsup src/bin.ts --format esm --clean",

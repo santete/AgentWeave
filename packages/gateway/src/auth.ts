@@ -1,29 +1,116 @@
 /**
- * Auth — MVP bearer token verification.
- * Full JWT signing/verification deferred to post-MVP.
+ * Auth — JWT-based authentication for Gateway.
+ * Uses HMAC-SHA256 signing with Node.js built-in crypto (no external deps).
+ * Supports 3 roles: developer, team_lead, admin.
  */
 
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { AuthRequestPayload, AuthResponsePayload } from "@agentweave/protocol";
 
+// ─── Types ──────────────────────────────────────────────────────
+
+export type Role = "developer" | "team_lead" | "admin";
+
 export interface AuthConfig {
-	/** Shared secret token that clients must present. */
-	token: string;
-	/** Minimum client version accepted (semver string, MVP: simple string match). */
+	/** Secret key for JWT HMAC-SHA256 signing. */
+	secret: string;
+	/** Fallback: accept raw bearer token (for backwards compat / testing). */
+	legacyToken?: string;
+	/** Minimum client version accepted. */
 	minClientVersion?: string;
 }
+
+export interface JWTPayload {
+	sub: string; // userId
+	role: Role;
+	iat: number; // issued at (epoch seconds)
+	exp: number; // expiry (epoch seconds)
+}
+
+// ─── JWT Helpers (HMAC-SHA256, no external deps) ────────────────
+
+function base64url(input: string | Buffer): string {
+	const buf = typeof input === "string" ? Buffer.from(input) : input;
+	return buf.toString("base64url");
+}
+
+function base64urlDecode(input: string): string {
+	return Buffer.from(input, "base64url").toString("utf-8");
+}
+
+export function signJWT(payload: JWTPayload, secret: string): string {
+	const header = base64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+	const body = base64url(JSON.stringify(payload));
+	const sig = createHmac("sha256", secret).update(`${header}.${body}`).digest("base64url");
+	return `${header}.${body}.${sig}`;
+}
+
+export function verifyJWT(token: string, secret: string): JWTPayload | null {
+	const parts = token.split(".");
+	if (parts.length !== 3) return null;
+
+	const [header, body, sig] = parts as [string, string, string];
+	const expectedSig = createHmac("sha256", secret).update(`${header}.${body}`).digest("base64url");
+
+	// Timing-safe signature comparison
+	if (sig.length !== expectedSig.length) return null;
+	if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) return null;
+
+	try {
+		const payload = JSON.parse(base64urlDecode(body)) as JWTPayload;
+
+		// Check expiry
+		if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+			return null; // expired
+		}
+
+		return payload;
+	} catch {
+		return null;
+	}
+}
+
+// ─── Auth Verification ──────────────────────────────────────────
 
 export function verifyAuth(
 	request: AuthRequestPayload,
 	config: AuthConfig,
-): AuthResponsePayload {
-	// Token check — timing-safe to prevent side-channel attacks
-	if (!safeTokenCompare(request.token, config.token)) {
-		return { status: "denied", error: "Invalid token" };
+): AuthResponsePayload & { jwt?: JWTPayload } {
+	const token = request.token;
+
+	// Try JWT verification first
+	const jwt = verifyJWT(token, config.secret);
+	if (jwt) {
+		return checkVersion(request, config, jwt);
 	}
 
-	// WARNING: lexicographic comparison, not semver. Breaks for "0.10.x" vs "0.9.x".
-	// Post-MVP: use a semver library or split-compare.
+	// Fallback: legacy bearer token (for testing / migration)
+	if (config.legacyToken && safeTokenCompare(token, config.legacyToken)) {
+		return checkVersion(request, config);
+	}
+
+	return { status: "denied", error: "Invalid or expired token" };
+}
+
+/** Issue a JWT for a user. */
+export function issueToken(
+	userId: string,
+	role: Role,
+	secret: string,
+	expiresInSeconds = 86400, // 24h default
+): string {
+	const now = Math.floor(Date.now() / 1000);
+	return signJWT({ sub: userId, role, iat: now, exp: now + expiresInSeconds }, secret);
+}
+
+// ─── Internal ───────────────────────────────────────────────────
+
+function checkVersion(
+	request: AuthRequestPayload,
+	config: AuthConfig,
+	jwt?: JWTPayload,
+): AuthResponsePayload & { jwt?: JWTPayload } {
+	// WARNING: lexicographic comparison, not semver.
 	if (
 		config.minClientVersion &&
 		request.clientVersion < config.minClientVersion
@@ -33,8 +120,7 @@ export function verifyAuth(
 			error: `Client version ${request.clientVersion} below minimum ${config.minClientVersion}`,
 		};
 	}
-
-	return { status: "ok" };
+	return { status: "ok", jwt };
 }
 
 function safeTokenCompare(a: string, b: string): boolean {

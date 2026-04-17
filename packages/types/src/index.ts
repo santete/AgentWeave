@@ -48,7 +48,7 @@ export type {
 } from "./decisions";
 
 // Tools
-export type { ToolDefinition, ToolContext, ToolResult } from "./tools";
+export type { ToolDefinition, ToolContext, ToolResult, SandboxConfig } from "./tools";
 
 // Hooks
 export type {

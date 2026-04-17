@@ -30,6 +30,7 @@ export interface ClientConnection {
 	id: string;
 	ws: WebSocket;
 	userId: string;
+	role: string;
 	sessionId: string;
 	agentId: string;
 	authenticatedAt: number;
@@ -154,6 +155,7 @@ export class AWOCPServer {
 						id: connectionId,
 						ws,
 						userId: authPayload.sessionInfo.userId,
+						role: authResult.jwt?.role ?? "developer",
 						sessionId: authPayload.sessionInfo.sessionId,
 						agentId: msg.agentId,
 						authenticatedAt: Date.now(),

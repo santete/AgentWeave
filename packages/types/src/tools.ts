@@ -29,6 +29,17 @@ export interface ToolContext {
 	cwd: string;
 	signal: AbortSignal;
 	onProgress?: (progress: unknown) => void;
+	/** Sandbox constraints for tool execution. */
+	sandbox?: SandboxConfig;
+}
+
+export interface SandboxConfig {
+	/** Allowed filesystem paths (globs). Tool rejected if accessing outside. */
+	allowedPaths?: string[];
+	/** Denied filesystem paths (checked first, overrides allowed). */
+	deniedPaths?: string[];
+	/** Allow network access (default true). */
+	networkAccess?: boolean;
 }
 
 export interface ToolResult<T = unknown> {

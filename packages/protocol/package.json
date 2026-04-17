@@ -9,6 +9,25 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/santete/AgentWeave.git",
+    "directory": "packages/protocol"
+  },
+  "homepage": "https://github.com/santete/AgentWeave",
+  "keywords": [
+    "agentweave",
+    "ai-agent",
+    "governance",
+    "harness",
+    "protocol",
+    "awocp",
+    "websocket"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "files": ["dist"],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",

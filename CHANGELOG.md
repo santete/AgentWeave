@@ -5,6 +5,22 @@ All notable changes to AgentWeave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0-beta.1] - 2026-04-17
+
+### Added
+
+- **GitHub Actions CI** — Build + test + typecheck on push/PR to develop/main. pnpm cache for speed.
+- **npm publish setup** — All 8 packages: MIT license, repository, keywords, publishConfig (public access).
+- **JWT Authentication** — Gateway auth: HMAC-SHA256 JWT with issueToken/verifyJWT. 3 roles (developer/team_lead/admin). Legacy bearer token fallback.
+- **REST API on Gateway** — HTTP endpoints: GET/POST/DELETE /api/rules, GET /api/clients, GET /api/metrics, GET /api/health. CORS support.
+- **Tool Sandbox** — SandboxConfig on ToolContext: allowedPaths, deniedPaths, networkAccess. Default deny /etc, /var, .env, .ssh, .aws. Checked in ToolExecutor before execution.
+
+### Stats
+
+- 8 packages, 294 tests, 0 failures. First beta release.
+
+---
+
 ## [0.5.1-alpha.1] - 2026-04-17
 
 ### Added

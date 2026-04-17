@@ -1,17 +1,19 @@
 import { describe, it, expect, afterEach } from "vitest";
 import WebSocket from "ws";
 import { GatewayServer } from "../src/gateway";
+import { issueToken } from "../src/auth";
 import { AWOCPClient } from "@agentweave/protocol";
 import type { InnerEvent } from "@agentweave/types";
 import type { AWOCPMessage } from "@agentweave/protocol";
 
-const TEST_TOKEN = "test-secret-token";
-const TEST_PORT = 19100; // High port to avoid conflicts
+const TEST_SECRET = "test-jwt-secret-key-for-testing";
+const TEST_LEGACY_TOKEN = "test-legacy-bearer";
+const TEST_PORT = 19100;
 
 function makeGateway(port = TEST_PORT) {
 	return new GatewayServer({
 		port,
-		auth: { token: TEST_TOKEN },
+		auth: { secret: TEST_SECRET, legacyToken: TEST_LEGACY_TOKEN },
 		permissions: {
 			mode: "default",
 			rules: [
@@ -39,7 +41,7 @@ function makeGateway(port = TEST_PORT) {
 function makeClient(port = TEST_PORT) {
 	return new AWOCPClient({
 		url: `ws://127.0.0.1:${port}/awocp/v1`,
-		token: TEST_TOKEN,
+		token: TEST_LEGACY_TOKEN,
 		sessionId: "ses_test",
 		agentId: "agent_test",
 		userId: "user_test",
@@ -86,7 +88,7 @@ describe("GatewayServer", () => {
 			reconnect: false,
 		});
 
-		await expect(client.connect()).rejects.toThrow("Invalid token");
+		await expect(client.connect()).rejects.toThrow("Invalid or expired token");
 	});
 
 	// ─── Tool Intercept ─────────────────────────────────────────
@@ -202,7 +204,7 @@ describe("GatewayServer", () => {
 		const c1 = makeClient(19108);
 		const c2 = new AWOCPClient({
 			url: `ws://127.0.0.1:19108/awocp/v1`,
-			token: TEST_TOKEN,
+			token: TEST_LEGACY_TOKEN,
 			sessionId: "ses_2",
 			agentId: "agent_2",
 			userId: "user_2",
@@ -256,7 +258,7 @@ describe("GatewayServer", () => {
 			id: "a1", ts: new Date().toISOString(), type: "auth:request",
 			sessionId: "s1", agentId: "ag1",
 			payload: {
-				token: TEST_TOKEN, clientVersion: "0.4.0",
+				token: TEST_LEGACY_TOKEN, clientVersion: "0.4.0",
 				sessionInfo: { sessionId: "s1", userId: "u1", model: "mock" },
 			},
 		};
@@ -311,7 +313,7 @@ describe("GatewayServer", () => {
 
 		client = new AWOCPClient({
 			url: `ws://127.0.0.1:19111/awocp/v1`,
-			token: TEST_TOKEN,
+			token: TEST_LEGACY_TOKEN,
 			sessionId: "ses_test", agentId: "agent_test", userId: "user_test",
 			reconnect: false, pingIntervalMs: 60_000,
 			interceptTimeoutMs: 200, // Very short timeout
@@ -324,5 +326,51 @@ describe("GatewayServer", () => {
 				turnIndex: 1, isReadOnly: false, isDestructive: false,
 			}),
 		).rejects.toThrow("Intercept timeout");
+	});
+
+	// ─── JWT Auth ────────────────────────────────────────────────
+
+	it("should accept client with valid JWT token", async () => {
+		gw = makeGateway(19112);
+		await gw.start();
+
+		const jwt = issueToken("user_jwt", "developer", TEST_SECRET);
+		client = new AWOCPClient({
+			url: `ws://127.0.0.1:19112/awocp/v1`,
+			token: jwt,
+			sessionId: "ses_jwt", agentId: "agent_jwt", userId: "user_jwt",
+			reconnect: false, pingIntervalMs: 60_000,
+		});
+		const auth = await client.connect();
+		expect(auth.status).toBe("ok");
+		expect(client.isConnected()).toBe(true);
+	});
+
+	it("should reject expired JWT", async () => {
+		gw = makeGateway(19113);
+		await gw.start();
+
+		const jwt = issueToken("user_exp", "developer", TEST_SECRET, -3600);
+		client = new AWOCPClient({
+			url: `ws://127.0.0.1:19113/awocp/v1`,
+			token: jwt,
+			sessionId: "ses_exp", agentId: "agent_exp", userId: "user_exp",
+			reconnect: false,
+		});
+		await expect(client.connect()).rejects.toThrow("Invalid or expired token");
+	});
+
+	it("should reject JWT signed with wrong secret", async () => {
+		gw = makeGateway(19114);
+		await gw.start();
+
+		const jwt = issueToken("user_bad", "admin", "wrong-secret");
+		client = new AWOCPClient({
+			url: `ws://127.0.0.1:19114/awocp/v1`,
+			token: jwt,
+			sessionId: "ses_bad", agentId: "agent_bad", userId: "user_bad",
+			reconnect: false,
+		});
+		await expect(client.connect()).rejects.toThrow("Invalid or expired token");
 	});
 });

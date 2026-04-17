@@ -3,7 +3,8 @@
  * Read-only tools run concurrently; write tools run serially.
  */
 
-import type { ToolContext, ToolResult } from "@agentweave/types";
+import { resolve, normalize } from "node:path";
+import type { ToolContext, ToolResult, SandboxConfig } from "@agentweave/types";
 import { ToolRegistry } from "./tool-registry";
 
 export interface ToolCall {
@@ -89,6 +90,20 @@ export class ToolExecutor {
 		}
 
 		try {
+			// Sandbox: check file paths in tool input against allowed/denied
+			if (this.context.sandbox) {
+				const violation = checkSandbox(call.toolInput, this.context.sandbox, this.context.cwd);
+				if (violation) {
+					return {
+						toolUseId: call.toolUseId,
+						toolName: call.toolName,
+						result: `Sandbox violation: ${violation}`,
+						isError: true,
+						durationMs: performance.now() - start,
+					};
+				}
+			}
+
 			const parsed = tool.parameters.parse(call.toolInput);
 			const result = await tool.execute(parsed, this.context);
 			return {
@@ -110,4 +125,68 @@ export class ToolExecutor {
 			};
 		}
 	}
+}
+
+// ─── Sandbox Path Checking ──────────────────────────────────────
+
+const DEFAULT_DENIED = ["/etc", "/var", "/root", "/sys", "/proc"];
+const SENSITIVE_GLOBS = [".env", ".ssh", ".aws", ".gnupg", "credentials"];
+
+function checkSandbox(
+	input: Record<string, unknown>,
+	sandbox: SandboxConfig,
+	cwd: string,
+): string | null {
+	// Extract file paths from common tool input fields
+	const paths: string[] = [];
+	for (const key of ["path", "file_path", "filePath", "file", "directory", "command"]) {
+		const val = input[key];
+		if (typeof val === "string") {
+			// For commands, extract paths heuristically
+			if (key === "command") {
+				// Extract file-like args from shell commands
+				const tokens = val.split(/\s+/);
+				for (const t of tokens) {
+					if (t.startsWith("/") || t.startsWith("./") || t.startsWith("../") || t.includes(".env")) {
+						paths.push(t);
+					}
+				}
+			} else {
+				paths.push(val);
+			}
+		}
+	}
+
+	if (paths.length === 0) return null;
+
+	for (const p of paths) {
+		const abs = resolve(cwd, normalize(p));
+
+		// Check denied paths (explicit + defaults)
+		const denied = [...DEFAULT_DENIED, ...(sandbox.deniedPaths ?? [])];
+		for (const d of denied) {
+			if (abs.startsWith(resolve(d)) || abs.startsWith(resolve(cwd, d))) {
+				return `Access denied to "${p}" (matches denied path "${d}")`;
+			}
+		}
+
+		// Check sensitive file patterns
+		for (const s of SENSITIVE_GLOBS) {
+			if (abs.includes(s)) {
+				return `Access denied to "${p}" (sensitive pattern "${s}")`;
+			}
+		}
+
+		// Check allowed paths (if specified, only these are permitted)
+		if (sandbox.allowedPaths && sandbox.allowedPaths.length > 0) {
+			const allowed = sandbox.allowedPaths.some((a) =>
+				abs.startsWith(resolve(cwd, a)) || abs.startsWith(resolve(a)),
+			);
+			if (!allowed) {
+				return `Access denied to "${p}" (not in allowed paths)`;
+			}
+		}
+	}
+
+	return null;
 }

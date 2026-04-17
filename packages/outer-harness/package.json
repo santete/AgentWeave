@@ -9,6 +9,26 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/santete/AgentWeave.git",
+    "directory": "packages/outer-harness"
+  },
+  "homepage": "https://github.com/santete/AgentWeave",
+  "keywords": [
+    "agentweave",
+    "ai-agent",
+    "governance",
+    "harness",
+    "outer-harness",
+    "permissions",
+    "budget",
+    "output-pipeline"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "files": ["dist"],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",

@@ -9,6 +9,7 @@ import type { OuterHarnessConfig } from "@agentweave/outer-harness";
 import type { BudgetConfig } from "@agentweave/outer-harness";
 import type { OutputPipelineConfig } from "@agentweave/outer-harness";
 import { AWOCPServer } from "./server";
+import { RestApi } from "./rest-api";
 import type { AuthConfig } from "./auth";
 
 // ─── Config ─────────────────────────────────────────────────────
@@ -26,6 +27,8 @@ export interface GatewayConfig {
 	budget?: BudgetConfig;
 	/** Server identification */
 	serverId?: string;
+	/** REST API port (default: port + 1). Set to 0 to disable. */
+	restPort?: number;
 }
 
 // ─── Gateway ────────────────────────────────────────────────────
@@ -33,6 +36,7 @@ export interface GatewayConfig {
 export class GatewayServer {
 	private static readonly MAX_EVENT_LOG = 10_000;
 	private server: AWOCPServer;
+	private restApi: RestApi | null = null;
 	private outer: OuterHarness;
 	private eventLog: InnerEvent[] = [];
 
@@ -61,6 +65,12 @@ export class GatewayServer {
 			return this.outer.onOutputReady(payload as RawOutput);
 		});
 
+		// REST API (optional)
+		const restPort = config.restPort ?? config.port + 1;
+		if (restPort !== 0) {
+			this.restApi = new RestApi({ port: restPort }, this.outer, this.server);
+		}
+
 		// Wire events → collect for observability (capped ring buffer)
 		this.server.onEvent((event) => {
 			this.outer.onEvent(event);
@@ -73,9 +83,11 @@ export class GatewayServer {
 
 	async start(): Promise<void> {
 		await this.server.start();
+		await this.restApi?.start();
 	}
 
 	async stop(): Promise<void> {
+		await this.restApi?.stop();
 		await this.server.stop();
 	}
 
