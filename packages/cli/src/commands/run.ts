@@ -85,7 +85,8 @@ function printEvent(event: InnerEvent): void {
 			}
 			break;
 		case "tool:requested":
-			console.log(`  Tool: ${event.toolName}(${JSON.stringify(event.toolInput).slice(0, 80)})`);
+			// Redact sensitive patterns from tool input before logging
+			console.log(`  Tool: ${event.toolName}(${redactSecrets(JSON.stringify(event.toolInput)).slice(0, 80)})`);
 			break;
 		case "permission:denied":
 			console.log(`  DENIED: ${event.toolName} — ${event.reason}`);
@@ -110,4 +111,20 @@ function printEvent(event: InnerEvent): void {
 			break;
 		// Other events: silent in default output
 	}
+}
+
+const SECRET_PATTERNS = [
+	/sk-[a-zA-Z0-9]{20,}/g,
+	/AKIA[A-Z0-9]{16}/g,
+	/ghp_[a-zA-Z0-9]{36}/g,
+	/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
+];
+
+function redactSecrets(text: string): string {
+	let result = text;
+	for (const pattern of SECRET_PATTERNS) {
+		pattern.lastIndex = 0;
+		result = result.replace(pattern, "[REDACTED]");
+	}
+	return result;
 }

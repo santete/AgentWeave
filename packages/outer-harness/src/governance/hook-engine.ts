@@ -164,10 +164,9 @@ export class HookEngine {
 		hook: Extract<HookDefinition, { type: "command" }>,
 		event: HookEvent,
 	): Promise<HookResult> {
-		const env: Record<string, string> = {};
-		for (const [k, v] of Object.entries(process.env)) {
-			if (v !== undefined) env[k] = v;
-		}
+		// SECURITY: Only pass safe env vars to hook shell.
+		// Filter out secrets (*_KEY, *_SECRET, *_TOKEN, *_PASSWORD, *_CREDENTIAL).
+		const env = buildSafeEnv();
 		env.TOOL_NAME = event.toolName ?? "";
 		env.TOOL_INPUT = JSON.stringify(event.toolInput ?? {});
 		env.TOOL_USE_ID = event.toolUseId ?? "";
@@ -199,29 +198,29 @@ export class HookEngine {
 		event: HookEvent,
 	): Promise<HookResult> {
 		if (hook.inline) {
+			// SECURITY: new Function() executes arbitrary code.
+			// Require explicit trusted flag — reject unsigned inline hooks.
+			if (!(hook as unknown as Record<string, unknown>).trusted) {
+				return {
+					outcome: "error",
+					message: `Inline function hook blocked: "trusted: true" required. ` +
+						"Set trusted flag only for hooks from verified sources (user config).",
+				};
+			}
+
+			if (typeof hook.inline !== "string" || hook.inline.trim().length === 0) {
+				return { outcome: "error", message: "Inline function hook has empty code" };
+			}
+
 			try {
-				// SECURITY: new Function() executes arbitrary code from config.
-				// Only enable function hooks from trusted sources (user config).
-				// Phase 5 will add trust dialog + sandbox isolation for project-level hooks.
 				const fn = new Function("input", "output", "event", hook.inline) as (
 					input: unknown,
 					output: unknown,
 					event: HookEvent,
-				) => HookResult | { decision: string } | Promise<unknown> | undefined;
+				) => unknown;
 
-				// Await in case inline code returns a Promise
 				const result = await fn(event.toolInput, event.toolResult, event);
-				if (!result || typeof result !== "object") return { outcome: "pass" };
-
-				// Normalize decision-style return
-				const obj = result as Record<string, unknown>;
-				if ("decision" in obj) {
-					if (obj.decision === "deny" || obj.decision === "block") {
-						return { outcome: "block", permissionDecision: "deny", message: obj.reason as string | undefined };
-					}
-					return { outcome: "pass" };
-				}
-				return result as HookResult;
+				return this.normalizeFunctionResult(result);
 			} catch (err) {
 				return {
 					outcome: "error",
@@ -231,6 +230,40 @@ export class HookEngine {
 		}
 
 		// Handler path — not implemented in MVP (requires dynamic import)
+		return { outcome: "pass" };
+	}
+
+	private normalizeFunctionResult(result: unknown): HookResult {
+		if (!result || typeof result !== "object") return { outcome: "pass" };
+		const obj = result as Record<string, unknown>;
+
+		if ("decision" in obj) {
+			const decision = obj.decision;
+			if (decision === "deny" || decision === "block") {
+				return {
+					outcome: "block",
+					permissionDecision: "deny",
+					message: typeof obj.reason === "string" ? obj.reason : undefined,
+				};
+			}
+			return { outcome: "pass" };
+		}
+
+		// Validate outcome field before trusting
+		if ("outcome" in obj) {
+			const outcome = obj.outcome;
+			if (outcome === "pass" || outcome === "block" || outcome === "modify" || outcome === "error") {
+				return {
+					outcome,
+					message: typeof obj.message === "string" ? obj.message : undefined,
+					additionalContext: typeof obj.additionalContext === "string" ? obj.additionalContext : undefined,
+					stopReason: typeof obj.stopReason === "string" ? obj.stopReason : undefined,
+					permissionDecision: obj.permissionDecision === "allow" || obj.permissionDecision === "deny"
+						? obj.permissionDecision : undefined,
+				};
+			}
+		}
+
 		return { outcome: "pass" };
 	}
 
@@ -292,13 +325,18 @@ export class HookEngine {
 
 		// Try JSON parse
 		try {
-			const parsed = JSON.parse(stdout) as Record<string, unknown>;
+			const raw: unknown = JSON.parse(stdout);
+			if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+				return { outcome: "pass", additionalContext: stdout };
+			}
+			const parsed = raw as Record<string, unknown>;
 
 			const result: HookResult = { outcome: "pass" };
 
 			if (parsed.continue === false || parsed.decision === "block") {
 				result.outcome = "block";
-				result.stopReason = (parsed.stopReason as string) ?? (parsed.reason as string);
+				result.stopReason = typeof parsed.stopReason === "string" ? parsed.stopReason
+					: typeof parsed.reason === "string" ? parsed.reason : undefined;
 			}
 			if (parsed.decision === "deny") {
 				result.permissionDecision = "deny";
@@ -307,11 +345,11 @@ export class HookEngine {
 			if (parsed.decision === "allow") {
 				result.permissionDecision = "allow";
 			}
-			if (parsed.systemMessage) {
-				result.additionalContext = parsed.systemMessage as string;
+			if (typeof parsed.systemMessage === "string") {
+				result.additionalContext = parsed.systemMessage;
 			}
-			if (parsed.message) {
-				result.message = parsed.message as string;
+			if (typeof parsed.message === "string") {
+				result.message = parsed.message;
 			}
 
 			return result;
@@ -324,4 +362,34 @@ export class HookEngine {
 			};
 		}
 	}
+}
+
+// ─── Safe Environment Filtering ─────────────────────────────────
+
+const ENV_SAFE_KEYS = new Set([
+	"PATH", "HOME", "USER", "SHELL", "LANG", "TERM", "EDITOR",
+	"TMPDIR", "TMP", "TEMP", "PWD", "HOSTNAME", "LOGNAME",
+	"NODE_ENV", "CI",
+]);
+
+const ENV_SECRET_PATTERNS = [
+	/_KEY$/i, /_SECRET$/i, /_TOKEN$/i, /_PASSWORD$/i, /_CREDENTIAL$/i,
+	/^API_/, /^AWS_/, /^GITHUB_TOKEN/, /^ANTHROPIC_/,
+];
+
+function buildSafeEnv(): Record<string, string> {
+	const env: Record<string, string> = {};
+	for (const [k, v] of Object.entries(process.env)) {
+		if (v === undefined) continue;
+		// Always include safe keys
+		if (ENV_SAFE_KEYS.has(k)) {
+			env[k] = v;
+			continue;
+		}
+		// Reject keys matching secret patterns
+		if (ENV_SECRET_PATTERNS.some((p) => p.test(k))) continue;
+		// Allow remaining non-secret keys
+		env[k] = v;
+	}
+	return env;
 }

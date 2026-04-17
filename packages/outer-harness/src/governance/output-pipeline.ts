@@ -120,10 +120,15 @@ interface CompiledFilter {
 }
 
 function tryCompileRegex(source: string, flags: string, filterName: string): RegExp | null {
+	// SECURITY: reject patterns with nested quantifiers (ReDoS risk)
+	// Matches patterns like (a+)+, (a*)*,  (a{1,}){2,}, etc.
+	if (/(\+|\*|\{[^}]+\})\s*(\+|\*|\{[^}]+\}|\)[\+\*])/.test(source)) {
+		console.warn(`[OutputPipeline] Potentially unsafe regex "${source}" in filter "${filterName}" — rejected (ReDoS risk)`);
+		return null;
+	}
 	try {
 		return new RegExp(source, flags);
 	} catch {
-		// Invalid regex in config — skip this pattern, don't crash
 		console.warn(`[OutputPipeline] Invalid regex pattern "${source}" in filter "${filterName}" — skipped`);
 		return null;
 	}

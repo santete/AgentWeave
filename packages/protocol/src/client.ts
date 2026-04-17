@@ -49,6 +49,8 @@ interface PendingIntercept<T> {
 
 // ─── Client ─────────────────────────────────────────────────────
 
+const MAX_PENDING_INTERCEPTS = 1000;
+
 export class AWOCPClient {
 	private ws: WebSocket | null = null;
 	private config: Required<
@@ -206,6 +208,9 @@ export class AWOCPClient {
 	): Promise<T> {
 		if (!this.canSend()) {
 			throw new Error("Not connected to Gateway");
+		}
+		if (this.pendingIntercepts.size >= MAX_PENDING_INTERCEPTS) {
+			throw new Error(`Too many pending intercepts (max ${MAX_PENDING_INTERCEPTS})`);
 		}
 
 		const correlationId = randomUUID();

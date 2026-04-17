@@ -14,6 +14,7 @@ export interface AuditEntry {
 }
 
 export class AuditLogger {
+	private static readonly MAX_ENTRIES = 10_000;
 	private entries: AuditEntry[] = [];
 	private sessionId = "";
 
@@ -22,7 +23,7 @@ export class AuditLogger {
 	}
 
 	log(action: string, details: Record<string, unknown>, category = "governance"): void {
-		this.entries.push({
+		this.appendEntry({
 			timestamp: Date.now(),
 			sessionId: this.sessionId,
 			category,
@@ -32,13 +33,20 @@ export class AuditLogger {
 	}
 
 	logEvent(event: InnerEvent): void {
-		this.entries.push({
+		this.appendEntry({
 			timestamp: event.timestamp,
 			sessionId: event.sessionId,
 			category: "event",
 			action: event.type,
 			details: { ...event },
 		});
+	}
+
+	private appendEntry(entry: AuditEntry): void {
+		this.entries.push(entry);
+		if (this.entries.length > AuditLogger.MAX_ENTRIES) {
+			this.entries.splice(0, this.entries.length - AuditLogger.MAX_ENTRIES);
+		}
 	}
 
 	getEntries(): ReadonlyArray<AuditEntry> {

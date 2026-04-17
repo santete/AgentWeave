@@ -3,6 +3,7 @@
  * Returns PluginRegistrations that the SDK wires into inner (tools) and outer (hooks).
  */
 
+import { resolve, normalize } from "node:path";
 import type {
 	PluginManifest,
 	PluginContext,
@@ -56,16 +57,18 @@ export class PluginLoader {
 	 * The file must default-export a PluginManifest.
 	 */
 	async loadFromPath(
-		path: string,
+		pluginPath: string,
 		context: PluginContext,
 		pluginConfig?: PluginConfig,
 	): Promise<LoadedPlugin> {
-		const mod = await import(path);
+		// SECURITY: validate path — reject traversal, resolve to absolute
+		const safePath = this.validatePluginPath(pluginPath, context.projectRoot);
+		const mod = await import(safePath);
 		const manifest: PluginManifest = mod.default ?? mod;
 
 		if (!manifest || typeof manifest.activate !== "function") {
 			throw new Error(
-				`Plugin at ${path} does not export a valid PluginManifest (missing activate function)`,
+				`Plugin at ${safePath} does not export a valid PluginManifest (missing activate function)`,
 			);
 		}
 
@@ -115,6 +118,34 @@ export class PluginLoader {
 	/** Get all currently loaded plugins. */
 	getLoaded(): ReadonlyArray<LoadedPlugin> {
 		return this.loaded;
+	}
+
+	// ─── Path Security ──────────────────────────────────────────
+
+	private validatePluginPath(pluginPath: string, projectRoot: string): string {
+		// Scoped npm packages (e.g. "@org/plugin-name") — allow as-is
+		if (pluginPath.startsWith("@") || !pluginPath.includes("/") && !pluginPath.includes("\\")) {
+			return pluginPath; // npm package name — resolved by Node module system
+		}
+
+		// File path — normalize and check for traversal
+		const normalized = normalize(pluginPath);
+		if (normalized.includes("..")) {
+			throw new Error(
+				`Plugin path "${pluginPath}" contains path traversal ("..") — rejected`,
+			);
+		}
+
+		// Resolve to absolute and verify it's under project root
+		const absolute = resolve(projectRoot, normalized);
+		const resolvedRoot = resolve(projectRoot);
+		if (!absolute.startsWith(resolvedRoot)) {
+			throw new Error(
+				`Plugin path "${pluginPath}" resolves outside project root — rejected`,
+			);
+		}
+
+		return absolute;
 	}
 
 	// ─── Validation ─────────────────────────────────────────────

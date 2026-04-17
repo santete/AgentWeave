@@ -60,12 +60,24 @@ export function parseArgs(args: string[]): {
 			case "--model":
 				model = args[++i] ?? model;
 				break;
-			case "--budget":
-				budget = Number.parseFloat(args[++i] ?? "");
+			case "--budget": {
+				const b = Number.parseFloat(args[++i] ?? "");
+				if (Number.isNaN(b) || b < 0 || b > 10000) {
+					console.error("Error: --budget must be a number between 0 and 10000");
+					process.exit(1);
+				}
+				budget = b;
 				break;
-			case "--max-turns":
-				maxTurns = Number.parseInt(args[++i] ?? "", 10);
+			}
+			case "--max-turns": {
+				const t = Number.parseInt(args[++i] ?? "", 10);
+				if (Number.isNaN(t) || t < 1 || t > 10000) {
+					console.error("Error: --max-turns must be an integer between 1 and 10000");
+					process.exit(1);
+				}
+				maxTurns = t;
 				break;
+			}
 			case "--mode": {
 				const modeVal = args[++i];
 				const validModes = ["default", "strict", "permissive", "plan"] as const;

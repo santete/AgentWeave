@@ -1,6 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { HookEngine } from "../src/governance/hook-engine";
-import type { HookEvent, HookDefinition, FunctionHook } from "@agentweave/types";
+import type { HookEvent, FunctionHook } from "@agentweave/types";
+
+/** Helper: create a trusted inline function hook for testing */
+function inlineHook(inline: string, overrides: Partial<FunctionHook> = {}): FunctionHook {
+	return {
+		type: "function",
+		event: "PreToolUse",
+		inline,
+		trusted: true, // security: required for inline code execution
+		...overrides,
+	} as FunctionHook;
+}
 
 function makeEvent(overrides: Partial<HookEvent> = {}): HookEvent {
 	return {
@@ -24,34 +35,41 @@ describe("HookEngine", () => {
 		const engine = new HookEngine({
 			hooks: {
 				PreToolUse: [
-					{
-						type: "function",
-						event: "PreToolUse",
-						inline: 'if (input.command === "rm -rf /") return { decision: "deny", reason: "dangerous" }; return { decision: "pass" }',
-						timeout: 5000,
-					} as FunctionHook,
+					inlineHook(
+						'if (input.command === "rm -rf /") return { decision: "deny", reason: "dangerous" }; return { decision: "pass" }',
+					),
 				],
 			},
 		});
 
-		// Safe command — should pass
 		const result1 = await engine.execute(makeEvent({ toolInput: { command: "ls" } }));
 		expect(result1.outcome).toBe("pass");
 
-		// Dangerous command — should block
 		const result2 = await engine.execute(makeEvent({ toolInput: { command: "rm -rf /" } }));
 		expect(result2.outcome).toBe("block");
 		expect(result2.permissionDecision).toBe("deny");
 	});
 
-	it("should match hooks by event type", async () => {
+	it("should block inline function hook without trusted flag", async () => {
 		const engine = new HookEngine({
 			hooks: {
 				PreToolUse: [
-					{ type: "function", event: "PreToolUse", inline: 'return { decision: "deny" }' } as FunctionHook,
+					{ type: "function", event: "PreToolUse", inline: 'return { outcome: "pass" }' } as FunctionHook,
 				],
+			},
+		});
+
+		const result = await engine.execute(makeEvent());
+		expect(result.outcome).toBe("error");
+		expect(result.message).toContain("trusted: true");
+	});
+
+	it("should match hooks by event type", async () => {
+		const engine = new HookEngine({
+			hooks: {
+				PreToolUse: [inlineHook('return { decision: "deny" }')],
 				PostToolUse: [
-					{ type: "function", event: "PostToolUse", inline: 'return { outcome: "pass", additionalContext: "post" }' } as FunctionHook,
+					inlineHook('return { outcome: "pass", additionalContext: "post" }', { event: "PostToolUse" }),
 				],
 			},
 		});
@@ -68,21 +86,14 @@ describe("HookEngine", () => {
 		const engine = new HookEngine({
 			hooks: {
 				PreToolUse: [
-					{
-						type: "function",
-						event: "PreToolUse",
-						matcher: "FileWrite|FileEdit",
-						inline: 'return { outcome: "block", message: "write blocked" }',
-					} as FunctionHook,
+					inlineHook('return { outcome: "block", message: "write blocked" }', { matcher: "FileWrite|FileEdit" }),
 				],
 			},
 		});
 
-		// Non-matching tool — should pass
 		const result1 = await engine.execute(makeEvent({ toolName: "FileRead" }));
 		expect(result1.outcome).toBe("pass");
 
-		// Matching tool — should block
 		const result2 = await engine.execute(makeEvent({ toolName: "FileWrite" }));
 		expect(result2.outcome).toBe("block");
 	});
@@ -91,15 +102,14 @@ describe("HookEngine", () => {
 		const engine = new HookEngine({
 			hooks: {
 				PreToolUse: [
-					{ type: "function", event: "PreToolUse", inline: 'return { outcome: "block", message: "first blocks" }' } as FunctionHook,
-					{ type: "function", event: "PreToolUse", inline: 'return { outcome: "pass", additionalContext: "second ran" }' } as FunctionHook,
+					inlineHook('return { outcome: "block", message: "first blocks" }'),
+					inlineHook('return { outcome: "pass", additionalContext: "second ran" }'),
 				],
 			},
 		});
 
 		const result = await engine.execute(makeEvent());
 		expect(result.outcome).toBe("block");
-		// Second hook should NOT have run
 		expect(result.additionalContext).toBeUndefined();
 	});
 
@@ -107,8 +117,8 @@ describe("HookEngine", () => {
 		const engine = new HookEngine({
 			hooks: {
 				PostToolUse: [
-					{ type: "function", event: "PostToolUse", inline: 'return { outcome: "pass", additionalContext: "context A" }' } as FunctionHook,
-					{ type: "function", event: "PostToolUse", inline: 'return { outcome: "pass", additionalContext: "context B" }' } as FunctionHook,
+					inlineHook('return { outcome: "pass", additionalContext: "context A" }', { event: "PostToolUse" }),
+					inlineHook('return { outcome: "pass", additionalContext: "context B" }', { event: "PostToolUse" }),
 				],
 			},
 		});
@@ -122,9 +132,7 @@ describe("HookEngine", () => {
 	it("should handle function hook errors gracefully", async () => {
 		const engine = new HookEngine({
 			hooks: {
-				PreToolUse: [
-					{ type: "function", event: "PreToolUse", inline: 'throw new Error("hook crashed")' } as FunctionHook,
-				],
+				PreToolUse: [inlineHook('throw new Error("hook crashed")')],
 			},
 		});
 
@@ -136,11 +144,10 @@ describe("HookEngine", () => {
 	it("should add hooks at runtime", async () => {
 		const engine = new HookEngine({ hooks: {} });
 
-		engine.addHook("SessionEnd", {
-			type: "function",
-			event: "SessionEnd",
-			inline: 'return { outcome: "pass", additionalContext: "session ended" }',
-		} as FunctionHook);
+		engine.addHook("SessionEnd", inlineHook(
+			'return { outcome: "pass", additionalContext: "session ended" }',
+			{ event: "SessionEnd" },
+		));
 
 		const hooks = engine.getHooks("SessionEnd");
 		expect(hooks).toHaveLength(1);
@@ -153,12 +160,10 @@ describe("HookEngine", () => {
 		const engine = new HookEngine({
 			hooks: {
 				PreToolUse: [
-					{
-						type: "function",
-						event: "PreToolUse",
-						timeout: 50, // 50ms timeout
-						inline: 'return new Promise(r => setTimeout(() => r({ outcome: "pass" }), 5000))',
-					} as FunctionHook,
+					inlineHook(
+						'return new Promise(r => setTimeout(() => r({ outcome: "pass" }), 5000))',
+						{ timeout: 50 },
+					),
 				],
 			},
 		});
@@ -172,11 +177,7 @@ describe("HookEngine", () => {
 		const engine = new HookEngine({
 			hooks: {
 				PreToolUse: [
-					{
-						type: "function",
-						event: "PreToolUse",
-						inline: 'return Promise.resolve({ outcome: "pass", additionalContext: "async worked" })',
-					} as FunctionHook,
+					inlineHook('return Promise.resolve({ outcome: "pass", additionalContext: "async worked" })'),
 				],
 			},
 		});
