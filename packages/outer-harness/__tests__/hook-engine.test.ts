@@ -1,6 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { HookEngine } from "../src/governance/hook-engine";
 import type { HookEvent, FunctionHook } from "@agentweave/types";
+import { writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
 
 /** Helper: create a trusted inline function hook for testing */
 function inlineHook(inline: string, overrides: Partial<FunctionHook> = {}): FunctionHook {
@@ -23,6 +27,8 @@ function makeEvent(overrides: Partial<HookEvent> = {}): HookEvent {
 		...overrides,
 	};
 }
+
+// ─── Core (v1.1.0 tests, preserved) ─────────────────────────────
 
 describe("HookEngine", () => {
 	it("should pass through when no hooks registered", async () => {
@@ -204,4 +210,180 @@ describe("HookEngine", () => {
 		const result = await engine.execute(makeEvent());
 		expect(result.outcome).toBe("pass");
 	}, 10000);
+});
+
+// ─── Function Hook Handler Path ──────────────────────────────────
+
+describe("HookEngine — function handler path", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = join(tmpdir(), `agentweave-hook-test-${randomUUID().slice(0, 8)}`);
+		mkdirSync(tmpDir, { recursive: true });
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("should execute handler from .js file", async () => {
+		const handlerPath = join(tmpDir, "test-handler.mjs");
+		writeFileSync(handlerPath, `
+			export default function(input, output, event) {
+				return { outcome: "pass", additionalContext: "handler-ran" };
+			}
+		`);
+
+		const engine = new HookEngine({
+			hooks: {
+				PreToolUse: [{
+					type: "function",
+					event: "PreToolUse",
+					handler: handlerPath,
+				} as FunctionHook],
+			},
+		});
+
+		const result = await engine.execute(makeEvent());
+		expect(result.outcome).toBe("pass");
+		expect(result.additionalContext).toBe("handler-ran");
+	});
+
+	it("should reject path traversal in handler path", async () => {
+		const engine = new HookEngine({
+			hooks: {
+				PreToolUse: [{
+					type: "function",
+					event: "PreToolUse",
+					handler: "../../etc/passwd.js",
+				} as FunctionHook],
+			},
+		});
+
+		const result = await engine.execute(makeEvent());
+		expect(result.outcome).toBe("error");
+		expect(result.message).toContain("path traversal");
+	});
+
+	it("should reject handler without .js/.ts/.mjs extension", async () => {
+		const engine = new HookEngine({
+			hooks: {
+				PreToolUse: [{
+					type: "function",
+					event: "PreToolUse",
+					handler: "/some/path/handler.py",
+				} as FunctionHook],
+			},
+		});
+
+		const result = await engine.execute(makeEvent());
+		expect(result.outcome).toBe("error");
+		expect(result.message).toContain("must end in");
+	});
+
+	it("should return error when handler module not found", async () => {
+		const engine = new HookEngine({
+			hooks: {
+				PreToolUse: [{
+					type: "function",
+					event: "PreToolUse",
+					handler: join(tmpDir, "nonexistent.js"),
+				} as FunctionHook],
+			},
+		});
+
+		const result = await engine.execute(makeEvent());
+		expect(result.outcome).toBe("error");
+	});
+
+	it("should return error when handler export is not a function", async () => {
+		const handlerPath = join(tmpDir, "bad-handler.mjs");
+		writeFileSync(handlerPath, `export default "not a function";`);
+
+		const engine = new HookEngine({
+			hooks: {
+				PreToolUse: [{
+					type: "function",
+					event: "PreToolUse",
+					handler: handlerPath,
+				} as FunctionHook],
+			},
+		});
+
+		const result = await engine.execute(makeEvent());
+		expect(result.outcome).toBe("error");
+		expect(result.message).toContain("does not export a function");
+	});
+});
+
+// ─── Hook Execution Metrics ──────────────────────────────────────
+
+describe("HookEngine — metrics", () => {
+	it("should track pass count", async () => {
+		const engine = new HookEngine({
+			hooks: {
+				PreToolUse: [inlineHook('return { outcome: "pass" }')],
+			},
+		});
+
+		await engine.execute(makeEvent());
+		await engine.execute(makeEvent());
+		await engine.execute(makeEvent());
+
+		const metrics = engine.getMetrics();
+		expect(metrics.totalExecutions).toBe(3);
+		expect(metrics.passCount).toBe(3);
+	});
+
+	it("should track block count", async () => {
+		const engine = new HookEngine({
+			hooks: {
+				PreToolUse: [inlineHook('return { outcome: "block" }')],
+			},
+		});
+
+		await engine.execute(makeEvent());
+		expect(engine.getMetrics().blockCount).toBe(1);
+	});
+
+	it("should track error count", async () => {
+		const engine = new HookEngine({
+			hooks: {
+				PreToolUse: [inlineHook('throw new Error("fail")')],
+			},
+		});
+
+		await engine.execute(makeEvent());
+		expect(engine.getMetrics().errorCount).toBe(1);
+	});
+
+	it("should track timing", async () => {
+		const engine = new HookEngine({
+			hooks: {
+				PreToolUse: [inlineHook('return { outcome: "pass" }')],
+			},
+		});
+
+		await engine.execute(makeEvent());
+		const metrics = engine.getMetrics();
+		expect(metrics.totalDurationMs).toBeGreaterThanOrEqual(0);
+		expect(metrics.avgDurationMs).toBeGreaterThanOrEqual(0);
+	});
+
+	it("should track by event type", async () => {
+		const engine = new HookEngine({
+			hooks: {
+				PreToolUse: [inlineHook('return { outcome: "pass" }')],
+				PostToolUse: [inlineHook('return { outcome: "pass" }', { event: "PostToolUse" })],
+			},
+		});
+
+		await engine.execute(makeEvent({ type: "PreToolUse" }));
+		await engine.execute(makeEvent({ type: "PreToolUse" }));
+		await engine.execute(makeEvent({ type: "PostToolUse" }));
+
+		const metrics = engine.getMetrics();
+		expect(metrics.byEvent.PreToolUse?.count).toBe(2);
+		expect(metrics.byEvent.PostToolUse?.count).toBe(1);
+	});
 });

@@ -27,9 +27,11 @@ import { ToolExecutor } from "./tool-executor";
 import type { ToolCall } from "./tool-executor";
 import { MessageStore } from "./message-store";
 import { TokenCounter } from "./token-counter";
+import { createNoopControlPlane } from "./noop-control-plane";
 
 export interface AgentLoopConfig {
-	controlPlane: ControlPlane;
+	/** Control plane for governance integration. If omitted, runs standalone (all tools allowed, no output filtering). */
+	controlPlane?: ControlPlane;
 	model: string;
 	fallbackModel?: string;
 	tools?: ToolDefinition[];
@@ -65,7 +67,7 @@ export class AgentLoop implements InnerHarnessProvider {
 	};
 
 	constructor(config: AgentLoopConfig) {
-		this.controlPlane = config.controlPlane;
+		this.controlPlane = config.controlPlane ?? createNoopControlPlane();
 		this.model = config.model;
 		this.fallbackModel = config.fallbackModel;
 		this.systemPrompt = config.systemPrompt ?? "";

@@ -18,6 +18,9 @@ export type {
 	ToolMetrics,
 	TurnMetrics,
 	MonitorSnapshot,
+	StageTiming,
+	PipelineMetrics,
+	HookMetrics,
 	AlertSeverity,
 	AlertRule,
 	AlertEvent,
@@ -67,9 +70,24 @@ export type {
 // Permissions
 export type {
 	PermissionMode,
+	RateLimit,
 	PermissionRule,
+	PermissionAuditRecord,
+	RuleConflict,
+	RuleAnalysis,
 	PermissionConfig,
 } from "./permissions";
+
+// Budget
+export type {
+	BudgetConfig,
+	CostBreakdown,
+	BudgetStatus,
+	CostEstimate,
+	CostMetadata,
+	BudgetEventType,
+	BudgetEvent,
+} from "./budget";
 
 // Sessions
 export type { SessionInfo, SessionState, SessionEndInfo } from "./sessions";
@@ -111,6 +129,28 @@ export type {
 	MultiAgentConfig,
 	AgentLifecycleEvent,
 } from "./multi-agent";
+
+// SDLC Engine
+export type {
+	SDLCTask,
+	SDLCPlan,
+	SDLCPlanStep,
+	SDLCExecutionResult,
+	SDLCValidationResult,
+	SDLCCheck,
+	SDLCRetryDecision,
+	SDLCOutput,
+	SDLCModule,
+	LLMCallerFn,
+	SDLCModuleContext,
+	MetricsHandle,
+	SDLCMetricsSnapshot,
+	SDLCBaselineComparison,
+	SDLCModuleConfig,
+	QualityGateCheck,
+	RetryStrategy,
+	SDLCConfig,
+} from "./sdlc";
 
 // Plugins
 export type {

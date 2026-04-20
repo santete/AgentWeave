@@ -73,6 +73,8 @@ export class OuterHarness implements OuterHarnessConsumer {
 	private sessions: SessionManager;
 	private orchestrator: MultiAgentOrchestrator | null;
 	private lastKnownCost = 0;
+	private currentModel = "";
+	private currentToolName = "";
 
 	constructor(config: OuterHarnessConfig) {
 		this.permissions = new PermissionEngine(config.permissions);
@@ -211,12 +213,23 @@ export class OuterHarness implements OuterHarnessConsumer {
 		this.audit.logEvent(event);
 		this.monitor.collect(event);
 
+		// Track current model and tool for cost metadata
+		if (event.type === "llm:request_start") {
+			this.currentModel = (event as unknown as Record<string, unknown>).model as string ?? "";
+		}
+		if (event.type === "tool:requested") {
+			this.currentToolName = (event as unknown as Record<string, unknown>).toolName as string ?? "";
+		}
+
 		// Track cost DELTA from LLM usage events (not cumulative total)
 		if (event.type === "llm:stream_end") {
 			const currentTotal = event.usage.totalCost;
 			const delta = currentTotal - this.lastKnownCost;
 			if (delta > 0) {
-				this.budget.addCost(delta);
+				this.budget.addCost(delta, {
+					model: this.currentModel || undefined,
+					toolName: this.currentToolName || undefined,
+				});
 				this.lastKnownCost = currentTotal;
 			}
 		}

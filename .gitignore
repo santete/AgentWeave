@@ -32,3 +32,6 @@ pnpm-debug.log*
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# AgentWeave credentials (auto-added)
+.agentweave/
