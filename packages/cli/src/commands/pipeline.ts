@@ -103,28 +103,55 @@ export function pipelineShowCommand(cliOverrides?: { checks?: string[]; retries?
 	console.log(`  ${C.white}Metrics:${C.reset} ${metricsOn ? `${C.green}ON${C.reset}` : `${C.gray}OFF${C.reset}`}${config.metrics.persistPath ? ` → ${config.metrics.persistPath}` : ""}`);
 	console.log(`  ${C.gray}${LINE}${C.reset}`);
 
+	// Separate steps into categories based on wrap mode
+	const isWrapMode = config.execution.mode === "process-adapter" ||
+		(config.execution.mode === "agent-loop" && !config.modules.taskNormalizer.enabled);
+
+	if (isWrapMode) {
+		// Show agent-handled vs agentweave-added sections
+		console.log(`\n  ${C.gray}Agent handles: task understanding, planning, code generation${C.reset}`);
+		console.log(`  ${C.gray}${LINE}${C.reset}`);
+		console.log(`  ${C.cyan}${C.bold}AgentWeave adds: QA + Validation + Metrics${C.reset}`);
+	}
+
 	// 8 steps
 	for (const step of STEPS) {
 		const modConf = config.modules[step.key as keyof SDLCConfig["modules"]];
 		const enabled = modConf?.enabled ?? false;
-		const statusTag = enabled ? `${C.green}${C.bold} ON ${C.reset}` : `${C.red} OFF${C.reset}`;
+		const statusTag = enabled ? `${C.green}${C.bold} ON ${C.reset}` : `${C.gray} OFF${C.reset}`;
+
+		// In wrap mode: dim the agent-handled steps, highlight unique value
+		const isUniqueValue = ["patchValidator", "qualityGate", "retryEngine"].includes(step.key);
+		const isMetrics = step.key === "executionBridge"; // bridge is always needed
 
 		// Build detail string from config
 		const detail = getModuleDetail(step.key, modConf, config);
 
 		console.log();
-		console.log(`  ${step.icon} ${C.bold}Step ${step.num}${C.reset}  ${C.white}${step.name}${C.reset}${" ".repeat(Math.max(0, 22 - step.name.length))}[${statusTag}]`);
-		console.log(`     ${C.dim}${step.desc}${C.reset}`);
-		if (detail) {
-			console.log(`     ${C.cyan}${detail}${C.reset}`);
+		if (isWrapMode && !enabled && !isUniqueValue && !isMetrics) {
+			// Dim disabled steps that agent handles
+			console.log(`  ${C.gray}${step.icon} Step ${step.num}  ${step.name}${" ".repeat(Math.max(0, 22 - step.name.length))}[ OFF] agent handles this${C.reset}`);
+		} else if (isWrapMode && isUniqueValue && enabled) {
+			// Highlight unique value steps
+			console.log(`  ${step.icon} ${C.bold}Step ${step.num}${C.reset}  ${C.white}${C.bold}${step.name}${C.reset}${" ".repeat(Math.max(0, 22 - step.name.length))}[${statusTag}] ${C.cyan}★ unique value${C.reset}`);
+			console.log(`     ${C.dim}${step.desc}${C.reset}`);
+			if (detail) console.log(`     ${C.cyan}${detail}${C.reset}`);
+		} else {
+			console.log(`  ${step.icon} ${C.bold}Step ${step.num}${C.reset}  ${C.white}${step.name}${C.reset}${" ".repeat(Math.max(0, 22 - step.name.length))}[${statusTag}]`);
+			console.log(`     ${C.dim}${step.desc}${C.reset}`);
+			if (detail) console.log(`     ${C.cyan}${detail}${C.reset}`);
 		}
+
 		if (step.num < 8) {
 			console.log(`     ${C.gray}↓${C.reset}`);
 		}
 	}
 
 	console.log(`\n  ${C.gray}${LINE}${C.reset}`);
-	console.log(`  ${C.dim}Metrics M1-M10 collected at each step.${C.reset}`);
+	console.log(`  ${C.dim}Metrics M1-M10 collected automatically.${C.reset}`);
+	if (isWrapMode) {
+		console.log(`  ${C.dim}★ = what AgentWeave adds that your agent can't do alone.${C.reset}`);
+	}
 	console.log(`  ${C.dim}Edit agentweave.yaml to change config. CLI flags override.${C.reset}\n`);
 }
 
@@ -303,19 +330,32 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 	console.log();
 	printPipelineProgress(0, "starting");
 
-	// Create pipeline (inject credentials into agent process env)
+	// Smart defaults: wrap mode (agent CLI) vs direct mode (agent-loop)
+	// Wrap mode: agent already handles task understanding, planning, context — AgentWeave
+	// adds QA layer on top (validate, test, retry, measure)
+	// Direct mode: AgentWeave handles full SDLC pipeline internally
+	const isWrapMode = !!agent;
+
 	const pipeline = createSDLCPipeline({
 		execution: agent
 			? { mode: "process-adapter", processAdapter: { command: agent.command, args: agent.args, promptMode: agent.promptMode, env: agentEnv ? buildChildEnv(agentEnv) : undefined } }
 			: { mode: "agent-loop", agentLoop: { model, maxTurns: 50 } },
 		modules: {
-			taskNormalizer: { enabled: true },
-			contextBuilder: { enabled: true, maxFiles: 15 },
-			planGenerator: { enabled: true },
+			// In wrap mode: agent handles these → OFF (agent does it better)
+			// In direct mode: AgentWeave handles these → ON
+			taskNormalizer: { enabled: !isWrapMode },
+			contextBuilder: { enabled: !isWrapMode, maxFiles: 15 },
+			planGenerator: { enabled: !isWrapMode },
+
+			// Always ON
 			executionBridge: { enabled: true },
+
+			// AgentWeave's unique value — agent can't do these
 			patchValidator: { enabled: true },
 			qualityGate: { enabled: checks.length > 0, checks },
 			retryEngine: { enabled: true, maxRetries: retries },
+
+			// Optional
 			outputStandardizer: { enabled: false },
 		},
 		metrics: { enabled: true, baseline: true, persistPath: metricsDir },

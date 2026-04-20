@@ -7,16 +7,38 @@ import type { SDLCConfig } from "@agentweave/types";
 
 // ─── Defaults ────────────────────────────────────────────────────
 
+/**
+ * Default config optimized for wrap mode (process-adapter).
+ *
+ * When wrapping an agent CLI (Claude Code, Cursor, Aider), the agent
+ * already handles: task understanding, context discovery, planning, execution, retry.
+ *
+ * AgentWeave's unique value is the QA layer the agent can't do itself:
+ * - PatchValidator: check scope (agent often touches unrelated files)
+ * - QualityGate: run tests/lint (agent doesn't run your test suite)
+ * - RetryEngine: deterministic retry with classified error feedback
+ * - MetricsCollector: measure M1-M10 (agent doesn't track its own quality)
+ *
+ * Modules like TaskNormalizer, ContextBuilder, PlanGenerator are OFF by default
+ * in wrap mode — enable them for agent-loop mode (direct API, no agent CLI).
+ */
 export function getDefaultSDLCConfig(): SDLCConfig {
 	return {
 		modules: {
-			taskNormalizer: { enabled: true },
-			contextBuilder: { enabled: true, maxFiles: 20, maxTokens: 50_000 },
-			planGenerator: { enabled: true, maxSteps: 15 },
+			// OFF by default — agent CLI handles these better
+			taskNormalizer: { enabled: false },
+			contextBuilder: { enabled: false },
+			planGenerator: { enabled: false },
+
+			// Always ON — bridge to agent
 			executionBridge: { enabled: true },
+
+			// ON by default — AgentWeave's unique value (agent can't do these)
 			patchValidator: { enabled: true, maxFilesChanged: 30, scopeStrict: false },
 			qualityGate: { enabled: true, checks: [] },
 			retryEngine: { enabled: true, maxRetries: 3 },
+
+			// OFF by default — optional convenience
 			outputStandardizer: { enabled: false },
 		},
 		execution: {
@@ -25,7 +47,7 @@ export function getDefaultSDLCConfig(): SDLCConfig {
 		},
 		metrics: {
 			enabled: true,
-			baseline: false,
+			baseline: true,
 		},
 	};
 }

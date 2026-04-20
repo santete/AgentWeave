@@ -102,8 +102,8 @@ describe("ProcessAdapter", () => {
 describe("ProcessAdapter — message tracking", () => {
 	it("should track assistant messages from stdout", async () => {
 		const adapter = new ProcessAdapter({
-			command: "node",
-			args: ["-e", 'console.log("line 1"); console.log("line 2");'],
+			command: "echo",
+			args: ["hello from adapter"],
 			promptMode: "arg",
 			parseJson: false,
 		});
