@@ -338,12 +338,17 @@ async function runApiAgent(task: BenchTask, workdir: string, startTime: number, 
 async function runRawAgent(task: BenchTask, workdir: string, startTime: number, preTest: TestResult): Promise<TaskResult> {
 	const agent = resolveAgent(agentFlag);
 	const credEnv = getAgentEnv(agentFlag);
+	// Subscription-mode claude CLI manages its own auth; API key would force API mode (and fail if invalid)
+	if (agentFlag === "claude" || agentFlag === "claude-json") delete credEnv.ANTHROPIC_API_KEY;
 	const childEnv = buildChildEnv(credEnv);
 
 	// Run agent directly — no SDLC pipeline
+	// Add --dangerously-skip-permissions for claude in isolated benchmark workspaces
+	const benchArgs = agentFlag === "claude" || agentFlag === "claude-json"
+		? [...agent.args, "--dangerously-skip-permissions", task.prompt]
+		: [...agent.args, task.prompt];
 	try {
-		const agentArgs = [...agent.args, task.prompt];
-		execSync(`"${agent.command}" ${agentArgs.map(a => `"${a}"`).join(" ")}`, {
+		execSync(`"${agent.command}" ${benchArgs.map(a => `"${a}"`).join(" ")}`, {
 			cwd: workdir,
 			env: childEnv,
 			timeout: 120_000,
@@ -362,16 +367,24 @@ async function runRawAgent(task: BenchTask, workdir: string, startTime: number, 
 
 async function runPipelineAgent(task: BenchTask, workdir: string, startTime: number, preTest: TestResult): Promise<TaskResult> {
 	const credEnv = getAgentEnv(agentFlag);
+	if (agentFlag === "claude" || agentFlag === "claude-json") delete credEnv.ANTHROPIC_API_KEY;
 	const childEnv = buildChildEnv(credEnv);
 
 	// Run via agentweave pipeline CLI
 	const cliPath = join(__dirname, "..", "packages", "cli", "dist", "bin.js");
-	const checksArg = task.testCommand ? `--checks "node ${join(__dirname, "tasks", "verify", "run-tests.cjs")} ${join(workdir, "test", task.expectedFiles[0]!.replace("src/", "").replace(".ts", ".test.ts"))}"` : "";
+	const testCheckPath = join(workdir, "test", task.expectedFiles[0]!.replace("src/", "").replace(".ts", ".test.ts"));
+	const checksArg = task.testCommand
+		? `--checks "test:node ${join(__dirname, "tasks", "verify", "run-tests.cjs")} \\"${testCheckPath}\\""`
+		: "";
+	// Pass --dangerously-skip-permissions for claude in isolated benchmark workspaces
+	const skipPermsArg = (agentFlag === "claude" || agentFlag === "claude-json")
+		? `--agent-args "--dangerously-skip-permissions"`
+		: "";
 	let retryCount = 0;
 
 	try {
 		const output = execSync(
-			`node "${cliPath}" pipeline run "${task.prompt}" --agent ${agentFlag} --retries 3 ${checksArg}`,
+			`node "${cliPath}" pipeline run "${task.prompt}" --agent ${agentFlag} --retries 3 ${checksArg} ${skipPermsArg}`,
 			{ cwd: workdir, env: childEnv, timeout: 180_000, stdio: "pipe", encoding: "utf-8" },
 		);
 		// Parse retry count from output

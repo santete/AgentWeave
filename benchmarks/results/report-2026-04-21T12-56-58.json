@@ -1,0 +1,257 @@
+{
+  "timestamp": "2026-04-21T12:56:58.822Z",
+  "agent": "claude",
+  "tasks": [
+    {
+      "id": "T1",
+      "name": "Bug Fix — Null Pointer",
+      "category": "bugfix",
+      "difficulty": "easy",
+      "prompt": "Fix the null pointer exception in the login function. The function getUserById returns null when user is not found, but the caller doesn't check for null before accessing user.name.",
+      "setupScript": "benchmarks/tasks/setup/t1-setup.cjs",
+      "expectedFiles": [
+        "src/auth.ts"
+      ],
+      "testCommand": "node benchmarks/tasks/verify/t1-verify.js",
+      "maxExpectedFiles": 2
+    },
+    {
+      "id": "T2",
+      "name": "Bug Fix — Off-by-One",
+      "category": "bugfix",
+      "difficulty": "easy",
+      "prompt": "Fix the off-by-one error in the pagination function. When requesting page 1 with pageSize 10, it skips the first item. The offset calculation is wrong.",
+      "setupScript": "benchmarks/tasks/setup/t2-setup.cjs",
+      "expectedFiles": [
+        "src/pagination.ts"
+      ],
+      "testCommand": "node benchmarks/tasks/verify/t2-verify.js",
+      "maxExpectedFiles": 2
+    },
+    {
+      "id": "T3",
+      "name": "Feature — Add Input Validation",
+      "category": "feature",
+      "difficulty": "medium",
+      "prompt": "Add email validation to the user registration function. Reject emails without @ symbol, without domain, or longer than 254 characters. Return a clear error message for each case.",
+      "setupScript": "benchmarks/tasks/setup/t3-setup.cjs",
+      "expectedFiles": [
+        "src/registration.ts"
+      ],
+      "testCommand": "node benchmarks/tasks/verify/t3-verify.js",
+      "maxExpectedFiles": 3
+    },
+    {
+      "id": "T4",
+      "name": "Feature — Add Retry Logic",
+      "category": "feature",
+      "difficulty": "medium",
+      "prompt": "Add retry logic to the HTTP client fetchData function. Retry up to 3 times on 5xx errors with exponential backoff (1s, 2s, 4s). Don't retry on 4xx errors. Return the last error if all retries fail.",
+      "setupScript": "benchmarks/tasks/setup/t4-setup.cjs",
+      "expectedFiles": [
+        "src/http-client.ts"
+      ],
+      "testCommand": "node benchmarks/tasks/verify/t4-verify.js",
+      "maxExpectedFiles": 3
+    },
+    {
+      "id": "T5",
+      "name": "Refactor — Extract Function",
+      "category": "refactor",
+      "difficulty": "medium",
+      "prompt": "The processOrder function is 80 lines long and does 3 things: validate order, calculate total, apply discount. Extract each into a separate function. Keep all existing tests passing.",
+      "setupScript": "benchmarks/tasks/setup/t5-setup.cjs",
+      "expectedFiles": [
+        "src/order.ts"
+      ],
+      "testCommand": "node benchmarks/tasks/verify/t5-verify.js",
+      "maxExpectedFiles": 3
+    }
+  ],
+  "rawResults": [
+    {
+      "taskId": "T1",
+      "mode": "raw",
+      "m1_firstPassSuccess": true,
+      "m2_testPassRate": 1,
+      "m3_scopeAccuracy": 1,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 41.009,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 3,
+      "testsFailed": 0,
+      "testsTotal": 3
+    },
+    {
+      "taskId": "T2",
+      "mode": "raw",
+      "m1_firstPassSuccess": true,
+      "m2_testPassRate": 1,
+      "m3_scopeAccuracy": 1,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 21.236,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 3,
+      "testsFailed": 0,
+      "testsTotal": 3
+    },
+    {
+      "taskId": "T3",
+      "mode": "raw",
+      "m1_firstPassSuccess": true,
+      "m2_testPassRate": 1,
+      "m3_scopeAccuracy": 1,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 31.034,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 5,
+      "testsFailed": 0,
+      "testsTotal": 5
+    },
+    {
+      "taskId": "T4",
+      "mode": "raw",
+      "m1_firstPassSuccess": true,
+      "m2_testPassRate": 1,
+      "m3_scopeAccuracy": 1,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 76.799,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 4,
+      "testsFailed": 0,
+      "testsTotal": 4
+    },
+    {
+      "taskId": "T5",
+      "mode": "raw",
+      "m1_firstPassSuccess": true,
+      "m2_testPassRate": 1,
+      "m3_scopeAccuracy": 1,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 63.267,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 6,
+      "testsFailed": 0,
+      "testsTotal": 6
+    }
+  ],
+  "pipelineResults": [
+    {
+      "taskId": "T1",
+      "mode": "pipeline",
+      "m1_firstPassSuccess": true,
+      "m2_testPassRate": 1,
+      "m3_scopeAccuracy": 1,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 38.055,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 3,
+      "testsFailed": 0,
+      "testsTotal": 3
+    },
+    {
+      "taskId": "T2",
+      "mode": "pipeline",
+      "m1_firstPassSuccess": true,
+      "m2_testPassRate": 1,
+      "m3_scopeAccuracy": 1,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 28.119,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 3,
+      "testsFailed": 0,
+      "testsTotal": 3
+    },
+    {
+      "taskId": "T3",
+      "mode": "pipeline",
+      "m1_firstPassSuccess": true,
+      "m2_testPassRate": 1,
+      "m3_scopeAccuracy": 1,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 30.926,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 5,
+      "testsFailed": 0,
+      "testsTotal": 5
+    },
+    {
+      "taskId": "T4",
+      "mode": "pipeline",
+      "m1_firstPassSuccess": true,
+      "m2_testPassRate": 1,
+      "m3_scopeAccuracy": 1,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 56.704,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 4,
+      "testsFailed": 0,
+      "testsTotal": 4
+    },
+    {
+      "taskId": "T5",
+      "mode": "pipeline",
+      "m1_firstPassSuccess": true,
+      "m2_testPassRate": 1,
+      "m3_scopeAccuracy": 1,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 41.859,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 6,
+      "testsFailed": 0,
+      "testsTotal": 6
+    }
+  ],
+  "summary": {
+    "raw": {
+      "avgTestPassRate": 1,
+      "avgScopeAccuracy": 1,
+      "totalRetries": 0,
+      "firstPassSuccessRate": 1,
+      "avgTimeSeconds": 46.669,
+      "totalCostUsd": 0,
+      "regressionCount": 0,
+      "overallScore": 90.35687501339218
+    },
+    "pipeline": {
+      "avgTestPassRate": 1,
+      "avgScopeAccuracy": 1,
+      "totalRetries": 0,
+      "firstPassSuccessRate": 1,
+      "avgTimeSeconds": 39.132600000000004,
+      "totalCostUsd": 0,
+      "regressionCount": 0,
+      "overallScore": 91.38853538993065
+    },
+    "improvement": {
+      "testPassRate": "0.0%",
+      "scopeAccuracy": "0.0%",
+      "firstPassSuccess": "0.0%",
+      "retryCount": "0",
+      "regressions": "0 fewer",
+      "costDelta": "$0.0000",
+      "timeDelta": "-7.5s",
+      "overallScore": "1.0 points"
+    }
+  }
+}
