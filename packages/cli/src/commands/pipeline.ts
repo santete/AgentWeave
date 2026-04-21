@@ -42,6 +42,17 @@ const C = {
 };
 
 const LINE = "─".repeat(62);
+
+const VALID_CHECK_TYPES = new Set(["test", "lint", "compile", "typecheck", "custom"]);
+
+/** Parse "type:command" or plain "command" into a QualityGateCheck shape. */
+function parseCheck(raw: string): { type: string; command: string; required: true } {
+	const colonIdx = raw.indexOf(":");
+	if (colonIdx > 0 && VALID_CHECK_TYPES.has(raw.slice(0, colonIdx))) {
+		return { type: raw.slice(0, colonIdx), command: raw.slice(colonIdx + 1), required: true };
+	}
+	return { type: "custom", command: raw, required: true };
+}
 const BOX_T = "┌" + "─".repeat(62) + "┐";
 const BOX_B = "└" + "─".repeat(62) + "┘";
 const BOX_M = "├" + "─".repeat(62) + "┤";
@@ -73,7 +84,7 @@ export function pipelineShowCommand(cliOverrides?: { checks?: string[]; retries?
 	}
 	if (cliOverrides?.checks && cliOverrides.checks.length > 0) {
 		config.modules.qualityGate.enabled = true;
-		(config.modules.qualityGate as Record<string, unknown>).checks = cliOverrides.checks.map((c) => ({ type: "custom", command: c, required: true }));
+		(config.modules.qualityGate as Record<string, unknown>).checks = cliOverrides.checks.map(parseCheck);
 	}
 	if (cliOverrides?.retries !== undefined) {
 		config.modules.retryEngine.maxRetries = cliOverrides.retries;
@@ -281,11 +292,7 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 		agent.args.push(...args.agentArgs);
 	}
 
-	const checks = (args.checks ?? []).map((cmd) => ({
-		type: "custom" as const,
-		command: cmd,
-		required: true,
-	}));
+	const checks = (args.checks ?? []).map(parseCheck);
 
 	// Header
 	console.log(`\n  ${BOX_T}`);
@@ -314,6 +321,8 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 	if (agent) {
 		const agentKey = args.agent!.toLowerCase();
 		const credEnv = getAgentEnv(agentKey);
+		// Subscription-mode claude CLI manages its own auth; API key would force API mode (and fail if invalid)
+		if (agentKey === "claude" || agentKey === "claude-json") delete credEnv.ANTHROPIC_API_KEY;
 		const credCount = Object.keys(credEnv).length;
 		if (credCount > 0) {
 			agentEnv = credEnv;

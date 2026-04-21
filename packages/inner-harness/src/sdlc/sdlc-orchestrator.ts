@@ -190,6 +190,19 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 				defaultOutput: { taskId: task.id, steps: [], estimatedFiles: [] } satisfies SDLCPlan,
 			});
 
+			// Pre-execution QA snapshot — only when detectRegression is explicitly enabled (doubles QA time)
+			const emptyExecResult: SDLCExecutionResult = { success: false, changedFiles: [], output: "", usage: createEmptyTokenUsage(), durationMs: 0, terminalReason: "skipped" };
+			let preQaResult: SDLCValidationResult | null = null;
+			if (this.config.modules.qualityGate.enabled && this.config.modules.qualityGate.detectRegression === true) {
+				preQaResult = (await runModule({
+					builtIn: this.qualityGate,
+					config: this.config.modules.qualityGate,
+					input: emptyExecResult,
+					context: ctx,
+					defaultOutput: { passed: true, checks: [] },
+				})).output;
+			}
+
 			// Phase 4: Execute
 			yield this.statusEvent("Executing...");
 			let execResult = (await runModule({
@@ -228,6 +241,13 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 					context: ctx,
 					defaultOutput: { passed: true, checks: [] },
 				})).output;
+
+				// M7: regression = any check that passed pre-execution now fails post-execution
+				if (preQaResult && qaResult) {
+					const prePassedNames = new Set(preQaResult.checks.filter((c) => c.passed).map((c) => c.name));
+					const regression = qaResult.checks.some((c) => !c.passed && prePassedNames.has(c.name));
+					mc.record("regressionDetected", regression);
+				}
 			}
 
 			// Phase 7: Retry loop
@@ -293,8 +313,12 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 				});
 			}
 
-			// Mark plan steps done
-			for (const step of plan.steps) step.done = true;
+			// M7 final state: if retry resolved the regression, clear the flag
+			if (qaResult?.passed) mc.record("regressionDetected", false);
+
+			// Mark plan steps done only when execution succeeded and QA passed
+			const allPassed = execResult.success && (!qaResult || qaResult.passed);
+			for (const step of plan.steps) step.done = allPassed;
 
 			// Finalize metrics
 			this.lastMetrics = mc.finalize(execResult, plan, qaResult, patchResult);

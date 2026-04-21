@@ -90,6 +90,7 @@ export const SDLCConfigSchema = z.object({
 		}),
 		qualityGate: ModuleConfigSchema.extend({
 			checks: z.array(QualityGateCheckSchema).optional(),
+			detectRegression: z.boolean().optional(),
 		}),
 		retryEngine: ModuleConfigSchema.extend({
 			maxRetries: z.number().optional(),

@@ -79,8 +79,8 @@ describe("MetricsCollector", () => {
 		expect(snapshot.m6_timeToCompletionMs).toBeGreaterThanOrEqual(0);
 		expect(snapshot.m7_regressionDetected).toBe(false);
 		expect(snapshot.m8_planAccuracy).toBe(1); // all steps done
-		expect(snapshot.m9_contextUtilization).toBe(1); // default
-		expect(snapshot.m10_codeQualityDelta).toBe(0);
+		expect(snapshot.m9_contextUtilization).toBeNull();  // not recorded
+		expect(snapshot.m10_codeQualityDelta).toBeNull();   // not recorded
 	});
 
 	it("should report first-pass failure when retries occurred", () => {

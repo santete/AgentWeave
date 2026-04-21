@@ -60,6 +60,11 @@ export interface ProcessAdapterConfig {
 	env?: Record<string, string>;
 }
 
+/** Double-quote an arg and escape any embedded double quotes. */
+function quoteArg(s: string): string {
+	return `"${s.replace(/"/g, '\\"')}"`;
+}
+
 // ─── Adapter ────────────────────────────────────────────────────
 
 export class ProcessAdapter implements InnerHarnessProvider {
@@ -127,13 +132,20 @@ export class ProcessAdapter implements InnerHarnessProvider {
 		const childEnv = this.config.env
 			? { ...process.env, ...this.config.env }
 			: process.env;
-		const child = spawn(this.config.command, args, {
+		// Windows: shell is needed to resolve .cmd wrappers (npm global bins), but
+		// spawn+shell:true auto-quotes args incorrectly when they contain spaces/newlines/colons,
+		// truncating the prompt. Pre-quote into a single command string and pass as shell input.
+		const isWin = process.platform === "win32";
+		const spawnFile = isWin
+			? `${quoteArg(this.config.command)} ${args.map(quoteArg).join(" ")}`
+			: this.config.command;
+		const spawnArgs = isWin ? [] : args;
+		const child = spawn(spawnFile, spawnArgs, {
 			cwd: this.config.cwd ?? process.cwd(),
 			stdio: ["pipe", "pipe", "pipe"],
 			signal: options?.signal,
 			env: childEnv,
-			// Windows: shell: true needed to resolve .cmd wrappers (npm global bins)
-			shell: process.platform === "win32",
+			shell: isWin,
 		});
 		this.process = child;
 

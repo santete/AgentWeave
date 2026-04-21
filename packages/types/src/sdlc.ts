@@ -119,8 +119,8 @@ export interface SDLCMetricsSnapshot {
 	m6_timeToCompletionMs: number;
 	m7_regressionDetected: boolean;
 	m8_planAccuracy: number; // 0.0 - 1.0
-	m9_contextUtilization: number; // 0.0 - 1.0
-	m10_codeQualityDelta: number; // positive = improved
+	m9_contextUtilization: number | null; // 0.0 - 1.0, null = not measured
+	m10_codeQualityDelta: number | null;  // positive = improved, null = not measured
 }
 
 export interface SDLCBaselineComparison {
@@ -162,7 +162,11 @@ export interface SDLCConfig {
 			maxFilesChanged?: number;
 			scopeStrict?: boolean;
 		};
-		qualityGate: SDLCModuleConfig & { checks?: QualityGateCheck[] };
+		qualityGate: SDLCModuleConfig & {
+			checks?: QualityGateCheck[];
+			/** Run QA before execution to detect regressions (M7). Default false — doubles QA time. */
+			detectRegression?: boolean;
+		};
 		retryEngine: SDLCModuleConfig & {
 			maxRetries?: number;
 			strategies?: RetryStrategy[];

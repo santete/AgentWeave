@@ -93,11 +93,11 @@ export class MetricsCollector {
 		const doneSteps = plan?.steps.filter((s) => s.done).length ?? 0;
 		const planAccuracy = totalSteps > 0 ? doneSteps / totalSteps : 1;
 
-		// M9: context utilization
-		const contextUtilization = (this.recordings.get("contextUtilization") as number) ?? 1;
+		// M9: context utilization — null if not recorded
+		const contextUtilization = (this.recordings.get("contextUtilization") as number) ?? null;
 
-		// M10: code quality delta
-		const codeQualityDelta = (this.recordings.get("codeQualityDelta") as number) ?? 0;
+		// M10: code quality delta — null if not recorded
+		const codeQualityDelta = (this.recordings.get("codeQualityDelta") as number) ?? null;
 
 		return {
 			taskId: this.taskId,
@@ -132,9 +132,15 @@ export class MetricsCollector {
 			m5_costUsd: current.m5_costUsd - baseline.m5_costUsd,
 			m6_timeToCompletionMs: current.m6_timeToCompletionMs - baseline.m6_timeToCompletionMs,
 			m8_planAccuracy: current.m8_planAccuracy - baseline.m8_planAccuracy,
-			m9_contextUtilization: current.m9_contextUtilization - baseline.m9_contextUtilization,
-			m10_codeQualityDelta: current.m10_codeQualityDelta - baseline.m10_codeQualityDelta,
 		};
+
+		// Only compute delta for nullable metrics when both sides have real values
+		if (current.m9_contextUtilization != null && baseline.m9_contextUtilization != null) {
+			deltas.m9_contextUtilization = current.m9_contextUtilization - baseline.m9_contextUtilization;
+		}
+		if (current.m10_codeQualityDelta != null && baseline.m10_codeQualityDelta != null) {
+			deltas.m10_codeQualityDelta = current.m10_codeQualityDelta - baseline.m10_codeQualityDelta;
+		}
 
 		return { current, baseline, deltas };
 	}

@@ -3,6 +3,8 @@
  * The bridge between SDLC planning and actual code generation.
  */
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type {
 	SDLCModule,
 	SDLCModuleContext,
@@ -13,6 +15,8 @@ import type {
 	InnerHarnessProvider,
 } from "@agentweave/types";
 import { createEmptyTokenUsage } from "@agentweave/types";
+
+const execFileAsync = promisify(execFile);
 
 export interface ExecutionBridgeInput {
 	task: SDLCTask;
@@ -58,6 +62,8 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 		const events: InnerEvent[] = [];
 		const changedFiles: string[] = [];
 
+		// Capture HEAD SHA before execution so git diff can catch committed changes too
+		const preExecSha = await this.getHeadSha(context.cwd);
 		const gen = provider.run(prompt, { signal: context.signal });
 		let terminalReason = "completed";
 
@@ -81,10 +87,13 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 			}
 		}
 
+		// Fallback: use git diff if no tool events captured changed files (e.g. process-adapter mode)
+		const resolvedFiles = changedFiles.length > 0 ? changedFiles : await this.getGitChangedFiles(context.cwd, preExecSha);
+
 		const usage = provider.getUsage();
 		return {
 			success: terminalReason === "completed",
-			changedFiles,
+			changedFiles: resolvedFiles,
 			output: this.extractOutput(events),
 			usage,
 			durationMs: 0, // filled by timer in execute()
@@ -160,6 +169,7 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 		if (!config) throw new Error("execution.agentLoop config required for agent-loop mode");
 
 		const { AgentLoop } = await import("../../agent-loop");
+		const { BUILT_IN_TOOLS } = await import("../../built-in-tools");
 
 		// AgentLoop uses noop control plane by default when none provided (standalone mode)
 		return new AgentLoop({
@@ -167,7 +177,40 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 			fallbackModel: config.fallbackModel,
 			maxTurns: config.maxTurns ?? 50,
 			systemPrompt: config.systemPrompt,
+			tools: BUILT_IN_TOOLS,
 		});
+	}
+
+	private async getHeadSha(cwd: string): Promise<string | null> {
+		try {
+			const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd });
+			return stdout.trim();
+		} catch {
+			return null;
+		}
+	}
+
+	private async getGitChangedFiles(cwd: string, preExecSha: string | null): Promise<string[]> {
+		try {
+			const files = new Set<string>();
+
+			// Uncommitted changes (staged + unstaged vs HEAD)
+			const { stdout: uncommitted } = await execFileAsync("git", ["diff", "--name-only", "HEAD"], { cwd });
+			for (const f of uncommitted.trim().split("\n").filter(Boolean)) files.add(f);
+
+			// Committed changes since pre-execution snapshot (handles agents that commit during execution)
+			if (preExecSha) {
+				const currentSha = await this.getHeadSha(cwd);
+				if (currentSha && currentSha !== preExecSha) {
+					const { stdout: committed } = await execFileAsync("git", ["diff", "--name-only", preExecSha, "HEAD"], { cwd });
+					for (const f of committed.trim().split("\n").filter(Boolean)) files.add(f);
+				}
+			}
+
+			return [...files];
+		} catch {
+			return [];
+		}
 	}
 
 	private async createProcessAdapter(context: SDLCModuleContext): Promise<InnerHarnessProvider> {

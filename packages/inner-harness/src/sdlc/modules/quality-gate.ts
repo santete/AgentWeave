@@ -163,6 +163,7 @@ export class QualityGateModule implements SDLCModule<SDLCExecutionResult, SDLCVa
 				cwd: context.cwd,
 				timeout: 120_000,
 				signal: context.signal,
+				shell: process.platform === "win32",
 			});
 
 			return {
