@@ -361,6 +361,25 @@ describe("PermissionEngine — audit trail", () => {
 		await engine.evaluate(makeRequest("Bash", { command: "git status" }));
 		expect(engine.getAuditLog()).toHaveLength(1);
 	});
+
+	it("redacts API keys, bearer tokens, and password= from serializedInput", async () => {
+		await engine.evaluate(
+			makeRequest("Bash", {
+				command:
+					"curl -H 'Authorization: Bearer abcdef0123456789.xyz' https://api.x/y?api_key=SECRETVALUE && echo sk-ant-api03-ABCDEFGHIJKLMNOPQRST password=hunter2",
+			}),
+		);
+		const entry = engine.getAuditLog()[0]!;
+		// Raw secret strings must not appear
+		expect(entry.serializedInput).not.toContain("abcdef0123456789");
+		expect(entry.serializedInput).not.toContain("SECRETVALUE");
+		expect(entry.serializedInput).not.toContain("hunter2");
+		expect(entry.serializedInput).not.toContain("sk-ant-api03-ABCDEFGHIJKLMNOPQRST");
+		// Redaction markers present
+		expect(entry.serializedInput).toContain("Bearer ***");
+		expect(entry.serializedInput).toContain("sk-***");
+		expect(entry.serializedInput).toMatch(/password=\*\*\*/i);
+	});
 });
 
 // ─── Rule Groups ─────────────────────────────────────────────────

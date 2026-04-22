@@ -33,6 +33,14 @@ import { buildPermissionContext } from "./permission-context";
 const MAX_CONDITION_LEN = 512;
 const MAX_REGEX_LEN = 256;
 const MAX_FIELD_DEPTH = 4;
+/**
+ * Per-field value length cap when feeding a resolved context value into
+ * `matches()`, `pathMatches()`, or `contains()`. Caps ReDoS blast radius
+ * against user-supplied regexes — the pattern is bounded by MAX_REGEX_LEN
+ * but the subject string (e.g. `request.toolInput.command`) is not.
+ * Strings longer than this cap are treated as a non-match (fail-safe).
+ */
+const MAX_FIELD_VALUE_LEN = 8192;
 
 // ─── Compiled Rule ───────────────────────────────────────────────
 
@@ -130,6 +138,22 @@ function serializeInput(input: Record<string, unknown>): string {
 	return JSON.stringify(input);
 }
 
+/**
+ * Scrub common secret shapes from a serialized input string before it enters
+ * the engine's audit buffer. The buffer is in-memory today, but `getAuditLog()`
+ * is public — any consumer that flushes it to disk inherits these redactions.
+ * Applied ONLY in `recordAudit`; `matchCompiled` continues to use the raw.
+ */
+function redactForAudit(s: string): string {
+	return s
+		// OpenAI / Anthropic-style API keys — `sk-` / `sk-ant-` prefix, 20+ tail chars
+		.replace(/sk-(ant-)?[A-Za-z0-9_-]{20,}/g, "sk-***")
+		// Bearer tokens in headers or env-like strings
+		.replace(/Bearer\s+[A-Za-z0-9._-]{16,}/gi, "Bearer ***")
+		// Inline password=, token=, secret=, apikey= assignments
+		.replace(/(password|token|secret|api[_-]?key)\s*=\s*["']?[^"'\s]+["']?/gi, "$1=***");
+}
+
 // ─── Condition Compiler + Evaluator (safe mini-DSL, NO eval) ────
 
 /**
@@ -173,10 +197,10 @@ function compileCondition(
 	if (condition.length > MAX_CONDITION_LEN) return "invalid";
 
 	try {
-		const orParts = condition.split("||").map((s) => s.trim());
+		const orParts = splitLogical(condition, "||").map((s) => s.trim());
 		const orGroups: CompiledExpr[][] = [];
 		for (const orPart of orParts) {
-			const andParts = orPart.split("&&").map((s) => s.trim());
+			const andParts = splitLogical(orPart, "&&").map((s) => s.trim());
 			const andExprs = andParts.map(compileExpr);
 			orGroups.push(andExprs);
 		}
@@ -184,6 +208,44 @@ function compileCondition(
 	} catch {
 		return "invalid";
 	}
+}
+
+/**
+ * Split `str` by the 2-char operator `op` (`&&` or `||`), IGNORING occurrences
+ * that fall inside `/.../flags` regex literals or `"..."` / `'...'` string
+ * literals. Prevents rules like `matches(x, /a||b/)` from being mangled by a
+ * naive top-level split.
+ */
+function splitLogical(str: string, op: "&&" | "||"): string[] {
+	const out: string[] = [];
+	let start = 0;
+	let i = 0;
+	// State: 'normal' | 'in-string-single' | 'in-string-double' | 'in-regex'
+	let state: "normal" | "s1" | "s2" | "re" = "normal";
+	while (i < str.length) {
+		const c = str[i]!;
+		const prev = i > 0 ? str[i - 1] : "";
+		if (state === "normal") {
+			if (c === "'") state = "s1";
+			else if (c === '"') state = "s2";
+			else if (c === "/") state = "re";
+			else if (c === op[0] && str[i + 1] === op[1]) {
+				out.push(str.slice(start, i));
+				i += 2;
+				start = i;
+				continue;
+			}
+		} else if (state === "s1") {
+			if (c === "'" && prev !== "\\") state = "normal";
+		} else if (state === "s2") {
+			if (c === '"' && prev !== "\\") state = "normal";
+		} else if (state === "re") {
+			if (c === "/" && prev !== "\\") state = "normal";
+		}
+		i++;
+	}
+	out.push(str.slice(start));
+	return out;
 }
 
 function compileExpr(raw: string): CompiledExpr {
@@ -280,15 +342,17 @@ function evaluateExpr(expr: CompiledExpr, ctx: PermissionContext): boolean {
 			return false;
 		case "contains": {
 			const v = resolveField(expr.field, ctx);
-			return typeof v === "string" && v.includes(expr.value);
+			if (typeof v !== "string" || v.length > MAX_FIELD_VALUE_LEN) return false;
+			return v.includes(expr.value);
 		}
 		case "matches": {
 			const v = resolveField(expr.field, ctx);
-			return typeof v === "string" && expr.regex.test(v);
+			if (typeof v !== "string" || v.length > MAX_FIELD_VALUE_LEN) return false;
+			return expr.regex.test(v);
 		}
 		case "pathMatches": {
 			const v = resolveField(expr.field, ctx);
-			if (typeof v !== "string") return false;
+			if (typeof v !== "string" || v.length > MAX_FIELD_VALUE_LEN) return false;
 			const normalized = normalizePosix(v);
 			const hit = expr.glob.test(normalized);
 			return expr.negate ? !hit : hit;
@@ -603,7 +667,7 @@ export class PermissionEngine {
 
 		this.auditLog.push({
 			toolName: request.toolName,
-			serializedInput: serializeInput(request.toolInput),
+			serializedInput: redactForAudit(serializeInput(request.toolInput)),
 			matchedRule,
 			behavior: decision.behavior,
 			reason: decision.reason,

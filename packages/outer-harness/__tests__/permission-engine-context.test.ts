@@ -261,6 +261,61 @@ describe("logical operators", () => {
 	});
 });
 
+// ─── 7.3b Parser robustness — literal-safe split ───────────────
+
+describe("parser robustness — logical split ignores literals", () => {
+	it("|| inside a regex literal is not a top-level OR", async () => {
+		// Regex `/a||b/` = empty alternations around b; valid JS regex.
+		// If the splitter were naive, this would split into two broken parts
+		// and the rule would be dropped (→ allow in permissive mode).
+		const engine = makeEngine([
+			ruleWith("Bash(*)", "matches(request.toolInput.command, /a||b/)"),
+		]);
+		// 'xbx' matches the `b` alternative → rule fires.
+		expect(
+			(await engine.evaluate(req("Bash", { command: "xbx" }))).behavior,
+		).toBe("deny");
+	});
+
+	it("&& inside a string literal is not a top-level AND", async () => {
+		const engine = makeEngine([
+			ruleWith("Bash(*)", 'contains(request.toolInput.command, "x && y")'),
+		]);
+		expect(
+			(await engine.evaluate(req("Bash", { command: "echo x && y" })))
+				.behavior,
+		).toBe("deny");
+	});
+});
+
+// ─── 7.3c ReDoS safety — field-value length cap ─────────────────
+
+describe("field-value length cap — matches/pathMatches/contains", () => {
+	it("drops the match silently when the subject exceeds MAX_FIELD_VALUE_LEN", async () => {
+		// Pattern that *would* catastrophically backtrack on a long subject.
+		// Cap makes it a no-match instead of a CPU burn.
+		const engine = makeEngine([
+			ruleWith("Bash(*)", "matches(request.toolInput.command, /(a+)+b/)"),
+		]);
+		const huge = "a".repeat(10_000);
+		const start = Date.now();
+		const d = await engine.evaluate(req("Bash", { command: huge }));
+		const elapsed = Date.now() - start;
+		expect(d.behavior).toBe("allow"); // no-match → permissive default
+		expect(elapsed).toBeLessThan(100); // should not backtrack
+	});
+
+	it("contains/pathMatches also respect the length cap", async () => {
+		const engine = makeEngine([
+			ruleWith("Bash(*)", 'contains(request.toolInput.command, "needle")'),
+		]);
+		const huge = "x".repeat(10_000) + "needle";
+		expect(
+			(await engine.evaluate(req("Bash", { command: huge }))).behavior,
+		).toBe("allow"); // cap makes it a non-match even though `needle` is present
+	});
+});
+
 // ─── 7.4 Fail-safe ──────────────────────────────────────────────
 
 describe("fail-safe — invalid conditions never crash", () => {
