@@ -160,3 +160,18 @@ export type {
 	PluginRegistration,
 	PluginConfig,
 } from "./plugin";
+
+// Guard (hook governance)
+export type {
+	HookInput,
+	GuardDecision,
+	GuardConfig,
+	GuardPermissionRule,
+	GuardBudgetConfig,
+	GuardAuditConfig,
+} from "./guard";
+export {
+	HookInputSchema,
+	GuardDecisionSchema,
+	GuardConfigSchema,
+} from "./guard";
