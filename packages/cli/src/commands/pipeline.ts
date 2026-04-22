@@ -16,6 +16,7 @@ import { resolveAgent, AGENT_PRESETS, listPresets } from "../agent-presets.js";
 import { getAgentEnv, hasCredentials, scrubCredentials, buildChildEnv, ensureGitignore } from "../credential-store.js";
 import { createAdapterGovernance, type AdapterGovernance } from "../lib/adapter-governance.js";
 import { createSdlcGovernance, type SdlcGovernanceBundle } from "../lib/sdlc-governance.js";
+import { terminalAskPrompt } from "../lib/terminal-ask.js";
 
 export interface PipelineRunArgs {
 	prompt: string;
@@ -372,8 +373,13 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 	// default empty-rule permissions it's a pure observer until a config is
 	// supplied. Permission rules are currently threaded via --mode sdlc config
 	// (see createSdlcGovernance); CLI flag surface is a follow-up.
+	//
+	// `ask` decisions resolve via the terminal prompt when stdout is a TTY.
+	// Headless runs (CI, redirected stdout) fall through to failMode — no
+	// accidental blocking of unattended pipelines.
 	const sdlcGov: SdlcGovernanceBundle = createSdlcGovernance({
 		sessionId: governanceSessionId,
+		onAsk: process.stdout.isTTY ? terminalAskPrompt : undefined,
 	});
 
 	const pipeline = createSDLCPipeline({

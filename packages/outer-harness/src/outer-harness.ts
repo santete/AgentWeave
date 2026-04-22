@@ -25,6 +25,7 @@ import type {
 	MultiAgentConfig,
 } from "@agentweave/types";
 import { PermissionEngine } from "./governance/permission-engine";
+import { AskStore } from "./governance/ask-store";
 import { OutputPipeline } from "./governance/output-pipeline";
 import type { OutputPipelineConfig } from "./governance/output-pipeline";
 import { BudgetManager } from "./governance/budget-manager";
@@ -72,6 +73,14 @@ export interface MonitoringConfig {
 	alertSinks?: AlertSinkConfig[];
 }
 
+export interface AskPersistenceConfig {
+	enabled: boolean;
+	/** Absolute or cwd-relative path. Default: `.agentweave/ask-approvals.json`. */
+	path?: string;
+	/** Override base directory for relative paths; defaults to `process.cwd()`. */
+	cwd?: string;
+}
+
 export interface OuterHarnessConfig {
 	permissions: PermissionConfig;
 	output: OutputPipelineConfig;
@@ -85,6 +94,8 @@ export interface OuterHarnessConfig {
 	monitoring?: MonitoringConfig;
 	/** Handler for permission "ask" flow. If not set, falls back to failMode. */
 	onAsk?: (toolName: string, toolInput: Record<string, unknown>, message: string) => Promise<{ allow: boolean; alwaysAllow?: boolean }>;
+	/** Opt-in persistence of "always allow" decisions across process restarts. */
+	askPersistence?: AskPersistenceConfig;
 }
 
 export class OuterHarness implements OuterHarnessConsumer {
@@ -94,6 +105,7 @@ export class OuterHarness implements OuterHarnessConsumer {
 	private hookEngine: HookEngine;
 	private inputGate: InputGate;
 	private askHandler: OuterHarnessConfig["onAsk"];
+	private askStore: AskStore | null = null;
 	private audit: AuditLogger;
 	private monitor: MonitorCollector;
 	private alerts: AlertEngine;
@@ -111,6 +123,15 @@ export class OuterHarness implements OuterHarnessConsumer {
 		this.hookEngine = new HookEngine({ hooks: config.hooks ?? {} });
 		this.inputGate = new InputGate(config.inputGate);
 		this.askHandler = config.onAsk;
+		if (config.askPersistence?.enabled) {
+			this.askStore = new AskStore({
+				path: config.askPersistence.path,
+				cwd: config.askPersistence.cwd,
+			});
+			for (const rule of this.askStore.load()) {
+				this.permissions.addRule(rule);
+			}
+		}
 		this.audit = new AuditLogger();
 		this.monitor = new MonitorCollector();
 		this.alerts = new AlertEngine();
@@ -174,14 +195,16 @@ export class OuterHarness implements OuterHarnessConsumer {
 					source: "user",
 					resolvedFromAsk: true,
 				};
-				// Persist "always allow" as runtime rule
+				// Persist "always allow" as runtime rule (and to disk if configured)
 				if (response.allow && response.alwaysAllow) {
-					this.permissions.addRule({
+					const runtimeRule = {
 						pattern: `${request.toolName}(*)`,
-						behavior: "allow",
-						source: "runtime",
+						behavior: "allow" as const,
+						source: "runtime" as const,
 						priority: 75,
-					});
+					};
+					this.permissions.addRule(runtimeRule);
+					this.askStore?.persist(runtimeRule);
 				}
 			} else {
 				const fallback =

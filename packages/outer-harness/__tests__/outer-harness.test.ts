@@ -1,4 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createControlPlane } from "@agentweave/control-plane";
 import { OuterHarness } from "../src/outer-harness";
 import type { ToolRequest, RawOutput } from "@agentweave/types";
@@ -213,5 +216,53 @@ describe("OuterHarness monitoring wiring", () => {
 		expect(sinks).toHaveLength(2);
 		expect(sinks[0]!.name).toBe("stdout");
 		expect(sinks[1]!.name).toBe("webhook");
+	});
+});
+
+describe("OuterHarness ask persistence (P2.1)", () => {
+	let workDir: string;
+	beforeEach(() => {
+		workDir = mkdtempSync(join(tmpdir(), "aw-askpersist-"));
+	});
+	afterEach(() => {
+		rmSync(workDir, { recursive: true, force: true });
+	});
+
+	it("persists alwaysAllow across OuterHarness instances", async () => {
+		const cfg = {
+			...defaultConfig(),
+			onAsk: async () => ({ allow: true, alwaysAllow: true }),
+			askPersistence: { enabled: true, cwd: workDir },
+		};
+
+		// First instance: Echo triggers ask → handler picks alwaysAllow.
+		const outer1 = new OuterHarness(cfg);
+		const d1 = await outer1.onToolRequested(
+			makeToolRequest("Echo", { text: "hi" }),
+		);
+		expect(d1.behavior).toBe("allow");
+		expect(d1.resolvedFromAsk).toBe(true);
+
+		// Second instance with no onAsk — loaded rule auto-allows.
+		const cfg2 = { ...defaultConfig(), askPersistence: { enabled: true, cwd: workDir } };
+		const outer2 = new OuterHarness(cfg2);
+		const d2 = await outer2.onToolRequested(
+			makeToolRequest("Echo", { text: "hi again" }),
+		);
+		expect(d2.behavior).toBe("allow");
+		expect(d2.resolvedFromAsk).toBeUndefined();
+	});
+
+	it("is zero-behavior-change when askPersistence.enabled is false", async () => {
+		const outer = new OuterHarness({
+			...defaultConfig(),
+			askPersistence: { enabled: false, cwd: workDir },
+		});
+		const decision = await outer.onToolRequested(
+			makeToolRequest("Echo", { text: "hi" }),
+		);
+		// failMode closed + no onAsk → deny (same as baseline behavior).
+		expect(decision.behavior).toBe("deny");
+		expect(decision.resolvedFromAsk).toBe(true);
 	});
 });

@@ -71,6 +71,37 @@ describe("createSdlcGovernance — helper wiring", () => {
 		expect(outer.getAuditLogger()).toBeDefined();
 	});
 
+	it("threads onAsk into the OuterHarness so ask decisions resolve via handler (P2.1)", async () => {
+		let askCalls = 0;
+		const { controlPlane } = createSdlcGovernance({
+			sessionId: "s_ask",
+			onAsk: async () => { askCalls++; return { allow: true }; },
+			config: {
+				permissions: {
+					mode: "default",
+					failMode: "closed",
+					timeoutMs: 5_000,
+					askTimeoutMs: 60_000,
+					rules: [
+						{ pattern: "Bash(*)", behavior: "ask", source: "policy", priority: 100 },
+					],
+				},
+			},
+		});
+
+		const decision = await controlPlane.intercept("tool_request", {
+			toolName: "Bash",
+			toolInput: { command: "echo hi" },
+			toolUseId: "t_ask",
+			turnIndex: 0,
+			isReadOnly: false,
+			isDestructive: false,
+		} as ToolRequest);
+
+		expect(askCalls).toBe(1);
+		expect(decision.behavior).toBe("allow");
+	});
+
 	it("defaults to empty-rule permissions → tool_request allowed (observer mode)", async () => {
 		const { controlPlane } = createSdlcGovernance({ sessionId: "s2" });
 		const req: ToolRequest = {

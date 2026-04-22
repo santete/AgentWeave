@@ -10,7 +10,7 @@
 
 import { createControlPlane } from "@agentweave/control-plane";
 import { OuterHarness } from "@agentweave/outer-harness";
-import type { OuterHarnessConfig } from "@agentweave/outer-harness";
+import type { AskPersistenceConfig, OuterHarnessConfig } from "@agentweave/outer-harness";
 import type { ControlPlane, PermissionConfig } from "@agentweave/types";
 
 export interface SdlcGovernanceBundle {
@@ -23,6 +23,10 @@ export interface CreateSdlcGovernanceOptions {
 	sessionId: string;
 	/** Full OuterHarnessConfig. Required fields are filled with conservative defaults. */
 	config?: Partial<OuterHarnessConfig>;
+	/** Interactive resolver for `ask` decisions. Takes precedence over config.onAsk. */
+	onAsk?: OuterHarnessConfig["onAsk"];
+	/** Persist "always allow" decisions across runs. Takes precedence over config.askPersistence. */
+	askPersistence?: AskPersistenceConfig;
 }
 
 // Default is `permissive`: with no configured rules, SDLC governance acts as
@@ -58,6 +62,8 @@ export function createSdlcGovernance(
 			...DEFAULT_PERMISSIONS,
 			...(options.config?.permissions ?? {}),
 		},
+		onAsk: options.onAsk ?? options.config?.onAsk,
+		askPersistence: options.askPersistence ?? options.config?.askPersistence,
 	};
 
 	const controlPlane = createControlPlane({

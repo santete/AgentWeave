@@ -4,6 +4,7 @@ export type {
 	OuterHarnessConfig,
 	MonitoringConfig,
 	AlertSinkConfig,
+	AskPersistenceConfig,
 } from "./outer-harness";
 
 // Governance
@@ -16,6 +17,8 @@ export { HookEngine } from "./governance/hook-engine";
 export type { HookEngineConfig } from "./governance/hook-engine";
 export { InputGate } from "./governance/input-gate";
 export type { InputGateConfig, InputGateResult } from "./governance/input-gate";
+export { AskStore } from "./governance/ask-store";
+export type { AskStoreOptions } from "./governance/ask-store";
 
 // Orchestration
 export { ConfigHierarchy, getDefaultConfig } from "./orchestration/config-hierarchy";
