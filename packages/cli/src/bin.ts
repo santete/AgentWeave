@@ -3,12 +3,13 @@
 /**
  * AgentWeave CLI entry point.
  *
- * Commands:
- *   agentweave task <prompt>       Run SDLC pipeline on a task
- *   agentweave metrics             View SDLC metrics from stored runs
- *   agentweave run <prompt>        Run agent directly (low-level)
- *   agentweave monitor             Monitor gateway
- *   agentweave session list        List sessions
+ * AgentWeave is the Governance + QA layer for AI coding agents. Canonical
+ * positioning: product-spec/POSITIONING.md. Commands below group by pillar.
+ *
+ * Pillar 1 — Governance:  guard, credentials
+ * Pillar 2 — QA Pipeline: pipeline, task, metrics
+ * Pillar 3 — Adapters + MCP: mcp
+ * Reference (demoted):    run, monitor, session   // agent-loop, not production
  */
 
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
@@ -22,22 +23,43 @@ import { pipelineSetupCommand } from "./commands/pipeline-setup.js";
 import { pipelineStatusCommand } from "./commands/pipeline-status.js";
 import { pipelineConfigCommand } from "./commands/pipeline-config.js";
 import { credentialsCommand } from "./commands/credentials.js";
+import { mcpStartCommand, mcpPrintCommand } from "./commands/mcp.js";
+import { runGuard, type GuardPhase } from "./commands/guard.js";
 
 const args = process.argv.slice(2);
 
 function printHelp(): void {
 	console.log(`
   AgentWeave CLI v${AGENTWEAVE_VERSION}
-  AI SDLC Engine + Governance Layer for AI Agents
+  Governance + QA layer for AI coding agents — enforce policy on Claude Code,
+  Cursor, and any MCP-compatible agent, with measurable SDLC metrics.
 
-  SDLC PIPELINE:
+  ═══ PILLAR 1 — GOVERNANCE ══════════════════════════════════════════════════
+  Permission · Budget · Hooks · Input Gate · Audit — enforced on every agent
+  tool call via Claude Code hooks or the MCP surface.
+
+  GUARD (backend for .claude/hooks — reads stdin JSON, writes decision):
+    agentweave guard pre-tool-use   PreToolUse hook (fail-closed)
+    agentweave guard post-tool-use  PostToolUse hook (fail-open)
+
+  CREDENTIALS (encrypted API-key storage for wrapped agents):
+    agentweave credentials set <agent> <KEY> <val>   Store API key (encrypted)
+    agentweave credentials list                      Show stored keys (masked)
+    agentweave credentials remove <agent> <KEY>      Remove a key
+    agentweave credentials check <agent>             Check if keys exist
+
+  ═══ PILLAR 2 — QA PIPELINE (SDLC) ══════════════════════════════════════════
+  Norm → Ctx → Plan → Exec → Patch → QA → Retry → Out. Delegates Exec to the
+  target agent via an adapter. Records M1–M10 metrics for every run.
+
+  PIPELINE:
     agentweave pipeline setup                    Guided setup wizard (mode + auth)
     agentweave pipeline status                   Show current mode + agent auth info
-    agentweave pipeline run <prompt> [options]   Run 8-step SDLC pipeline
-    agentweave pipeline show                     Show pipeline steps & config
-    agentweave pipeline agents                   List supported AI agent CLIs
-    agentweave task <prompt> [options]            Alias for pipeline run
-    agentweave metrics [options]                  View collected metrics
+    agentweave pipeline run <prompt> [options]   Run the 8-stage SDLC pipeline
+    agentweave pipeline show                     Show pipeline stages & config
+    agentweave pipeline agents                   List supported agent CLIs
+    agentweave task <prompt> [options]           Alias for pipeline run
+    agentweave metrics [options]                 View M1–M10 metrics from stored runs
 
   PIPELINE CONFIG:
     agentweave pipeline config                   Show module on/off status
@@ -55,20 +77,23 @@ function printHelp(): void {
     --retries <n>         Max retries (default: 3)
     --metrics-dir <path>  Metrics storage dir (default: .agentweave/metrics)
 
-  CREDENTIALS:
-    agentweave credentials set <agent> <KEY> <val>   Store API key (encrypted)
-    agentweave credentials list                      Show stored keys (masked)
-    agentweave credentials remove <agent> <KEY>      Remove a key
-    agentweave credentials check <agent>             Check if keys exist
-
   METRICS OPTIONS:
     --dir <path>          Metrics directory (default: .agentweave/metrics)
     --history             Show all stored runs
 
-  AGENT (low-level):
-    agentweave run <prompt> [options]      Run agent directly
-    agentweave monitor [--gateway <url>]   Monitor gateway
-    agentweave session list [--dir <path>] List sessions
+  ═══ PILLAR 3 — ADAPTERS + MCP ══════════════════════════════════════════════
+  Distribution — reach agents in the wild (Claude Code, Cursor, any MCP host).
+
+  MCP SERVER:
+    agentweave mcp start            Run stdio MCP server (expose governance + QA tools)
+    agentweave mcp print-config     Print .mcp.json snippet for Claude Code
+
+  ─── REFERENCE IMPLEMENTATION (agent-loop, demoted post-pivot 2026-04-22) ───
+  Use only when no wrapped agent is available. Not the production path.
+
+    agentweave run <prompt> [options]      Run reference agent-loop directly
+    agentweave monitor [--gateway <url>]   Monitor gateway (reference)
+    agentweave session list [--dir <path>] List reference-loop sessions
 
   RUN OPTIONS:
     --model <model>       LLM model (default: claude-sonnet-4-6)
@@ -76,22 +101,24 @@ function printHelp(): void {
     --max-turns <n>       Max turns (default: 50)
     --mode <mode>         Permission mode: default|strict|permissive|plan
 
-  GLOBAL:
+  ═══ GLOBAL ════════════════════════════════════════════════════════════════
     --help                Show this help
     --version             Show version
 
   EXAMPLES:
-    agentweave pipeline show
-    agentweave pipeline config init
-    agentweave pipeline config on qa retry
-    agentweave pipeline config off normalize context
-    agentweave pipeline config set qa.checks "pnpm test:unit,eslint src/"
-    agentweave pipeline config set execution.agent claude
+    # Pillar 2 — QA pipeline around Claude Code
+    agentweave pipeline setup
     agentweave pipeline run "Fix the login bug" --agent claude --checks "npm test"
-    agentweave task "Fix bug" --agent claude --checks "npm test"
     agentweave metrics
     agentweave metrics --history
-    agentweave run "List files" --model claude-sonnet-4-6
+
+    # Pillar 1 — Governance (wire up via .claude/hooks/ then use guard)
+    agentweave credentials set claude ANTHROPIC_API_KEY sk-...
+    agentweave guard pre-tool-use < event.json    # normally invoked by hook
+
+    # Pillar 3 — MCP distribution
+    agentweave mcp print-config > .mcp.json
+    agentweave mcp start
 `);
 }
 
@@ -285,7 +312,31 @@ async function main(): Promise<void> {
 			break;
 		}
 
-		case "credentials": {
+		case "mcp": {
+				const mcpIdx = args.indexOf("mcp");
+				const subAction = args[mcpIdx + 1];
+				if (subAction === "print-config") {
+					mcpPrintCommand();
+				} else {
+					await mcpStartCommand();
+				}
+				break;
+			}
+
+			case "guard": {
+				const guardIdx = args.indexOf("guard");
+				const sub = args[guardIdx + 1];
+				const phase: GuardPhase | null =
+					sub === "pre-tool-use" ? "pre" : sub === "post-tool-use" ? "post" : null;
+				if (!phase) {
+					console.error("Error: Usage: agentweave guard pre-tool-use|post-tool-use");
+					process.exit(1);
+				}
+				const code = await runGuard(phase);
+				process.exit(code);
+			}
+
+			case "credentials": {
 			const credIdx = args.indexOf("credentials");
 			const credArgs = args.slice(credIdx + 1).filter((a) => !a.startsWith("--"));
 			const credAction = credArgs[0] ?? "list";

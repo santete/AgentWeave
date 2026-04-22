@@ -1,4 +1,9 @@
 /**
+ * REFERENCE IMPLEMENTATION — not production path (post-pivot 2026-04-22).
+ * Production agents ship their own file-write tool; AgentWeave governs them
+ * via hooks + adapters. Kept for the reference agent-loop + tests.
+ * See product-spec/POSITIONING.md.
+ *
  * FileWrite — Write content to a file (create or overwrite).
  */
 
