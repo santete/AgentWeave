@@ -193,6 +193,7 @@ export class OuterHarness implements OuterHarnessConsumer {
 			tool: request.toolName,
 			behavior: permDecision.behavior,
 			source: permDecision.source,
+			matchedPattern: permDecision.matchedRule?.pattern,
 		});
 
 		// 2. Resolve ask via handler or failMode fallback
