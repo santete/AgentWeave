@@ -95,6 +95,32 @@ describe("ProcessAdapter", () => {
 		expect(config.model).toBe("process:claude");
 		expect(config.tools).toEqual([]);
 	});
+
+	it("should kill hung process and report timeout when processTimeoutMs exceeded", async () => {
+		// setInterval keeps the node process alive indefinitely — simulates a hung CLI.
+		const adapter = new ProcessAdapter({
+			command: "node",
+			args: ["-e", "setInterval(() => {}, 1000)"],
+			promptMode: "arg",
+			processTimeoutMs: 500,
+		});
+
+		const { result } = await collectRun(adapter);
+		expect(result.reason).toBe("timeout");
+	}, 10_000);
+
+	it("should NOT time out when processTimeoutMs is absent or zero", async () => {
+		const adapter = new ProcessAdapter({
+			command: "echo",
+			args: ["hi"],
+			promptMode: "arg",
+			parseJson: false,
+			// processTimeoutMs left undefined
+		});
+
+		const { result } = await collectRun(adapter);
+		expect(result.reason).toBe("completed");
+	});
 });
 
 // ─── Message Tracking ────────────────────────────────────────────

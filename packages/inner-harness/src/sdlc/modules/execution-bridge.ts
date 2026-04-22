@@ -225,6 +225,7 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 			cwd: config.cwd ?? context.cwd,
 			promptMode: config.promptMode,
 			env: config.env,
+			processTimeoutMs: config.processTimeoutMs,
 		});
 	}
 }

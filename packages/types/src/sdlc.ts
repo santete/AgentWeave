@@ -191,6 +191,8 @@ export interface SDLCConfig {
 			cwd?: string;
 			promptMode?: "stdin" | "arg";
 			env?: Record<string, string>;
+			/** Wall-clock timeout (ms) on the child process. Exceeds → SIGTERM+SIGKILL, reason="timeout". */
+			processTimeoutMs?: number;
 		};
 		apiDirect?: {
 			model: string;
