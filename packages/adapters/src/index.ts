@@ -9,3 +9,7 @@ export type { ClaudeCodeAdapterConfig } from "./claude-code-adapter";
 // Aider Adapter (preset)
 export { createAiderAdapter, buildAiderAdapterConfig } from "./aider-adapter";
 export type { AiderAdapterConfig } from "./aider-adapter";
+
+// Cursor Adapter (preset)
+export { createCursorAdapter, buildCursorAdapterConfig } from "./cursor-adapter";
+export type { CursorAdapterConfig } from "./cursor-adapter";
