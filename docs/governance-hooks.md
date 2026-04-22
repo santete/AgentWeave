@@ -86,6 +86,23 @@ Recognized fields (all but `mode` are optional):
 | `permissions[]` | `{ pattern, behavior, priority?, message?, group? }` | `pattern` uses the existing AgentWeave matcher (e.g. `Bash(git *)`, `Write(*.env)`, `*`). `behavior` is `allow`/`deny`/`ask`. |
 | `budget`        | `{ maxPerSession?, maxPerDay?, warningThreshold?, costPerToolCall?, persistPath? }` | Pre-tool-use blocks when next call would push over the cap; post-tool-use records the cost. |
 | `audit`         | `{ enabled, path }` | JSONL appended per event. |
+| `envAllowlist`  | `string[]`               | Env vars exposed to rule conditions via `env.*`. Anything outside this list resolves to `undefined` at condition-eval time (fail-closed). Default: `[]`. |
+
+### 3.1 Context available to rule conditions
+
+Conditions can reference four namespaces (see `design-p22-contextual-rules.md`):
+
+- `request.*` — `toolName`, `toolInput.<key>`, `isReadOnly`, `isDestructive`, `turnIndex`, `toolUseId`. **Always populated** from the Claude Code hook payload.
+- `time.*` — `hour`, `minute`, `weekday`, `iso`, `epochMs`. **Always populated** from server wall-clock.
+- `session.*` — `sessionId` and `cwd` are populated from the hook payload's `session_id` and `cwd` fields. Other session fields (`agentId`, `userId`, `projectId`, `model`) are **not set in hook mode** — Claude Code does not ship them. Rules referencing those fields will skip (fail-safe).
+- `env.*` — only vars listed in `envAllowlist` (above) are readable. Anything else resolves to `undefined`. Prevents accidental secret reads into audit output.
+
+Example rule using context:
+```json
+{ "pattern": "Bash(curl*)",
+  "behavior": "deny",
+  "condition": "env.CI != \"true\" && time.hour >= 18" }
+```
 
 `ask` has no native Claude Code equivalent, so the guard surfaces `ask` as a
 block with the rule's `message`. The user then edits config or confirms out
@@ -105,7 +122,8 @@ regex-heavy permission patterns are painful to get right in ambiguous YAML.
 | Condition                      | Pre-hook                 | Post-hook |
 |--------------------------------|--------------------------|-----------|
 | Unexpected crash in guard code | **fail-closed (exit 2)** | fail-open (exit 0) |
-| Malformed/empty stdin          | fail-open (approve)      | fail-open |
+| Malformed JSON / empty stdin   | **fail-closed (exit 2)** | fail-open |
+| Schema-invalid payload         | **fail-closed (exit 2)** | fail-open |
 | `agentweave` CLI missing       | **fail-closed (exit 2)** | fail-open |
 | `deny` rule matches            | exit 2, reason surfaced  | n/a |
 | `ask` rule matches             | exit 2, message surfaced | n/a |

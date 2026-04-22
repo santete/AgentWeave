@@ -74,6 +74,12 @@ export const GuardConfigSchema = z.object({
 	permissions: z.array(PermissionRuleSchema).default([]),
 	budget: BudgetSchema.optional(),
 	audit: AuditSchema.default({ enabled: true, path: ".agentweave/audit.log" }),
+	/**
+	 * Env var names exposed to rule conditions via `env.*`. Any var NOT in this
+	 * list resolves to `undefined` inside conditions (fail-closed; prevents
+	 * accidental secret reads in audit trail). Default: `[]` (no env access).
+	 */
+	envAllowlist: z.array(z.string()).default([]),
 });
 
 export type GuardConfig = z.infer<typeof GuardConfigSchema>;

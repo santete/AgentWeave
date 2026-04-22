@@ -192,16 +192,32 @@ describe("runGuard pre", () => {
 		expect(log).toContain('"decision":"approve"');
 	});
 
-	it("fails open on malformed JSON stdin", async () => {
+	it("pre-hook fails CLOSED on malformed JSON stdin", async () => {
 		pipeStdin("not json at all");
 		const code = await runGuard("pre", workDir);
-		expect(code).toBe(0); // bad payload = don't brick dev flow
+		expect(code).toBe(2);
+		const out = JSON.parse(stdoutBuf);
+		expect(out.decision).toBe("block");
+		expect(out.reason).toMatch(/malformed/i);
 	});
 
-	it("fails open on empty stdin", async () => {
+	it("pre-hook fails CLOSED on empty stdin", async () => {
 		pipeStdin("");
 		const code = await runGuard("pre", workDir);
-		expect(code).toBe(0);
+		expect(code).toBe(2);
+		const out = JSON.parse(stdoutBuf);
+		expect(out.decision).toBe("block");
+		expect(out.reason).toMatch(/empty/i);
+	});
+
+	it("pre-hook fails CLOSED on schema-invalid payload", async () => {
+		// Missing required `tool_name` → HookInputSchema fails
+		pipeStdin({ session_id: "s1", tool_input: { command: "ls" } });
+		const code = await runGuard("pre", workDir);
+		expect(code).toBe(2);
+		const out = JSON.parse(stdoutBuf);
+		expect(out.decision).toBe("block");
+		expect(out.reason).toMatch(/schema/i);
 	});
 
 	it("higher-priority deny overrides wildcard allow", async () => {

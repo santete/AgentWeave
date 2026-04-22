@@ -5,7 +5,9 @@
  * (PermissionEngine + BudgetManager + audit log), and emits a decision on
  * stdout. Exit code 2 = block (per Claude Code contract).
  *
- * Pre-hook = fail-closed (crash → exit 2). Post-hook = fail-open (crash → 0).
+ * Pre-hook = fail-closed: crash, malformed JSON, schema failure, and empty
+ * stdin all return exit 2 with `{decision:"block"}`. Post-hook = fail-open
+ * (crash → 0) so a tool that already ran cannot be un-run by a hook bug.
  * The process is short-lived per invocation; all state lives on disk.
  */
 
@@ -13,6 +15,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import {
 	BudgetManager,
+	buildPermissionContext,
 	PermissionEngine,
 } from "@agentweave/outer-harness";
 import {
@@ -51,14 +54,18 @@ export async function runGuard(phase: GuardPhase, cwd = process.cwd()): Promise<
 	try {
 		const raw = await readStdin();
 		if (!raw.trim()) {
-			return failOpen(phase); // no payload → don't brick the agent
+			return earlyExit(phase, "empty hook payload");
 		}
 
 		const parsedJson = safeJsonParse(raw);
-		if (!parsedJson) return failOpen(phase);
+		if (!parsedJson) {
+			return earlyExit(phase, "malformed hook payload: not valid JSON");
+		}
 
 		const hookResult = HookInputSchema.safeParse(parsedJson);
-		if (!hookResult.success) return failOpen(phase);
+		if (!hookResult.success) {
+			return earlyExit(phase, "malformed hook payload: schema validation failed");
+		}
 		const hook = hookResult.data;
 
 		const config = loadGuardConfig(cwd);
@@ -78,7 +85,17 @@ export async function runGuard(phase: GuardPhase, cwd = process.cwd()): Promise<
 async function handlePre(hook: HookInput, config: GuardConfig, cwd: string): Promise<number> {
 	const engine = buildPermissionEngine(config);
 	const request = toToolRequest(hook);
-	const decision = await engine.evaluate(request);
+	// Build context so rules using `session.*` / `env.*` resolve (P2.2 DSL).
+	// Session info is whatever Claude Code hands us in the hook payload —
+	// agents cannot forge this path since Claude Code owns the stdin pipe.
+	const ctx = buildPermissionContext(request, {
+		session: {
+			sessionId: hook.session_id,
+			cwd: hook.cwd ?? cwd,
+		},
+		envAllowlist: config.envAllowlist,
+	});
+	const decision = await engine.evaluate(request, ctx);
 
 	// Budget pre-check only when we have limits
 	if (config.budget && (config.budget.maxPerSession || config.budget.maxPerDay)) {
@@ -197,6 +214,7 @@ function buildPermissionEngine(config: GuardConfig): PermissionEngine {
 		failMode: "closed",
 		timeoutMs: 5_000,
 		askTimeoutMs: 60_000,
+		envAllowlist: config.envAllowlist,
 	};
 	return new PermissionEngine(permissionConfig);
 }
@@ -278,13 +296,16 @@ function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-function failOpen(phase: GuardPhase): number {
+/**
+ * Pre-hook fail-closed, post-hook fail-open. Used for invalid-input paths
+ * (empty stdin, malformed JSON, schema failure). Crash paths are handled
+ * by the `catch` block in runGuard itself.
+ */
+function earlyExit(phase: GuardPhase, reason: string): number {
 	if (phase === "pre") {
-		// Even fail-open for pre needs a valid JSON reply; empty approve lets
-		// the agent continue and surfaces nothing to the user.
-		emit({ decision: "approve" });
-	} else {
-		emit({ decision: "approve" });
+		emit({ decision: "block", reason });
+		return 2;
 	}
+	emit({ decision: "approve" });
 	return 0;
 }
