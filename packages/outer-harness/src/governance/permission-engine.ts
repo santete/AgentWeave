@@ -27,6 +27,7 @@ import type {
 } from "@agentweave/types";
 import type { PermissionContext } from "./permission-context";
 import { buildPermissionContext } from "./permission-context";
+import { PermissionRuleConflictError } from "./policy-errors";
 
 // ─── Safety bounds (P2.2 §2.5) ───────────────────────────────────
 
@@ -438,6 +439,37 @@ function parseValue(raw: string): string | number | boolean {
 	return raw;
 }
 
+// ─── Pattern-overlap heuristic (P3.1 §3.3) ──────────────────────
+
+/**
+ * Approximate "do these two patterns target overlapping requests?"
+ * Used only to reject runtime `addRule()` calls that would conflict with
+ * an immutable org rule. Heuristic — not exact — so false positives bias
+ * toward rejection (safe). Cases covered per §3.3:
+ *  - exact string match
+ *  - either side is `"*"` (universal wildcard)
+ *  - same tool name, at least one side has `(*)` arg wildcard
+ *  - same tool name + same arg pattern
+ */
+function patternsOverlap(a: string, b: string): boolean {
+	if (a === b) return true;
+	if (a === "*" || b === "*") return true;
+
+	const aTool = extractToolName(a);
+	const bTool = extractToolName(b);
+	if (!aTool || !bTool) return false;
+	if (aTool !== bTool) return false;
+
+	const aWild = /\(\*\)$/.test(a);
+	const bWild = /\(\*\)$/.test(b);
+	return aWild || bWild;
+}
+
+function extractToolName(pattern: string): string | null {
+	const m = pattern.match(/^(\w+)(?:\(.*\))?$/);
+	return m ? m[1]! : null;
+}
+
 // ─── Rate Limiter ───────────────────────────────────────────────
 
 const AUDIT_CAP = 10_000;
@@ -445,7 +477,10 @@ const AUDIT_CAP = 10_000;
 // ─── Permission Engine ───────────────────────────────────────────
 
 export class PermissionEngine {
-	private compiledRules: CompiledRule[];
+	// Split buckets per P3.1 §2.2: immutable rules evaluate FIRST regardless
+	// of priority number. Inside each bucket, rules sort by priority DESC.
+	private immutableCompiled: CompiledRule[];
+	private mutableCompiled: CompiledRule[];
 	readonly config: PermissionConfig;
 
 	// Audit trail
@@ -463,7 +498,12 @@ export class PermissionEngine {
 
 	constructor(config: PermissionConfig) {
 		this.config = config;
-		this.compiledRules = [...config.rules]
+		const immutable = config.rules.filter((r) => r.immutable === true);
+		const mutable = config.rules.filter((r) => r.immutable !== true);
+		this.immutableCompiled = [...immutable]
+			.sort((a, b) => b.priority - a.priority)
+			.map(compileRule);
+		this.mutableCompiled = [...mutable]
 			.sort((a, b) => b.priority - a.priority)
 			.map(compileRule);
 	}
@@ -476,15 +516,32 @@ export class PermissionEngine {
 			envAllowlist: this.config.envAllowlist,
 		});
 
-		for (const compiled of this.compiledRules) {
-			// Skip disabled groups
+		// Immutable bucket walks first — §2.2
+		const immResult = this.evalBucket(this.immutableCompiled, request, ctx, true);
+		if (immResult) return this.applyDryRun(immResult);
+
+		const mutResult = this.evalBucket(this.mutableCompiled, request, ctx, false);
+		if (mutResult) return this.applyDryRun(mutResult);
+
+		const decision = this.defaultDecision(request);
+		this.recordAudit(request, null, decision);
+		return this.applyDryRun(decision);
+	}
+
+	/** Walk one bucket. Returns a decision on first match (and records audit),
+	 *  or undefined if no rule matched. When `isImmutable` and the matched rule
+	 *  is a deny, scans the mutable bucket for override-blocked rules. */
+	private evalBucket(
+		bucket: CompiledRule[],
+		request: ToolRequest,
+		ctx: PermissionContext,
+		isImmutable: boolean,
+	): PermissionDecision | undefined {
+		for (const compiled of bucket) {
 			if (compiled.rule.group && this.disabledGroups.has(compiled.rule.group)) {
 				continue;
 			}
-
 			if (!matchCompiled(compiled, request)) continue;
-
-			// Condition check — precompiled at rule-compile time.
 			if (compiled.condition === "invalid") continue;
 			if (compiled.condition && !evaluateCondition(compiled.condition, ctx)) {
 				continue;
@@ -500,7 +557,7 @@ export class PermissionEngine {
 						matchedRule: compiled.rule,
 					};
 					this.recordAudit(request, compiled.rule, decision);
-					return this.applyDryRun(decision);
+					return decision;
 				}
 			}
 
@@ -514,31 +571,86 @@ export class PermissionEngine {
 						? (compiled.rule.message ?? `Allow ${request.toolName}?`)
 						: undefined,
 			};
-			this.recordAudit(request, compiled.rule, decision);
-			return this.applyDryRun(decision);
-		}
 
-		const decision = this.defaultDecision(request);
-		this.recordAudit(request, null, decision);
-		return this.applyDryRun(decision);
+			// Override-detection pass — only on immutable deny — §3.2
+			if (isImmutable && compiled.rule.behavior === "deny") {
+				const overridden = this.findOverridden(request, ctx);
+				if (overridden.length > 0) {
+					decision.immutableOverrideBlocked = overridden;
+				}
+			}
+
+			this.recordAudit(request, compiled.rule, decision);
+			return decision;
+		}
+		return undefined;
 	}
 
+	/** Find mutable rules that WOULD have matched without the immutable deny.
+	 *  Read-only scan — does not affect state or audit. */
+	private findOverridden(request: ToolRequest, ctx: PermissionContext): PermissionRule[] {
+		const hits: PermissionRule[] = [];
+		for (const compiled of this.mutableCompiled) {
+			if (compiled.rule.group && this.disabledGroups.has(compiled.rule.group)) continue;
+			if (!matchCompiled(compiled, request)) continue;
+			if (compiled.condition === "invalid") continue;
+			if (compiled.condition && !evaluateCondition(compiled.condition, ctx)) continue;
+			// Only "allow" / "ask" rules are meaningful overrides of a deny.
+			if (compiled.rule.behavior !== "deny") {
+				hits.push(compiled.rule);
+			}
+		}
+		return hits;
+	}
+
+	/**
+	 * Add a runtime rule. Hardened per §3.3:
+	 *  - Immutable flag rejected (runtime rules cannot be immutable).
+	 *  - Conflict against any immutable rule throws PermissionRuleConflictError.
+	 */
 	addRule(rule: PermissionRule): void {
-		this.compiledRules.push(compileRule(rule));
-		this.compiledRules.sort((a, b) => b.rule.priority - a.rule.priority);
+		if (rule.immutable === true) {
+			throw new Error(
+				`Runtime rules cannot be immutable (pattern: "${rule.pattern}"). ` +
+					`Immutable rules must be declared in the org policy file.`,
+			);
+		}
+		const conflict = this.immutableCompiled.find(
+			(c) =>
+				patternsOverlap(c.rule.pattern, rule.pattern) &&
+				c.rule.behavior !== rule.behavior,
+		);
+		if (conflict) {
+			throw new PermissionRuleConflictError(conflict.rule, rule);
+		}
+		this.mutableCompiled.push(compileRule(rule));
+		this.mutableCompiled.sort((a, b) => b.rule.priority - a.rule.priority);
 	}
 
 	removeRule(pattern: string, source: string): boolean {
-		const idx = this.compiledRules.findIndex(
+		const mutIdx = this.mutableCompiled.findIndex(
 			(c) => c.rule.pattern === pattern && c.rule.source === source,
 		);
-		if (idx === -1) return false;
-		this.compiledRules.splice(idx, 1);
-		return true;
+		if (mutIdx !== -1) {
+			this.mutableCompiled.splice(mutIdx, 1);
+			return true;
+		}
+		// Immutable rules are intentionally NOT removable via runtime API —
+		// edit the org policy file + restart to change them.
+		return false;
 	}
 
 	getRules(): ReadonlyArray<PermissionRule> {
-		return this.compiledRules.map((c) => c.rule);
+		return [
+			...this.immutableCompiled.map((c) => c.rule),
+			...this.mutableCompiled.map((c) => c.rule),
+		];
+	}
+
+	/** Immutable rules from the org policy bucket — exposed so OuterHarness
+	 *  can reconcile persisted ask-approvals against them at boot. */
+	getImmutableRules(): ReadonlyArray<PermissionRule> {
+		return this.immutableCompiled.map((c) => c.rule);
 	}
 
 	// ─── Rule Groups ────────────────────────────────────────────
@@ -557,14 +669,13 @@ export class PermissionEngine {
 
 	getGroups(): string[] {
 		const groups = new Set<string>();
-		for (const c of this.compiledRules) {
-			if (c.rule.group) groups.add(c.rule.group);
-		}
+		for (const c of this.immutableCompiled) if (c.rule.group) groups.add(c.rule.group);
+		for (const c of this.mutableCompiled) if (c.rule.group) groups.add(c.rule.group);
 		return [...groups];
 	}
 
 	getRulesByGroup(group: string): ReadonlyArray<PermissionRule> {
-		return this.compiledRules
+		return [...this.immutableCompiled, ...this.mutableCompiled]
 			.filter((c) => c.rule.group === group)
 			.map((c) => c.rule);
 	}
@@ -601,7 +712,7 @@ export class PermissionEngine {
 
 	analyzeRules(): RuleAnalysis {
 		const warnings: RuleConflict[] = [];
-		const rules = this.compiledRules;
+		const rules = [...this.immutableCompiled, ...this.mutableCompiled];
 
 		for (let i = 0; i < rules.length; i++) {
 			for (let j = i + 1; j < rules.length; j++) {
