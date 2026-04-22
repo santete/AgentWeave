@@ -1,4 +1,17 @@
 /**
+ * REFERENCE IMPLEMENTATION — not production path (post-pivot 2026-04-22).
+ *
+ * AgentWeave's production positioning (see product-spec/POSITIONING.md) is
+ * a governance + QA layer that delegates agent-loop execution to Claude Code,
+ * Cursor, or any MCP-compatible agent via packages/adapters/. This file is
+ * kept for: (1) offline/local use, (2) teaching the agent-loop contract,
+ * (3) test infrastructure for the outer-harness.
+ *
+ * New feature work should extend Pillar 2 (packages/inner-harness/src/sdlc/)
+ * or an adapter — NOT this loop.
+ *
+ * ---
+ *
  * AgentLoop — Core execution engine implementing InnerHarnessProvider.
  * Runs as an AsyncGenerator that yields InnerEvents.
  * Uses Vercel AI SDK with maxSteps:1 (we control the loop).

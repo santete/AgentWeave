@@ -1,9 +1,11 @@
-# AGENT HARNESS CONTROL FRAMEWORK — Product Specification
+# AGENTWEAVE — Product Specification
 
-> Ten san pham: **AgentWeave** (ten tam)
-> Phien ban: v0.1 Draft
-> Ngay: 2026-04-14
-> Muc dich: Framework kiem soat toan bo outer harness cua AI Agent CLI
+> Ten san pham: **AgentWeave**
+> Phien ban: v0.2 — Post-pivot
+> Ngay: 2026-04-22
+> Muc dich: Governance + QA layer cho AI coding agents (Claude Code, Cursor, MCP-compatible).
+>
+> **Canonical positioning:** [`product-spec/POSITIONING.md`](./POSITIONING.md). Sections below align with that document; any divergence, POSITIONING.md wins.
 
 ---
 
@@ -36,36 +38,51 @@
 
 ### Van de
 
-Cac AI Agent CLI (nhu Claude Code, Cursor, Aider, Codex...) hoat dong nhu **hop den**:
+Cac AI coding agent (Claude Code, Cursor, Aider, Codex...) hien da rat tot o **thuc thi** — agent loop, tool calling, streaming, context management. Nhung cac team su dung chung van gap 6 pain points, **tat ca deu nam o lop governance ben ngoai agent**:
 
-- **Khong kiem soat duoc output**: Agent tra ve gi thi user nhan nay, khong co lop loc/transform/validate
-- **Khong giam sat duoc hanh vi**: Agent goi tool gi, bao nhieu lan, ton bao nhieu token — khong ai biet cho den khi xong
-- **Khong can thiep duoc real-time**: Khi agent dang chay, khong the inject instructions, thay doi strategy, hay dung lai 1 tool cu the
-- **Khong audit duoc**: Khong co log co cau truc de review lai agent da lam gi, tai sao
-- **Khong enforce policy duoc**: Enterprise khong the ep rule "khong duoc ghi file .env", "phai chay test truoc khi commit"
-- **Khong scale duoc governance**: 100 developer dung 100 agent, moi nguoi 1 config, khong co cach quan ly tap trung
+- **Khong kiem soat duoc output**: Agent tra ve gi thi user nhan nay — khong co lop loc secret, PII, transform, validate.
+- **Khong giam sat duoc hanh vi**: Agent goi tool gi, bao nhieu lan, ton bao nhieu token — khong ai biet cho den khi xong.
+- **Khong audit duoc**: Khong co log co cau truc de review lai agent da lam gi, tai sao.
+- **Khong enforce policy duoc**: Enterprise khong ep duoc rule "khong ghi .env", "phai chay test truoc khi commit", "junior chi duoc mode plan".
+- **Khong scale duoc governance**: 100 developer dung 100 agent, moi nguoi 1 config, khong co cach quan ly tap trung.
+- **Khong do duoc chat luong**: First-pass success? Retry rate? Scope accuracy? Regression? Khong ai biet agent dang tot len hay te di qua tung run.
 
 ### Vision
 
-**AgentWeave** la framework cho phep **bat ky ai** (developer, team lead, enterprise admin, platform engineer) **kiem soat toan bo** outer harness cua AI Agent CLI:
+**AgentWeave KHONG xay lai agent loop.** Claude Code, Cursor, Anthropic lam viec do qua tot, va ta khong canh tranh o lop do.
+
+**AgentWeave la Governance + QA layer cho AI coding agents:**
 
 ```
-Ban KHONG can sua code cua AI Agent.
-Ban chi can BỌC no trong AgentWeave.
-AgentWeave INTERCEPT moi thu: input, output, tool calls, permissions, context.
-Ban QUYET DINH: cho qua, chan lai, thay doi, ghi log, canh bao.
+AI Agent (Claude Code / Cursor / Aider / ...)
+        |
+   enforce policy, audit, budget, hooks
+        |
+   orchestrate SDLC workflow around it
+        |
+   measure M1-M10 metrics across runs
+        |
++========================================+
+|  AgentWeave = 3 Pillars                 |
+|                                          |
+|  1. Governance     (Outer Harness)      |
+|  2. QA Pipeline    (SDLC Orchestrator)  |
+|  3. Adapters + MCP (Distribution)       |
++========================================+
 ```
+
+Chi tiet positioning, non-goals, va quyet dinh strategic: **[POSITIONING.md](./POSITIONING.md)** la canonical source.
 
 ### Doi tuong su dung
 
-| Persona | Nhu cau | AgentWeave cung cap |
+| Persona | Pillar chinh | Nhu cau cu the |
 |---|---|---|
-| **Developer** | Biet agent dang lam gi, can thiep khi can | Real-time monitor, pause/resume, inject |
-| **Team Lead** | Dam bao quality, enforce coding standards | Hook rules, output validation, test gates |
-| **Security Engineer** | Ngan agent lam dieu nguy hiem | Permission engine, deny rules, audit log |
-| **Platform Engineer** | Quan ly 100+ agent instances | Centralized config, dashboard, alerts |
-| **Enterprise Admin** | Compliance, policy enforcement | Policy hierarchy, immutable rules, RBAC |
-| **AI Researcher** | Hieu hanh vi agent, toi uu prompt | Trace viewer, token analytics, A/B testing |
+| **Developer** | Pillar 2 (QA Pipeline) | First-pass success data, retry count, cost per task |
+| **Team Lead** | Pillar 2 + Pillar 1 (Hooks) | Enforce test gates, do team velocity qua M1-M10 |
+| **Security Engineer** | Pillar 1 (Governance) | Permission rules, deny lists, audit trail |
+| **Platform Engineer** | Pillar 1 + Pillar 3 (Adapters) | Central config cho 100+ agents, adapter cho nhieu CLI |
+| **Enterprise Admin** | Pillar 1 (Policy hierarchy) | Compliance, RBAC, immutable rules |
+| **AI Researcher** | Pillar 2 (M1-M10 analytics) | Measure agent behavior across runs, compare models |
 
 ---
 
@@ -73,64 +90,81 @@ Ban QUYET DINH: cho qua, chan lai, thay doi, ghi log, canh bao.
 
 ### AgentWeave la gi?
 
-AgentWeave la **middleware layer** nam giua **user** va **AI Agent**, kiem soat toan bo data flow:
+AgentWeave la **Governance + QA layer** wrap quanh cac AI coding agent co san. Khong thay the agent — wrap va kiem soat chung.
 
 ```
-User Input
-  |
-  v
-+========================+
-| AGENTWEAVE FRAMEWORK   |
-|                        |
-| [Input Gate]           |  <-- Validate, transform, inject context
-|    |                   |
-| [Agent Loop Control]   |  <-- Start, pause, resume, abort, inject
-|    |                   |
-| [Tool Governance]      |  <-- Allow, deny, modify, audit tool calls
-|    |                   |
-| [Output Pipeline]      |  <-- Intercept, filter, transform, validate output
-|    |                   |
-| [Monitor & Observe]    |  <-- Real-time metrics, traces, alerts
-|    |                   |
-| [Session & State]      |  <-- Persist, replay, fork, resume
-|                        |
-+========================+
-  |
-  v
-User sees controlled output
+AI Coding Agent (Claude Code / Cursor / Aider / MCP-compatible)
+        ^
+        |  delegates execution via adapter
+        |
++=====================================================+
+| AGENTWEAVE (3 pillars, each usable alone)           |
+|                                                      |
+|  ┌────────────────────────────────────────────────┐ |
+|  │ Pillar 1: GOVERNANCE (Outer Harness)           │ |
+|  │  - Permission Engine (allow/deny/ask, 7-level) │ |
+|  │  - Budget Manager (cost caps)                  │ |
+|  │  - Hook Engine (5 types, 18+ events)           │ |
+|  │  - Input Gate (prompt-side validation)         │ |
+|  │  - Audit Logger (tamper-evident JSONL)         │ |
+|  │  - Monitor + Alert engine                      │ |
+|  └────────────────────────────────────────────────┘ |
+|                                                      |
+|  ┌────────────────────────────────────────────────┐ |
+|  │ Pillar 2: QA PIPELINE (SDLC Orchestrator)      │ |
+|  │  8 stages around the agent:                    │ |
+|  │    Norm → Ctx → Plan → Exec → Patch → QA →     │ |
+|  │    Retry → Out                                 │ |
+|  │  Exec stage delegates to agent via adapter.    │ |
+|  │  M1-M10 metrics: first-pass success, test      │ |
+|  │  pass rate, scope accuracy, retry count,       │ |
+|  │  cost, time, regression, plan accuracy,        │ |
+|  │  context utilization, code quality delta.      │ |
+|  └────────────────────────────────────────────────┘ |
+|                                                      |
+|  ┌────────────────────────────────────────────────┐ |
+|  │ Pillar 3: ADAPTERS + MCP (Distribution)        │ |
+|  │  - Claude Code hooks (PreToolUse/PostToolUse)  │ |
+|  │  - MCP server (any MCP host can use)           │ |
+|  │  - Adapter pattern (Claude Code today;         │ |
+|  │    Cursor, Aider roadmap)                      │ |
+|  └────────────────────────────────────────────────┘ |
++=====================================================+
 ```
 
-### Tinh nang chinh (Feature Map)
+**Key property:** 3 pillars are independent. Use governance alone (raw Claude Code + hooks). Use QA pipeline alone (wraps any agent, adds metrics). Mix freely.
+
+### Tinh nang chinh (by pillar)
 
 ```
-AgentWeave
-├── CONTROL (kiem soat)
-│   ├── Agent Loop: start / pause / resume / abort / inject / step-through
-│   ├── Tool Calls: allow / deny / modify-input / modify-output / timeout
-│   ├── Output: intercept / filter / transform / validate / redact / format
-│   ├── Context: inject prompt / modify system prompt / manage window
-│   └── Multi-Agent: spawn / stop / reassign / coordinate
-│
-├── MONITOR (giam sat)
-│   ├── Real-time: token usage / cost / latency / tool calls / errors
-│   ├── Traces: full conversation trace / tool execution trace
-│   ├── Alerts: budget exceeded / error rate / anomaly detection
-│   ├── Dashboard: web UI / CLI dashboard / IDE panel
-│   └── Analytics: usage patterns / cost trends / performance metrics
-│
-├── GOVERN (quan ly)
-│   ├── Permissions: rule-based / role-based / ML-classifier
-│   ├── Hooks: pre/post tool / pre/post output / session lifecycle
-│   ├── Policies: enterprise rules / compliance / rate limits
-│   ├── Audit: immutable log / who-did-what / replay
-│   └── Config: hierarchy (user > project > org > policy)
-│
-└── EXTEND (mo rong)
-    ├── Plugin System: custom tools / hooks / monitors / transforms
-    ├── SDK: TypeScript / Python / Go
-    ├── Protocol: JSON-RPC / gRPC / WebSocket
-    └── Integration: CI/CD / Slack / PagerDuty / Grafana
+Pillar 1 — GOVERNANCE
+  ├── Permissions  : rule-based, 7-level hierarchy, contextual conditions
+  ├── Budget       : per-session, per-day, per-user caps
+  ├── Hooks        : 5 types (command, prompt, agent, http, function)
+  ├── Input gate   : prompt validation, injection
+  ├── Audit        : append-only JSONL, tool-level decisions logged
+  └── Monitor      : real-time metrics + alert engine
+
+Pillar 2 — QA PIPELINE
+  ├── 8 SDLC stages around agent execution
+  ├── Metrics      : M1-M10 tracked per run, baseline compare
+  ├── Retry engine : error classification → strategy → re-invoke agent
+  ├── Patch valid. : scope check, file count limit
+  └── Quality gate : test/lint/compile via execFile + allowlist
+
+Pillar 3 — ADAPTERS + MCP
+  ├── Claude Code hooks : .claude/hooks + `agentweave guard`
+  ├── MCP server        : governance + QA exposed as MCP tools
+  ├── Adapters          : Claude Code, Cursor (planned), Aider (planned)
+  └── Session mgmt      : persist, replay, fork (works across adapters)
+
+What we explicitly do NOT ship (moved to "reference impl only"):
+  ├── Agent loop replacement        — Claude Code/Cursor own this.
+  ├── Tool-calling runtime          — commodity parity, not our value.
+  └── Multi-model provider routing  — use what the agent already supports.
 ```
+
+Positioning decisions and non-goals: see [POSITIONING.md](./POSITIONING.md).
 
 ---
 
@@ -2767,63 +2801,84 @@ Khi chay lan dau trong 1 project, AgentWeave hien:
 
 ## 20. Roadmap
 
-### Phase 1: Core (MVP) — 2 months
+**Post-pivot roadmap (2026-04-22).** Phase numbering kept for continuity; scope re-framed around 3 pillars. Canonical version: [POSITIONING.md § Roadmap Implications](./POSITIONING.md#roadmap-implications).
+
+### Phase 1: Core MVP — COMPLETE (2 months, shipped)
 
 ```
-[x] Agent Loop Controller (start/pause/resume/abort)
-[x] Basic Tool Governance (allow/deny/timeout)
-[x] Permission Engine (rule-based, 3 layers)
-[x] Output Pipeline (intercept/validate/filter)
-[x] Session Persistence (JSONL transcript)
-[x] CLI Interface (wrap, run, monitor)
-[x] Basic metrics (tokens, cost, latency)
-[x] TypeScript SDK
+[x] Agent Loop Controller            — reference impl, demoted (Pillar 2 stage 4)
+[x] Basic Tool Governance            — Pillar 1
+[x] Permission Engine (rule-based)   — Pillar 1
+[x] Output Pipeline                  — Pillar 1
+[x] Session Persistence (JSONL)      — Pillar 1
+[x] CLI Interface (agentweave run)   — surface
+[x] Basic metrics (tokens, cost)     — Pillar 2 foundation
+[x] TypeScript SDK                   — surface
+[x] SDLC Pipeline (8 stages, M1-M10) — Pillar 2 USP (bonus, beyond original MVP)
+[x] Claude Code adapter              — Pillar 3
+[x] MCP server skeleton              — Pillar 3
+[x] Guard CLI (`agentweave guard`)   — Pillar 3 distribution
 ```
 
-### Phase 2: Observability — 1 month
+### Phase 2: Governance Observability — PRIORITIZED
+
+Focus: close the "we audit but can't view" gap. Enterprise signal.
 
 ```
-[ ] Full trace system
-[ ] Alert engine
-[ ] CLI dashboard (interactive TUI)
-[ ] Prometheus metrics export
+[ ] `agentweave audit view` CLI      — filter/tail/format audit.log
+[ ] Prometheus metrics exporter      — Pillar 1 + 2 metrics
 [ ] OpenTelemetry integration
-[ ] Session replay
+[ ] Session replay from audit trail
+[ ] Alert engine hardening           — file exists, needs production validation
+[ ] Interactive TUI dashboard        — optional, defer if MCP demand higher
 ```
 
-### Phase 3: Advanced Control — 2 months
+### Phase 3: MCP Ecosystem + Policy Hierarchy
+
+Focus: Pillar 3 distribution + Pillar 1 enterprise-grade policy.
 
 ```
-[ ] Hook engine (5 hook types)
-[ ] Output schema enforcement
-[ ] Streaming output control
-[ ] Context injection
-[ ] ML permission classifier
-[ ] AWOCP protocol (WebSocket + gRPC)
-[ ] Web dashboard
+[ ] MCP server public docs + demos   — unlock 100K+ agent users
+[ ] Cursor adapter (PoC → prod)      — prove multi-agent-via-adapter
+[ ] Aider adapter                    — expand reach
+[ ] Contextual permission rules      — branch=main, cost>$5, after-hours
+[ ] Policy hierarchy (7 levels)      — immutable enterprise rules
+[ ] Hook engine hardening            — 5 types end-to-end validation
 ```
 
-### Phase 4: Multi-Agent — 2 months
-
+**De-prioritized from original Phase 3** (do not build unless customer-driven):
 ```
-[ ] Multi-agent orchestration (4 patterns)
-[ ] Per-agent governance
-[ ] Agent communication monitoring
-[ ] Coordinator mode
-[ ] Fork & compare
+[-] ML permission classifier          — speculation, no current pull
+[-] Streaming output schema enforce   — marginal value vs complexity
+[-] Web dashboard as primary surface  — CLI + MCP first
+[-] AWOCP WebSocket + gRPC protocol   — defer until gateway demand proven
 ```
 
-### Phase 5: Enterprise — 2 months
+### Phase 4: Multi-Agent via Adapter Fan-Out
+
+Focus: coordinate multiple agents using existing adapters, not custom orchestration.
 
 ```
-[ ] Policy hierarchy (immutable enterprise rules)
+[ ] Parallel agent invocation across adapters
+[ ] Per-agent governance (budget, rules, audit)
+[ ] Agent communication monitoring (via audit log)
+[ ] Coordinator adapter (one agent routes subtasks to others)
+[ ] Fork & compare (run same task across 2+ adapters, compare M1-M10)
+```
+
+### Phase 5: Enterprise
+
+Focus: compliance, integrations, SDK expansion.
+
+```
+[ ] Policy hierarchy (immutable enterprise rules) — rolled in from Phase 3
 [ ] RBAC
-[ ] SSO integration
-[ ] Compliance audit trail
+[ ] SSO / SAML
+[ ] Compliance audit trail export (SOC2, HIPAA, GDPR formats)
 [ ] Python SDK
-[ ] Plugin system
-[ ] CI/CD integration
-[ ] Slack/PagerDuty integration
+[ ] Plugin system (activate existing PluginLoader)
+[ ] CI/CD integration (GitHub Actions, GitLab)
+[ ] Slack / PagerDuty / webhook integrations
 ```
 
 ### Phase 6: Ecosystem — Ongoing
@@ -2831,10 +2886,19 @@ Khi chay lan dau trong 1 project, AgentWeave hien:
 ```
 [ ] Plugin marketplace
 [ ] Community hooks & filters
-[ ] Custom agent adapters
+[ ] Community-contributed adapters
 [ ] Training & documentation
 [ ] Certification program
 ```
+
+### Explicitly NOT on roadmap
+
+Per [POSITIONING.md § Non-Goals](./POSITIONING.md#non-goals):
+
+- Better agent loop than Claude Code / Cursor.
+- New LLM model provider.
+- IDE plugin as primary surface.
+- Lock-in to a single agent vendor.
 
 ---
 
