@@ -14,6 +14,9 @@ import type { SDLCMetricsSnapshot, SDLCConfig } from "@agentweave/types";
 import { loadConfig } from "../config-loader.js";
 import { resolveAgent, AGENT_PRESETS, listPresets } from "../agent-presets.js";
 import { getAgentEnv, hasCredentials, scrubCredentials, buildChildEnv, ensureGitignore } from "../credential-store.js";
+import { createAdapterGovernance, type AdapterGovernance } from "../lib/adapter-governance.js";
+import { createSdlcGovernance, type SdlcGovernanceBundle } from "../lib/sdlc-governance.js";
+import { terminalAskPrompt } from "../lib/terminal-ask.js";
 
 export interface PipelineRunArgs {
 	prompt: string;
@@ -345,10 +348,46 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 	// Direct mode: AgentWeave handles full SDLC pipeline internally
 	const isWrapMode = !!agent;
 
+	// 5-minute wall-clock timeout on the child agent. Cursor `-p` is known to
+	// hang indefinitely on some prompts; other CLIs can stall on network.
+	// This is the hard stop when the JSON ping/pong health check doesn't apply.
+	const ADAPTER_TIMEOUT_MS = 300_000;
+
+	const governanceSessionId = `cli_${Date.now().toString(36)}`;
+
+	// Adapter governance: redact secrets/PII from adapter stdout + write audit
+	// trail. Tool-call governance (Permission/Hook) doesn't apply here — adapter
+	// is a black-box process. See docs/adapters/cursor-integration.md.
+	let governance: AdapterGovernance | null = null;
+	if (agent) {
+		governance = createAdapterGovernance({ sessionId: governanceSessionId });
+		governance.logSpawn(
+			agent.command,
+			agent.args,
+			agentEnv ? Object.keys(agentEnv) : [],
+		);
+	}
+
+	// SDLC-level governance: stage-transition audit (both modes) + tool-call
+	// gating through ControlPlane (agent-loop mode). Always enabled — with
+	// default empty-rule permissions it's a pure observer until a config is
+	// supplied. Permission rules are currently threaded via --mode sdlc config
+	// (see createSdlcGovernance); CLI flag surface is a follow-up.
+	//
+	// `ask` decisions resolve via the terminal prompt when stdout is a TTY.
+	// Headless runs (CI, redirected stdout) fall through to failMode — no
+	// accidental blocking of unattended pipelines.
+	const sdlcGov: SdlcGovernanceBundle = createSdlcGovernance({
+		sessionId: governanceSessionId,
+		onAsk: process.stdout.isTTY ? terminalAskPrompt : undefined,
+	});
+
 	const pipeline = createSDLCPipeline({
 		execution: agent
-			? { mode: "process-adapter", processAdapter: { command: agent.command, args: agent.args, promptMode: agent.promptMode, env: agentEnv ? buildChildEnv(agentEnv) : undefined } }
+			? { mode: "process-adapter", processAdapter: { command: agent.command, args: agent.args, promptMode: agent.promptMode, env: agentEnv ? buildChildEnv(agentEnv) : undefined, processTimeoutMs: ADAPTER_TIMEOUT_MS } }
 			: { mode: "agent-loop", agentLoop: { model, maxTurns: 50 } },
+		governance: sdlcGov.outer,
+		controlPlane: sdlcGov.controlPlane,
 		modules: {
 			// In wrap mode: agent handles these → OFF (agent does it better)
 			// In direct mode: AgentWeave handles these → ON
@@ -372,6 +411,7 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 
 	// Run pipeline
 	let currentStep = 0;
+	let pipelineError: string | null = null;
 
 	try {
 		const gen = pipeline.run(args.prompt);
@@ -381,7 +421,20 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 
 			if (event.type === "message:assistant") {
 				const content = (event as unknown as Record<string, unknown>).content as Array<{ type: string; text: string }>;
-				const text = content?.[0]?.text ?? "";
+				const rawText = content?.[0]?.text ?? "";
+
+				// Run adapter text through OutputPipeline (secret/PII redaction + audit)
+				// before displaying. SDLC internal messages like "[SDLC] …" come from
+				// our own code and are trusted — skip governance to avoid redacting
+				// pipeline markers.
+				const isSdlcMarker = rawText.startsWith("[SDLC]");
+				const { text, redacted } = governance && !isSdlcMarker
+					? governance.filterText(rawText)
+					: { text: rawText, redacted: false };
+
+				if (governance && !isSdlcMarker && rawText.length > 0) {
+					governance.logMessage(rawText, text, redacted);
+				}
 
 				if (text.startsWith("[SDLC]")) {
 					const phase = text.replace("[SDLC] ", "");
@@ -411,12 +464,21 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		console.log(`\n${C.red}  Pipeline error: ${scrubCredentials(msg)}${C.reset}`);
+		pipelineError = msg;
 	}
 
 	printPipelineProgress(9, "done");
 
 	// Results
 	const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+	if (governance) {
+		governance.logExit(
+			pipelineError ? "error" : "completed",
+			Date.now() - startTime,
+		);
+		governance.flush();
+	}
 	const metrics = pipeline.getLastMetrics();
 	const comparison = pipeline.getLastComparison();
 

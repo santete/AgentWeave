@@ -2,11 +2,11 @@
  * 'run' command — Execute an agent with full governance visibility.
  */
 
-import { createInterface } from "node:readline";
 import { createHarness } from "@agentweave/sdk";
 import { BUILT_IN_TOOLS } from "@agentweave/inner-harness";
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import type { CreateHarnessOptions, InnerEvent } from "@agentweave/sdk";
+import { redactSecrets, terminalAskPrompt } from "../lib/terminal-ask.js";
 
 export interface RunCommandArgs {
 	prompt: string;
@@ -237,50 +237,3 @@ function printFooter(result: import("@agentweave/types").TerminalResult, harness
 	console.log("");
 }
 
-// ─── Ask Prompt ─────────────────────────────────────────────────
-
-async function terminalAskPrompt(
-	toolName: string,
-	toolInput: Record<string, unknown>,
-	message: string,
-): Promise<{ allow: boolean; alwaysAllow?: boolean }> {
-	const inputPreview = redactSecrets(JSON.stringify(toolInput)).slice(0, 60);
-	console.log("");
-	console.log(`  ${C.bgYellow}${C.bold} ASK ${C.reset} ${message}`);
-	console.log(`  Tool: ${C.bold}${toolName}${C.reset}(${inputPreview})`);
-	console.log(`  ${C.green}[y]${C.reset} Allow  ${C.red}[n]${C.reset} Deny  ${C.cyan}[a]${C.reset} Always Allow`);
-
-	const rl = createInterface({ input: process.stdin, output: process.stdout });
-	const answer = await new Promise<string>((resolve) => {
-		rl.question(`  ${C.bold}>${C.reset} `, (ans) => { rl.close(); resolve(ans.trim().toLowerCase()); });
-	});
-
-	if (answer === "a") {
-		console.log(`  ${C.cyan}→ Always allowed${C.reset}`);
-		return { allow: true, alwaysAllow: true };
-	}
-	if (answer === "y" || answer === "yes") {
-		console.log(`  ${C.green}→ Allowed${C.reset}`);
-		return { allow: true };
-	}
-	console.log(`  ${C.red}→ Denied${C.reset}`);
-	return { allow: false };
-}
-
-// ─── Helpers ────────────────────────────────────────────────────
-
-const SECRET_PATTERNS = [
-	/sk-[a-zA-Z0-9]{20,}/g,
-	/AKIA[A-Z0-9]{16}/g,
-	/ghp_[a-zA-Z0-9]{36}/g,
-	/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
-];
-
-function redactSecrets(text: string): string {
-	let result = text;
-	for (const pattern of SECRET_PATTERNS) {
-		pattern.lastIndex = 0;
-		result = result.replace(pattern, "[REDACTED]");
-	}
-	return result;
-}

@@ -9,12 +9,14 @@ import type {
 	AlertSeverity,
 	MonitorSnapshot,
 } from "@agentweave/types";
+import type { AlertSink } from "./alert-sink";
 
 export class AlertEngine {
 	private rules: AlertRule[] = [];
 	private lastFired = new Map<string, number>(); // ruleName -> timestamp
 	private alerts: AlertEvent[] = [];
 	private listeners: Array<(alert: AlertEvent) => void> = [];
+	private sinks: AlertSink[] = [];
 
 	addRule(rule: AlertRule): void {
 		this.rules.push(rule);
@@ -69,10 +71,39 @@ export class AlertEngine {
 						// Listener error — don't crash engine
 					}
 				}
+
+				// Fire-and-forget sink dispatch. `.catch()` guards against a sink
+				// whose publish() rejects despite the MUST-NOT-throw contract,
+				// so one bad sink never stalls the check() loop.
+				for (const sink of this.sinks) {
+					sink.publish(alert).catch(() => {
+						// Sink violated its contract — swallow.
+					});
+				}
 			}
 		}
 
 		return fired;
+	}
+
+	/** Register an AlertSink. Dispatched fire-and-forget on every fired alert. */
+	addSink(sink: AlertSink): void {
+		this.sinks.push(sink);
+	}
+
+	getSinks(): ReadonlyArray<AlertSink> {
+		return this.sinks;
+	}
+
+	/** Close all sinks that implement close(). */
+	async closeSinks(): Promise<void> {
+		await Promise.all(
+			this.sinks.map((s) =>
+				s.close?.().catch(() => {
+					/* swallow close errors */
+				}),
+			),
+		);
 	}
 
 	/** Subscribe to alert events. */

@@ -35,6 +35,7 @@ export type {
 	CommandAck,
 	TerminalReason,
 	TerminalResult,
+	SDLCStageName,
 } from "./events";
 
 // Decisions & Gates
@@ -111,6 +112,9 @@ export type {
 // Outer Harness
 export type { OuterHarnessConsumer } from "./outer";
 
+// Governance (Inner ↔ Outer DI seam for SDLC pipeline)
+export type { GovernanceHandle } from "./governance";
+
 // Control Plane
 export type {
 	InterceptType,
@@ -160,3 +164,18 @@ export type {
 	PluginRegistration,
 	PluginConfig,
 } from "./plugin";
+
+// Guard (hook governance)
+export type {
+	HookInput,
+	GuardDecision,
+	GuardConfig,
+	GuardPermissionRule,
+	GuardBudgetConfig,
+	GuardAuditConfig,
+} from "./guard";
+export {
+	HookInputSchema,
+	GuardDecisionSchema,
+	GuardConfigSchema,
+} from "./guard";

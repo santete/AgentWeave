@@ -1,6 +1,6 @@
 /**
- * 'audit view' command — Inspect the `.agentweave/audit.log` written by the
- * `guard` hook backend. Pillar 1 (Governance) visibility.
+ * 'audit view' + 'audit replay' commands — inspect the `.agentweave/audit.log`
+ * written by the `guard` hook backend. Pillar 1 (Governance) visibility.
  *
  * Usage:
  *   agentweave audit view
@@ -8,6 +8,8 @@
  *   agentweave audit view --decision block --limit 20
  *   agentweave audit view --tail
  *   agentweave audit view --format json --limit 100 > audit.jsonl
+ *   agentweave audit replay <session-id>
+ *   agentweave audit replay ses_xyz --since 1h --until 10m --format json
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -21,6 +23,15 @@ export interface AuditViewArgs {
 	decision?: string;
 	limit?: number;
 	tail?: boolean;
+	format?: "table" | "json";
+	cwd?: string;
+}
+
+export interface AuditReplayArgs {
+	sessionId: string;
+	path?: string;
+	since?: string;
+	until?: string;
 	format?: "table" | "json";
 	cwd?: string;
 }
@@ -94,6 +105,82 @@ export async function auditViewCommand(args: AuditViewArgs): Promise<number> {
 
 	printTable(shown, entries.length);
 	return 0;
+}
+
+// ─── Replay mode ─────────────────────────────────────────────────
+
+export async function auditReplayCommand(args: AuditReplayArgs): Promise<number> {
+	const cwd = args.cwd ?? process.cwd();
+	const relPath = args.path ?? ".agentweave/audit.log";
+	const auditPath = isAbsolute(relPath) ? relPath : resolve(cwd, relPath);
+
+	if (!existsSync(auditPath)) {
+		console.log(`\n${C.yellow}  No audit log at ${relPath}${C.reset}`);
+		console.log(`${C.dim}  Wire up .claude/hooks/ → agentweave guard to start recording.${C.reset}\n`);
+		return 0;
+	}
+
+	const format = args.format ?? "table";
+	const sinceMs = args.since ? parseSince(args.since) : null;
+	if (args.since && sinceMs === null) {
+		console.error(`Error: --since must be a duration (e.g. 5m, 1h, 2d) or ISO timestamp`);
+		return 1;
+	}
+	const untilMs = args.until ? parseSince(args.until) : null;
+	if (args.until && untilMs === null) {
+		console.error(`Error: --until must be a duration (e.g. 5m, 1h, 2d) or ISO timestamp`);
+		return 1;
+	}
+
+	const raw = readFileSync(auditPath, "utf-8");
+	const entries = parseJsonl(raw)
+		.filter((e) => e.session_id === args.sessionId)
+		.filter((e) => {
+			const t = Date.parse(e.ts);
+			if (Number.isNaN(t)) return false;
+			if (sinceMs !== null && t < sinceMs) return false;
+			if (untilMs !== null && t > untilMs) return false;
+			return true;
+		})
+		.sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
+
+	if (entries.length === 0) {
+		console.error(`No entries for session ${args.sessionId}`);
+		return 1;
+	}
+
+	if (format === "json") {
+		for (const e of entries) console.log(JSON.stringify(e));
+		return 0;
+	}
+
+	printReplay(entries, args.sessionId);
+	return 0;
+}
+
+function printReplay(entries: AuditEntry[], sessionId: string): void {
+	const first = Date.parse(entries[0]!.ts);
+	console.log(`\n${C.cyan}${C.bold}  AgentWeave Audit Replay — session ${sessionId} (${entries.length} entries)${C.reset}`);
+	console.log(`${C.gray}  ${DIVIDER}${C.reset}`);
+	const header = `  ${pad("OFFSET", 10)} ${pad("PHASE", 5)} ${pad("TOOL", 14)} ${pad("DECISION", 8)} REASON`;
+	console.log(`${C.dim}${header}${C.reset}`);
+	for (const e of entries) {
+		const offset = fmtOffset(Date.parse(e.ts) - first);
+		const phase = e.phase ?? "-";
+		const tool = e.tool ?? "-";
+		const decision = e.decision ?? "-";
+		const reason = truncate(e.reason ?? (e.matched ? `matched ${e.matched}` : "-"), 40);
+		const color =
+			decision === "block" ? C.red : decision === "approve" ? C.green : C.gray;
+		console.log(`  ${pad(offset, 10)} ${pad(phase, 5)} ${pad(tool, 14)} ${color}${pad(decision, 8)}${C.reset} ${reason}`);
+	}
+	console.log(`${C.gray}  ${DIVIDER}${C.reset}\n`);
+}
+
+function fmtOffset(ms: number): string {
+	if (ms < 1000) return `+${ms}ms`;
+	if (ms < 60_000) return `+${(ms / 1000).toFixed(2)}s`;
+	return `+${(ms / 60_000).toFixed(2)}m`;
 }
 
 // ─── Tail mode ───────────────────────────────────────────────────

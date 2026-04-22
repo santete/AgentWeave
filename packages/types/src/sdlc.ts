@@ -8,6 +8,8 @@
  */
 
 import type { TokenUsage } from "./metrics";
+import type { GovernanceHandle } from "./governance";
+import type { ControlPlane } from "./control-plane";
 
 // ─── Structured Task ────────────────────────────────────────────
 
@@ -99,6 +101,10 @@ export interface SDLCModuleContext {
 	config: SDLCConfig;
 	metrics: MetricsHandle;
 	llmCaller?: LLMCallerFn;
+	/** Optional governance observer — stage audit + session lifecycle. */
+	governance?: GovernanceHandle;
+	/** Optional ControlPlane — propagated to AgentLoop for tool-call gating. */
+	controlPlane?: ControlPlane;
 }
 
 export interface MetricsHandle {
@@ -191,6 +197,8 @@ export interface SDLCConfig {
 			cwd?: string;
 			promptMode?: "stdin" | "arg";
 			env?: Record<string, string>;
+			/** Wall-clock timeout (ms) on the child process. Exceeds → SIGTERM+SIGKILL, reason="timeout". */
+			processTimeoutMs?: number;
 		};
 		apiDirect?: {
 			model: string;

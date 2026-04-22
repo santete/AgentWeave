@@ -8,6 +8,8 @@
 
 import { randomUUID } from "node:crypto";
 import type {
+	ControlPlane,
+	GovernanceHandle,
 	InnerHarnessProvider,
 	RunOptions,
 	InnerEvent,
@@ -28,6 +30,7 @@ import type {
 	SDLCMetricsSnapshot,
 	SDLCBaselineComparison,
 	LLMCallerFn,
+	SessionInfo,
 } from "@agentweave/types";
 import { createEmptyTokenUsage, createEmptyContextUsage } from "@agentweave/types";
 import type { ContextUsage, TokenUsage } from "@agentweave/types";
@@ -46,11 +49,17 @@ import { OutputStandardizerModule } from "./modules/output-standardizer";
 export interface SDLCOrchestratorConfig {
 	sdlcConfig?: Partial<SDLCConfig>;
 	llmCaller?: LLMCallerFn;
+	/** Optional governance observer — receives stage_* events + session lifecycle. */
+	governance?: GovernanceHandle;
+	/** Optional ControlPlane — propagated to AgentLoop for tool-call gating. */
+	controlPlane?: ControlPlane;
 }
 
 export class SDLCOrchestrator implements InnerHarnessProvider {
 	private config: SDLCConfig;
 	private llmCaller?: LLMCallerFn;
+	private governance?: GovernanceHandle;
+	private controlPlane?: ControlPlane;
 	private state: InnerState;
 	private sessionId = "";
 	private agentId: string;
@@ -77,6 +86,8 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 			? mergeConfig(defaults, config.sdlcConfig)
 			: defaults;
 		this.llmCaller = config?.llmCaller;
+		this.governance = config?.governance;
+		this.controlPlane = config?.controlPlane;
 		this.agentId = `sdlc_${randomUUID().slice(0, 8)}`;
 		this.usage = createEmptyTokenUsage();
 		this.state = {
@@ -155,10 +166,16 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 			config: this.config,
 			metrics: mc.createHandle(),
 			llmCaller: this.llmCaller,
+			governance: this.governance,
+			controlPlane: this.controlPlane,
 		};
+
+		// Session lifecycle — observer-only, must not block the pipeline.
+		await this.notifySessionStart();
 
 		yield this.makeEvent({ type: "turn:start", turnIndex: 1 });
 
+		let terminalForSession: TerminalResult = { reason: "error", usage: this.usage };
 		try {
 			// Phase 1: Normalize
 			yield this.statusEvent("Normalizing task...");
@@ -168,6 +185,9 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 				input: rawInput,
 				context: ctx,
 				defaultOutput: { id: `task_${randomUUID().slice(0, 8)}`, rawInput, goal: rawInput, context: [], constraints: [], definitionOfDone: [], metadata: {} } satisfies SDLCTask,
+				stage: "taskNormalizer",
+				phase: 1,
+				agentId: this.agentId,
 			});
 
 			// Phase 2: Context
@@ -178,6 +198,9 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 				input: task,
 				context: ctx,
 				defaultOutput: task,
+				stage: "contextBuilder",
+				phase: 2,
+				agentId: this.agentId,
 			});
 
 			// Phase 3: Plan
@@ -188,6 +211,9 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 				input: enrichedTask,
 				context: ctx,
 				defaultOutput: { taskId: task.id, steps: [], estimatedFiles: [] } satisfies SDLCPlan,
+				stage: "planGenerator",
+				phase: 3,
+				agentId: this.agentId,
 			});
 
 			// Pre-execution QA snapshot — only when detectRegression is explicitly enabled (doubles QA time)
@@ -200,6 +226,9 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 					input: emptyExecResult,
 					context: ctx,
 					defaultOutput: { passed: true, checks: [] },
+					stage: "qualityGate",
+					phase: 6,
+					agentId: this.agentId,
 				})).output;
 			}
 
@@ -211,6 +240,9 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 				input: { task: enrichedTask, plan },
 				context: ctx,
 				defaultOutput: { success: false, changedFiles: [], output: "ExecutionBridge disabled", usage: createEmptyTokenUsage(), durationMs: 0, terminalReason: "error" } satisfies SDLCExecutionResult,
+				stage: "executionBridge",
+				phase: 4,
+				agentId: this.agentId,
 			})).output;
 
 			// Track usage
@@ -227,6 +259,9 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 					input: { result: execResult, estimatedFiles: plan.estimatedFiles },
 					context: ctx,
 					defaultOutput: { passed: true, checks: [] },
+					stage: "patchValidator",
+					phase: 5,
+					agentId: this.agentId,
 				})).output;
 			}
 
@@ -240,6 +275,9 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 					input: execResult,
 					context: ctx,
 					defaultOutput: { passed: true, checks: [] },
+					stage: "qualityGate",
+					phase: 6,
+					agentId: this.agentId,
 				})).output;
 
 				// M7: regression = any check that passed pre-execution now fails post-execution
@@ -267,6 +305,9 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 						input: { result: execResult, validation, attempt },
 						context: ctx,
 						defaultOutput: { shouldRetry: false, strategy: "escalate" as const, maxRetries, currentAttempt: attempt },
+						stage: "retryEngine",
+						phase: 7,
+						agentId: this.agentId,
 					})).output;
 
 					if (!decision.shouldRetry) break;
@@ -282,6 +323,9 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 						input: { task: { ...enrichedTask, rawInput: retryInput, goal: retryInput }, plan },
 						context: ctx,
 						defaultOutput: execResult,
+						stage: "executionBridge",
+						phase: 4,
+						agentId: this.agentId,
 					})).output;
 
 					// Re-check QA
@@ -292,6 +336,9 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 							input: execResult,
 							context: ctx,
 							defaultOutput: { passed: true, checks: [] },
+							stage: "qualityGate",
+							phase: 6,
+							agentId: this.agentId,
 						})).output;
 
 						if (qaResult.passed) break;
@@ -310,6 +357,9 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 					input: execResult,
 					context: ctx,
 					defaultOutput: { commitMessage: "", prTitle: "", prDescription: "", summary: "", changedFiles: [] },
+					stage: "outputStandardizer",
+					phase: 8,
+					agentId: this.agentId,
 				});
 			}
 
@@ -341,13 +391,49 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 			yield this.makeEvent({ type: "turn:end", turnIndex: 1, stopReason: reason });
 			yield this.makeEvent({ type: "terminal", reason, usage: this.usage });
 
-			return { reason, usage: this.usage };
+			terminalForSession = { reason, usage: this.usage };
+			return terminalForSession;
 		} catch (err) {
 			this.state.status = "error";
 			const msg = err instanceof Error ? err.message : String(err);
 			yield this.makeEvent({ type: "error", error: msg, recoverable: false });
 			yield this.makeEvent({ type: "terminal", reason: "error", usage: this.usage });
-			return { reason: "error", usage: this.usage };
+			terminalForSession = { reason: "error", usage: this.usage };
+			return terminalForSession;
+		} finally {
+			await this.notifySessionEnd(terminalForSession);
+		}
+	}
+
+	private async notifySessionStart(): Promise<void> {
+		if (!this.governance) return;
+		const session: SessionInfo = {
+			sessionId: this.sessionId,
+			agentId: this.agentId,
+			model: `sdlc:${this.config.execution.mode}`,
+			startTime: Date.now(),
+			cwd: process.cwd(),
+		};
+		try {
+			await this.governance.onSessionStart(session);
+		} catch {
+			// Observer failure must not break the pipeline.
+		}
+	}
+
+	private async notifySessionEnd(result: TerminalResult): Promise<void> {
+		if (!this.governance) return;
+		const session: SessionInfo = {
+			sessionId: this.sessionId,
+			agentId: this.agentId,
+			model: `sdlc:${this.config.execution.mode}`,
+			startTime: Date.now(),
+			cwd: process.cwd(),
+		};
+		try {
+			await this.governance.onSessionEnd(session, result);
+		} catch {
+			// Observer failure must not break the pipeline.
 		}
 	}
 

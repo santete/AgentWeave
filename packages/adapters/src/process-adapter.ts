@@ -11,6 +11,7 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type {
 	InnerHarnessProvider,
@@ -48,6 +49,13 @@ export interface ProcessAdapterConfig {
 	};
 	/** Map exit codes to terminal reasons. Default: 0="completed", non-zero="error". */
 	exitCodeMap?: Record<number, string>;
+	/**
+	 * Wall-clock timeout on the child process lifetime (ms).
+	 * When exceeded: SIGTERM, then SIGKILL after 5s grace, exit reason="timeout".
+	 * Health-check ping/pong only works for adapters that speak the JSON protocol;
+	 * this is the hard stop for CLIs that do not (Cursor/Aider/Claude headless).
+	 */
+	processTimeoutMs?: number;
 	/** Health check heartbeat configuration. */
 	healthCheck?: {
 		enabled: boolean;
@@ -63,6 +71,25 @@ export interface ProcessAdapterConfig {
 /** Double-quote an arg and escape any embedded double quotes. */
 function quoteArg(s: string): string {
 	return `"${s.replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * Kill a child process tree. On Windows, `child.kill()` with `shell: true`
+ * only kills cmd.exe — not the grand-children (e.g. node). Use taskkill /T
+ * to kill the whole tree.
+ */
+function killTree(child: ChildProcess, signal: "SIGTERM" | "SIGKILL" = "SIGTERM"): void {
+	if (child.killed || child.pid == null) return;
+	if (process.platform === "win32") {
+		try {
+			execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: "ignore" });
+		} catch {
+			// Already exited or permission denied — fall back to node's kill
+			try { child.kill(signal); } catch { /* already exited */ }
+		}
+	} else {
+		try { child.kill(signal); } catch { /* already exited */ }
+	}
 }
 
 // ─── Adapter ────────────────────────────────────────────────────
@@ -85,6 +112,11 @@ export class ProcessAdapter implements InnerHarnessProvider {
 	private healthCheckInterval: ReturnType<typeof setInterval> | null = null;
 	private pongResolvers: Array<() => void> = [];
 	private pongPattern: RegExp | null = null;
+
+	// Lifetime timeout
+	private lifetimeTimer: ReturnType<typeof setTimeout> | null = null;
+	private killTimer: ReturnType<typeof setTimeout> | null = null;
+	private timedOut = false;
 
 	constructor(config: ProcessAdapterConfig) {
 		this.config = config;
@@ -148,6 +180,33 @@ export class ProcessAdapter implements InnerHarnessProvider {
 			shell: isWin,
 		});
 		this.process = child;
+
+		// Arm the lifetime timeout — SIGTERM, then SIGKILL after 5s grace.
+		// Cleared in the exit handler below when the process exits naturally.
+		// Uses killTree() so Windows shell spawns propagate to the grand-child.
+		if (this.config.processTimeoutMs && this.config.processTimeoutMs > 0) {
+			this.lifetimeTimer = setTimeout(() => {
+				if (child.killed) return;
+				this.timedOut = true;
+				killTree(child, "SIGTERM");
+				this.killTimer = setTimeout(() => {
+					if (!child.killed) {
+						killTree(child, "SIGKILL");
+					}
+				}, 5_000);
+			}, this.config.processTimeoutMs);
+		}
+
+		// Clear timers when the caller aborts — spawn's { signal } will kill the
+		// child, but the health-check interval + lifetime timers would otherwise
+		// leak until GC.
+		if (options?.signal) {
+			options.signal.addEventListener(
+				"abort",
+				() => this.clearTimers(),
+				{ once: true },
+			);
+		}
 
 		// Send prompt via stdin if in stdin mode
 		if (this.config.promptMode !== "arg") {
@@ -272,8 +331,15 @@ export class ProcessAdapter implements InnerHarnessProvider {
 			child.on("error", () => resolve(1));
 		});
 
-		const reason = this.mapExitCode(exitCode);
+		// Clear lifetime timers — process either exited naturally or was killed by timeout
+		if (this.lifetimeTimer) { clearTimeout(this.lifetimeTimer); this.lifetimeTimer = null; }
+		if (this.killTimer) { clearTimeout(this.killTimer); this.killTimer = null; }
+
+		const reason = this.timedOut ? "timeout" : this.mapExitCode(exitCode);
+		// Only "completed" is a success status; anything else is terminal-non-success.
+		// Preserve the specific reason ("timeout", "error", etc.) on both the event and the returned result.
 		this.state.status = reason === "completed" ? "completed" : "error";
+		const terminalReason = reason as TerminalResult["reason"];
 
 		yield this.makeEvent({
 			type: "turn:end",
@@ -283,19 +349,26 @@ export class ProcessAdapter implements InnerHarnessProvider {
 
 		yield this.makeEvent({
 			type: "terminal",
-			reason: reason === "completed" ? "completed" : "error",
+			reason: terminalReason,
 			usage: this.state.usage,
 		});
 
-		return { reason: reason === "completed" ? "completed" : "error", usage: this.state.usage };
+		return { reason: terminalReason, usage: this.state.usage };
 	}
 
 	abort(_reason?: string): void {
 		if (this.process && !this.process.killed) {
-			this.process.kill("SIGTERM");
+			killTree(this.process, "SIGTERM");
 		}
 		this.state.status = "aborted";
+		this.clearTimers();
+	}
+
+	/** Idempotent teardown of all timer resources held by this adapter. */
+	private clearTimers(): void {
 		this.stopHealthCheck();
+		if (this.lifetimeTimer) { clearTimeout(this.lifetimeTimer); this.lifetimeTimer = null; }
+		if (this.killTimer) { clearTimeout(this.killTimer); this.killTimer = null; }
 	}
 
 	// ─── Pause/Resume via stdin protocol ────────────────────────

@@ -20,6 +20,7 @@ import type {
 	HookResult,
 	HookMetrics,
 } from "@agentweave/types";
+import { fetchWithRetry } from "../shared/http-retry";
 
 const execAsync = promisify(exec);
 
@@ -330,50 +331,35 @@ export class HookEngine {
 		hook: Extract<HookDefinition, { type: "http" }>,
 		event: HookEvent,
 	): Promise<HookResult> {
-		const maxRetries = hook.retries ?? 0;
-		let lastError = "";
+		const body = JSON.stringify({
+			event: event.type,
+			toolName: event.toolName,
+			toolInput: event.toolInput,
+			sessionId: event.sessionId,
+		});
 
-		for (let attempt = 0; attempt <= maxRetries; attempt++) {
-			try {
-				const body = JSON.stringify({
-					event: event.type,
-					toolName: event.toolName,
-					toolInput: event.toolInput,
-					sessionId: event.sessionId,
-				});
+		const result = await fetchWithRetry(
+			hook.url,
+			{
+				method: (hook.method as string) ?? "POST",
+				headers: {
+					"Content-Type": "application/json",
+					...(hook.headers ?? {}),
+				},
+				body,
+			},
+			{
+				maxRetries: hook.retries ?? 0,
+				timeoutMs: hook.timeout ?? 10_000,
+			},
+		);
 
-				const response = await fetch(hook.url, {
-					method: (hook.method as string) ?? "POST",
-					headers: {
-						"Content-Type": "application/json",
-						...(hook.headers ?? {}),
-					},
-					body,
-					signal: AbortSignal.timeout(hook.timeout ?? 10_000),
-				});
-
-				if (response.ok) {
-					const text = await response.text();
-					return this.parseHookOutput(text, "");
-				}
-
-				// Retry on 5xx only
-				if (response.status >= 500 && attempt < maxRetries) {
-					await backoff(attempt);
-					continue;
-				}
-
-				return { outcome: "error", message: `HTTP ${response.status}: ${response.statusText}` };
-			} catch (err) {
-				lastError = err instanceof Error ? err.message : "HTTP hook failed";
-				if (attempt < maxRetries) {
-					await backoff(attempt);
-					continue;
-				}
-			}
+		if (result.ok) {
+			const text = await result.response.text();
+			return this.parseHookOutput(text, "");
 		}
 
-		return { outcome: "error", message: lastError };
+		return { outcome: "error", message: result.error };
 	}
 
 	private async executePromptHook(
@@ -476,13 +462,6 @@ function validateHandlerPath(handlerPath: string): string | null {
 	}
 
 	return null;
-}
-
-// ─── HTTP Retry Backoff ──────────────────────────────────────────
-
-function backoff(attempt: number): Promise<void> {
-	const ms = Math.min(1000 * Math.pow(2, attempt), 5000);
-	return new Promise((r) => setTimeout(r, ms));
 }
 
 // ─── Safe Environment Filtering ─────────────────────────────────

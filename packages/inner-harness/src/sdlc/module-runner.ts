@@ -5,8 +5,15 @@
  * SECURITY: Custom module paths are validated — no traversal, require .js/.ts/.mjs extension.
  */
 
+import { randomUUID } from "node:crypto";
 import { resolve, normalize } from "node:path";
-import type { SDLCModule, SDLCModuleConfig, SDLCModuleContext } from "@agentweave/types";
+import type {
+	InnerEvent,
+	SDLCModule,
+	SDLCModuleConfig,
+	SDLCModuleContext,
+	SDLCStageName,
+} from "@agentweave/types";
 
 export interface RunModuleOptions<TInput, TOutput> {
 	/** The built-in module implementation. */
@@ -19,6 +26,14 @@ export interface RunModuleOptions<TInput, TOutput> {
 	context: SDLCModuleContext;
 	/** Default output if module is disabled. */
 	defaultOutput: TOutput;
+	/**
+	 * Stage identity — when supplied together with `context.governance`, the
+	 * runner emits `sdlc:stage_start` / `sdlc:stage_end` events.
+	 */
+	stage?: SDLCStageName;
+	phase?: number;
+	/** Identity used in emitted events (agentId is required by InnerEvent). */
+	agentId?: string;
 }
 
 /**
@@ -37,6 +52,8 @@ export async function runModule<TInput, TOutput>(
 		? await loadCustomModule<TInput, TOutput>(opts.config.custom, opts.builtIn.name)
 		: opts.builtIn;
 
+	emitStageEvent(opts, "sdlc:stage_start");
+
 	try {
 		const output = await module.execute(opts.input, opts.context);
 		const durationMs = performance.now() - start;
@@ -44,10 +61,48 @@ export async function runModule<TInput, TOutput>(
 		// Record timing in metrics
 		opts.context.metrics.record(`module:${module.name}:durationMs`, durationMs);
 
+		emitStageEvent(opts, "sdlc:stage_end", { durationMs, status: "success" });
+
 		return { output, skipped: false, durationMs };
 	} catch (err) {
+		const durationMs = performance.now() - start;
+		emitStageEvent(opts, "sdlc:stage_end", { durationMs, status: "failure" });
 		const message = err instanceof Error ? err.message : String(err);
 		throw new ModuleError(module.name, message);
+	}
+}
+
+function emitStageEvent<TInput, TOutput>(
+	opts: RunModuleOptions<TInput, TOutput>,
+	type: "sdlc:stage_start" | "sdlc:stage_end",
+	extras?: { durationMs: number; status: "success" | "failure" },
+): void {
+	const { governance } = opts.context;
+	if (!governance || !opts.stage || opts.phase === undefined) return;
+
+	const base = {
+		id: randomUUID(),
+		timestamp: Date.now(),
+		sessionId: opts.context.sessionId,
+		agentId: opts.agentId ?? "sdlc",
+	};
+
+	const event =
+		type === "sdlc:stage_start"
+			? { ...base, type, stage: opts.stage, phase: opts.phase }
+			: {
+					...base,
+					type,
+					stage: opts.stage,
+					phase: opts.phase,
+					durationMs: extras!.durationMs,
+					status: extras!.status,
+				};
+
+	try {
+		governance.onEvent(event as InnerEvent);
+	} catch {
+		// Non-blocking: governance observer must not break the pipeline.
 	}
 }
 

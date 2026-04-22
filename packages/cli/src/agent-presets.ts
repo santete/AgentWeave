@@ -58,7 +58,7 @@ export const AGENT_PRESETS: Record<string, AgentPreset> = {
 	aider: {
 		name: "Aider",
 		command: "aider",
-		args: ["--yes-always", "--no-git", "--message"],
+		args: ["--no-pretty", "--yes-always", "--no-git", "--message"],
 		promptMode: "arg",
 		parseJson: false,
 		stderr: { capture: true, asEvents: false },
@@ -77,6 +77,18 @@ export const AGENT_PRESETS: Record<string, AgentPreset> = {
 		install: "npm install -g @openai/codex",
 		verifyCommand: "codex --version",
 		notes: "Requires OPENAI_API_KEY env var.",
+	},
+
+	cursor: {
+		name: "Cursor Agent",
+		command: "cursor-agent",
+		args: ["--force", "-p"],
+		promptMode: "arg",
+		parseJson: false,
+		stderr: { capture: true, asEvents: false },
+		install: "curl https://cursor.com/install -fsS | bash",
+		verifyCommand: "cursor-agent --version",
+		notes: "Requires Cursor login or CURSOR_API_KEY env var. `-p` headless mode can hang on some prompts — pipeline timeout catches it.",
 	},
 
 	custom: {
