@@ -18,6 +18,13 @@ export interface PermissionRule {
 	message?: string; // Shown when ask/deny
 	group?: string; // Rule group for enable/disable
 	rateLimit?: RateLimit; // Sliding window rate limiting
+	/**
+	 * Marks the rule as un-overridable by lower levels or runtime additions.
+	 * VALID ONLY when `source === "policy"` (org level). PolicyLoader rejects
+	 * files that set this flag on team/user rules. Immutable rules evaluate
+	 * BEFORE mutable rules regardless of priority number — see P3.1 design doc.
+	 */
+	immutable?: boolean;
 }
 
 export interface PermissionAuditRecord {
