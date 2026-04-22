@@ -274,3 +274,39 @@ describe("runGuard post", () => {
 		expect(code).toBe(0);
 	});
 });
+
+// ─── Audit redaction (C3) ────────────────────────────────────────
+
+describe("guard audit redaction", () => {
+	it("redacts sk-*, Bearer, and assignment-style secrets from audit entries", async () => {
+		writeGuardConfig({
+			mode: "permissive",
+			permissions: [
+				{
+					pattern: "Bash(*)",
+					behavior: "deny",
+					priority: 100,
+					// The rule message ends up in decision.reason → audit entry.
+					// Exercises all three redaction patterns (sk-*, Bearer, key=val).
+					// sk-* is kept OUTSIDE any `token=` / `password=` assignment so
+					// the key=val regex can't swallow it first.
+					message:
+						"Blocked: password=hunter2 Bearer abcdefghij0123456789XYZ " +
+						"leaked token sk-ant-abcdefghij0123456789XYZ end",
+				},
+			],
+		});
+		pipeStdin({
+			tool_name: "Bash",
+			tool_input: { command: "ls" },
+		});
+		await runGuard("pre", workDir);
+		const log = readFileSync(join(workDir, ".agentweave", "audit.log"), "utf-8");
+		expect(log).not.toMatch(/sk-ant-abcdefghij/);
+		expect(log).not.toMatch(/hunter2/);
+		expect(log).not.toMatch(/abcdefghij0123456789XYZ/);
+		expect(log).toContain("sk-***");
+		expect(log).toContain("Bearer ***");
+		expect(log).toMatch(/password=\*\*\*/);
+	});
+});
