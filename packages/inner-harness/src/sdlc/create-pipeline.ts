@@ -16,7 +16,7 @@
  * ```
  */
 
-import type { SDLCConfig, LLMCallerFn } from "@agentweave/types";
+import type { SDLCConfig, LLMCallerFn, GovernanceHandle, ControlPlane } from "@agentweave/types";
 import { SDLCOrchestrator } from "./sdlc-orchestrator";
 import type { SDLCOrchestratorConfig } from "./sdlc-orchestrator";
 
@@ -29,6 +29,10 @@ export interface CreateSDLCPipelineOptions {
 	metrics?: Partial<SDLCConfig["metrics"]>;
 	/** LLM caller for meta tasks (planning, normalization). Optional. */
 	llmCaller?: LLMCallerFn;
+	/** Optional governance handle — stage audit + session lifecycle observer. */
+	governance?: GovernanceHandle;
+	/** Optional ControlPlane — propagated to AgentLoop for tool-call interception. */
+	controlPlane?: ControlPlane;
 }
 
 /**
@@ -38,6 +42,8 @@ export interface CreateSDLCPipelineOptions {
 export function createSDLCPipeline(options?: CreateSDLCPipelineOptions): SDLCOrchestrator {
 	const config: SDLCOrchestratorConfig = {
 		llmCaller: options?.llmCaller,
+		governance: options?.governance,
+		controlPlane: options?.controlPlane,
 	};
 
 	if (options?.modules || options?.execution || options?.metrics) {

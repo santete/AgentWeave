@@ -99,6 +99,15 @@ export type InnerEventPayload =
 	| { type: "terminal"; reason: TerminalReason; usage: TokenUsage }
 	// Error
 	| { type: "error"; error: string; recoverable: boolean }
+	// SDLC stage lifecycle
+	| { type: "sdlc:stage_start"; stage: SDLCStageName; phase: number }
+	| {
+			type: "sdlc:stage_end";
+			stage: SDLCStageName;
+			phase: number;
+			durationMs: number;
+			status: "success" | "failure" | "skipped";
+	  }
 	// Multi-agent
 	| {
 			type: "agent:spawned";
@@ -120,6 +129,16 @@ export type InnerEventPayload =
 	  }
 	| { type: "agent:aborted"; childAgentId: string; name: string }
 	| { type: "agent:message"; message: AgentMessage };
+
+export type SDLCStageName =
+	| "taskNormalizer"
+	| "contextBuilder"
+	| "planGenerator"
+	| "executionBridge"
+	| "patchValidator"
+	| "qualityGate"
+	| "retryEngine"
+	| "outputStandardizer";
 
 export type InnerEvent = {
 	id: string;

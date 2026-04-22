@@ -35,6 +35,7 @@ export type {
 	CommandAck,
 	TerminalReason,
 	TerminalResult,
+	SDLCStageName,
 } from "./events";
 
 // Decisions & Gates
@@ -110,6 +111,9 @@ export type {
 
 // Outer Harness
 export type { OuterHarnessConsumer } from "./outer";
+
+// Governance (Inner ↔ Outer DI seam for SDLC pipeline)
+export type { GovernanceHandle } from "./governance";
 
 // Control Plane
 export type {

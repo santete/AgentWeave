@@ -171,13 +171,15 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 		const { AgentLoop } = await import("../../agent-loop");
 		const { BUILT_IN_TOOLS } = await import("../../built-in-tools");
 
-		// AgentLoop uses noop control plane by default when none provided (standalone mode)
+		// AgentLoop uses noop control plane by default when none provided (standalone mode).
+		// When context.controlPlane is supplied, outer-harness interceptors gate tool calls.
 		return new AgentLoop({
 			model: config.model,
 			fallbackModel: config.fallbackModel,
 			maxTurns: config.maxTurns ?? 50,
 			systemPrompt: config.systemPrompt,
 			tools: BUILT_IN_TOOLS,
+			controlPlane: context.controlPlane,
 		});
 	}
 
