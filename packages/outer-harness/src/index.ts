@@ -26,7 +26,7 @@ export type { HookEngineConfig } from "./governance/hook-engine";
 export { InputGate } from "./governance/input-gate";
 export type { InputGateConfig, InputGateResult } from "./governance/input-gate";
 export { AskStore } from "./governance/ask-store";
-export type { AskStoreOptions } from "./governance/ask-store";
+export type { AskStoreOptions, OrphanedRecord } from "./governance/ask-store";
 export { PolicyLoader } from "./governance/policy-loader";
 export type {
 	PolicyPaths,
