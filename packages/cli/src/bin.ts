@@ -14,7 +14,7 @@
 
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import { runCommand } from "./commands/run.js";
-import { monitorCommand } from "./commands/monitor.js";
+import { monitorCommand, monitorExportCommand, monitorServeCommand } from "./commands/monitor.js";
 import { sessionCommand } from "./commands/session.js";
 import { taskCommand } from "./commands/task.js";
 import { metricsCommand } from "./commands/metrics.js";
@@ -99,11 +99,19 @@ function printHelp(): void {
     agentweave mcp start            Run stdio MCP server (expose governance + QA tools)
     agentweave mcp print-config     Print .mcp.json snippet for Claude Code
 
+  MONITOR (Prometheus-compatible metrics endpoint):
+    agentweave monitor export [--instance <n>]     Print metrics exposition to stdout
+    agentweave monitor serve [options]             Run /metrics HTTP endpoint
+      --port <p>                  Port (default: 9090; use 0 for ephemeral)
+      --host <h>                  Bind host (default: 127.0.0.1)
+      --instance <n>              Prometheus 'instance' label (default: agentweave)
+      --include-session-label     Opt-in: add 'session_id' label (cardinality risk)
+
   ─── REFERENCE IMPLEMENTATION (agent-loop, demoted post-pivot 2026-04-22) ───
   Use only when no wrapped agent is available. Not the production path.
 
     agentweave run <prompt> [options]      Run reference agent-loop directly
-    agentweave monitor [--gateway <url>]   Monitor gateway (reference)
+    agentweave monitor --gateway <url>     Monitor reference gateway (legacy)
     agentweave session list [--dir <path>] List reference-loop sessions
 
   RUN OPTIONS:
@@ -404,8 +412,30 @@ async function main(): Promise<void> {
 		}
 
 		case "monitor": {
-			const gateway = getFlag(args, "--gateway") ?? "http://localhost:9101";
-			await monitorCommand({ gateway });
+			const monIdx = args.indexOf("monitor");
+			const sub = args[monIdx + 1];
+			if (sub === "export") {
+				monitorExportCommand({
+					instance: getFlag(args, "--instance"),
+					includeSessionLabel: hasFlag(args, "--include-session-label"),
+				});
+			} else if (sub === "serve") {
+				const portRaw = getFlag(args, "--port");
+				const port = portRaw ? Number.parseInt(portRaw, 10) : 9090;
+				if (Number.isNaN(port) || port < 0 || port > 65535) {
+					console.error("Error: --port must be an integer between 0 and 65535");
+					process.exit(1);
+				}
+				await monitorServeCommand({
+					port,
+					host: getFlag(args, "--host"),
+					instance: getFlag(args, "--instance"),
+					includeSessionLabel: hasFlag(args, "--include-session-label"),
+				});
+			} else {
+				const gateway = getFlag(args, "--gateway") ?? "http://localhost:9101";
+				await monitorCommand({ gateway });
+			}
 			break;
 		}
 

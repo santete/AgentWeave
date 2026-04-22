@@ -189,3 +189,44 @@ describe("createSdlcGovernance — SDLC pipeline stage audit (end-to-end)", () =
 		expect(audit.getEntriesByAction("session_end").length).toBe(1);
 	});
 });
+
+describe("createSdlcGovernance — Prometheus scrape (P1.1 end-to-end)", () => {
+	it("pipeline run → exporter.render() yields ≥ 5 data series with configured instance", async () => {
+		const gov = createSdlcGovernance({
+			sessionId: "s_prom",
+			config: {
+				monitoring: {
+					prometheus: { enabled: true, instance: "ci-scrape" },
+				},
+			},
+		});
+		const pipeline = createSDLCPipeline({
+			execution: { mode: "agent-loop", agentLoop: { model: "mock", maxTurns: 1 } },
+			modules: SAFE_MODULES,
+			governance: gov.outer,
+			controlPlane: gov.controlPlane,
+		});
+		pipeline.setExecutionProvider(createMockProvider());
+
+		await drain(pipeline);
+
+		const exporter = gov.outer.getPrometheusExporter();
+		expect(exporter).not.toBeNull();
+
+		const text = exporter!.render();
+
+		expect(text).toContain("# HELP agentweave_turns_total");
+		expect(text).toContain("# TYPE agentweave_turns_total counter");
+		expect(text).toContain('instance="ci-scrape"');
+
+		const dataLines = text
+			.split("\n")
+			.filter((l) => l.length > 0 && !l.startsWith("#"));
+		expect(dataLines.length).toBeGreaterThanOrEqual(5);
+	});
+
+	it("omits exporter by default (zero-regression: monitoring config is opt-in)", () => {
+		const gov = createSdlcGovernance({ sessionId: "s_no_prom" });
+		expect(gov.outer.getPrometheusExporter()).toBeNull();
+	});
+});
