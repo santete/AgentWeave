@@ -58,7 +58,7 @@ export const AGENT_PRESETS: Record<string, AgentPreset> = {
 	aider: {
 		name: "Aider",
 		command: "aider",
-		args: ["--yes-always", "--no-git", "--message"],
+		args: ["--no-pretty", "--yes-always", "--no-git", "--message"],
 		promptMode: "arg",
 		parseJson: false,
 		stderr: { capture: true, asEvents: false },
