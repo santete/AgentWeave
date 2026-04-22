@@ -48,6 +48,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@agentweave/control-plane':
+        specifier: workspace:*
+        version: link:../control-plane
       '@agentweave/inner-harness':
         specifier: workspace:*
         version: link:../inner-harness

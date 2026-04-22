@@ -36,6 +36,7 @@
   "dependencies": {
     "@agentweave/sdk": "workspace:*",
     "@agentweave/types": "workspace:*",
+    "@agentweave/control-plane": "workspace:*",
     "@agentweave/inner-harness": "workspace:*",
     "@agentweave/mcp-server": "workspace:*",
     "@agentweave/outer-harness": "workspace:*"

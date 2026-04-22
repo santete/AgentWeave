@@ -15,6 +15,7 @@ import { loadConfig } from "../config-loader.js";
 import { resolveAgent, AGENT_PRESETS, listPresets } from "../agent-presets.js";
 import { getAgentEnv, hasCredentials, scrubCredentials, buildChildEnv, ensureGitignore } from "../credential-store.js";
 import { createAdapterGovernance, type AdapterGovernance } from "../lib/adapter-governance.js";
+import { createSdlcGovernance, type SdlcGovernanceBundle } from "../lib/sdlc-governance.js";
 
 export interface PipelineRunArgs {
 	prompt: string;
@@ -351,12 +352,13 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 	// This is the hard stop when the JSON ping/pong health check doesn't apply.
 	const ADAPTER_TIMEOUT_MS = 300_000;
 
+	const governanceSessionId = `cli_${Date.now().toString(36)}`;
+
 	// Adapter governance: redact secrets/PII from adapter stdout + write audit
 	// trail. Tool-call governance (Permission/Hook) doesn't apply here — adapter
 	// is a black-box process. See docs/adapters/cursor-integration.md.
 	let governance: AdapterGovernance | null = null;
 	if (agent) {
-		const governanceSessionId = `cli_${Date.now().toString(36)}`;
 		governance = createAdapterGovernance({ sessionId: governanceSessionId });
 		governance.logSpawn(
 			agent.command,
@@ -365,10 +367,21 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 		);
 	}
 
+	// SDLC-level governance: stage-transition audit (both modes) + tool-call
+	// gating through ControlPlane (agent-loop mode). Always enabled — with
+	// default empty-rule permissions it's a pure observer until a config is
+	// supplied. Permission rules are currently threaded via --mode sdlc config
+	// (see createSdlcGovernance); CLI flag surface is a follow-up.
+	const sdlcGov: SdlcGovernanceBundle = createSdlcGovernance({
+		sessionId: governanceSessionId,
+	});
+
 	const pipeline = createSDLCPipeline({
 		execution: agent
 			? { mode: "process-adapter", processAdapter: { command: agent.command, args: agent.args, promptMode: agent.promptMode, env: agentEnv ? buildChildEnv(agentEnv) : undefined, processTimeoutMs: ADAPTER_TIMEOUT_MS } }
 			: { mode: "agent-loop", agentLoop: { model, maxTurns: 50 } },
+		governance: sdlcGov.outer,
+		controlPlane: sdlcGov.controlPlane,
 		modules: {
 			// In wrap mode: agent handles these → OFF (agent does it better)
 			// In direct mode: AgentWeave handles these → ON
