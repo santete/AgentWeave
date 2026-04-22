@@ -9,6 +9,14 @@ export type {
 
 // Governance
 export { PermissionEngine, matchPattern } from "./governance/permission-engine";
+export {
+	buildPermissionContext,
+	sessionContextFromInfo,
+} from "./governance/permission-context";
+export type {
+	PermissionContext,
+	PermissionContextOptions,
+} from "./governance/permission-context";
 export { OutputPipeline } from "./governance/output-pipeline";
 export type { OutputPipelineConfig } from "./governance/output-pipeline";
 export { BudgetManager } from "./governance/budget-manager";

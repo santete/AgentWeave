@@ -25,6 +25,14 @@ import type {
 	RuleConflict,
 	ToolRequest,
 } from "@agentweave/types";
+import type { PermissionContext } from "./permission-context";
+import { buildPermissionContext } from "./permission-context";
+
+// ─── Safety bounds (P2.2 §2.5) ───────────────────────────────────
+
+const MAX_CONDITION_LEN = 512;
+const MAX_REGEX_LEN = 256;
+const MAX_FIELD_DEPTH = 4;
 
 // ─── Compiled Rule ───────────────────────────────────────────────
 
@@ -33,21 +41,24 @@ interface CompiledRule {
 	matchType: "wildcard" | "exact_tool" | "tool_wildcard_arg" | "tool_pattern_arg";
 	toolName?: string;
 	argRegex?: RegExp;
+	/** Pre-parsed condition; null = no condition; "invalid" = rule dropped. */
+	condition: CompiledCondition | null | "invalid";
 }
 
 function compileRule(rule: PermissionRule): CompiledRule {
 	const pattern = rule.pattern;
+	const condition = compileCondition(rule.condition);
 
 	// "*" — matches everything
 	if (pattern === "*") {
-		return { rule, matchType: "wildcard" };
+		return { rule, matchType: "wildcard", condition };
 	}
 
 	const parenIdx = pattern.indexOf("(");
 
 	// "Bash" — exact tool name, no arg constraint
 	if (parenIdx === -1) {
-		return { rule, matchType: "exact_tool", toolName: pattern };
+		return { rule, matchType: "exact_tool", toolName: pattern, condition };
 	}
 
 	const toolName = pattern.slice(0, parenIdx);
@@ -55,7 +66,7 @@ function compileRule(rule: PermissionRule): CompiledRule {
 
 	// "Bash(*)" — any arg
 	if (argPattern === "*") {
-		return { rule, matchType: "tool_wildcard_arg", toolName };
+		return { rule, matchType: "tool_wildcard_arg", toolName, condition };
 	}
 
 	// "Bash(git *)" — compile to regex once
@@ -68,6 +79,7 @@ function compileRule(rule: PermissionRule): CompiledRule {
 		matchType: "tool_pattern_arg",
 		toolName,
 		argRegex: new RegExp(`^${regexStr}$`),
+		condition,
 	};
 }
 
@@ -118,70 +130,235 @@ function serializeInput(input: Record<string, unknown>): string {
 	return JSON.stringify(input);
 }
 
-// ─── Condition Evaluator (safe mini-DSL, NO eval) ───────────────
+// ─── Condition Compiler + Evaluator (safe mini-DSL, NO eval) ────
 
 /**
- * Evaluate a simple condition string against a ToolRequest.
- * Supported: request.toolName, request.isReadOnly, request.isDestructive, request.turnIndex
- * Operators: ==, !=, >, <, >=, <=, contains()
- * Logical: &&, ||
+ * Supported context fields (dot-paths on PermissionContext):
+ *  - request.*      (toolName, toolInput.<key>, isReadOnly, isDestructive, turnIndex, toolUseId)
+ *  - session.*      (sessionId, agentId, userId, projectId, model, cwd) — set via onSessionStart
+ *  - time.*         (hour, minute, weekday, iso, epochMs) — server clock
+ *  - env.<VAR>      (only vars in PermissionConfig.envAllowlist — others resolve to undefined)
+ *
+ * Operators: ==, !=, >, <, >=, <=, contains(f, "s"), matches(f, /re/flags), pathMatches(f, "glob")
+ * Logical:   &&, ||    (|| has lowest precedence; left-to-right within each group)
+ *
+ * Fail-safe: any parse failure, length-cap violation, or unresolvable field
+ * causes the containing expression to evaluate `false` — the rule is skipped,
+ * not crashed.
  */
-function evaluateCondition(condition: string, request: ToolRequest): boolean {
+
+type CompiledExpr =
+	| { kind: "contains"; field: string; value: string }
+	| { kind: "matches"; field: string; regex: RegExp }
+	| { kind: "pathMatches"; field: string; glob: RegExp; negate: boolean }
+	| {
+			kind: "cmp";
+			field: string;
+			op: "==" | "!=" | ">" | "<" | ">=" | "<=";
+			value: string | number | boolean;
+	  }
+	| { kind: "invalid" };
+
+interface CompiledCondition {
+	/** OR-of-ANDs (disjunctive normal form over the two logical ops). */
+	orGroups: CompiledExpr[][];
+}
+
+/** Compile a condition string to its DNF form. Returns null for no condition,
+ *  "invalid" for a condition that violates length caps or fails to parse. */
+function compileCondition(
+	condition: string | undefined,
+): CompiledCondition | null | "invalid" {
+	if (!condition) return null;
+	if (condition.length > MAX_CONDITION_LEN) return "invalid";
+
 	try {
-		// Split on || first (lower precedence), then && within each
 		const orParts = condition.split("||").map((s) => s.trim());
-		return orParts.some((orPart) => {
+		const orGroups: CompiledExpr[][] = [];
+		for (const orPart of orParts) {
 			const andParts = orPart.split("&&").map((s) => s.trim());
-			return andParts.every((expr) => evaluateSingleExpr(expr, request));
-		});
+			const andExprs = andParts.map(compileExpr);
+			orGroups.push(andExprs);
+		}
+		return { orGroups };
 	} catch {
-		return false; // Invalid condition → skip rule (fail-safe)
+		return "invalid";
 	}
 }
 
-function evaluateSingleExpr(expr: string, request: ToolRequest): boolean {
-	const trimmed = expr.trim();
+function compileExpr(raw: string): CompiledExpr {
+	const expr = raw.trim();
+
+	// matches(field, /pattern/flags) — flags: i, m, s (no g)
+	const matchesMatch = expr.match(
+		/^matches\(\s*([\w.]+)\s*,\s*\/(.+)\/([ims]*)\s*\)$/,
+	);
+	if (matchesMatch) {
+		const [, field, pattern, flags] = matchesMatch;
+		if (!field || !pattern) return { kind: "invalid" };
+		if (pattern.length > MAX_REGEX_LEN) return { kind: "invalid" };
+		try {
+			return { kind: "matches", field, regex: new RegExp(pattern, flags) };
+		} catch {
+			return { kind: "invalid" };
+		}
+	}
+
+	// pathMatches(field, "glob") — leading "!" in glob = negation
+	const pathMatch = expr.match(
+		/^pathMatches\(\s*([\w.]+)\s*,\s*["']([^"']*)["']\s*\)$/,
+	);
+	if (pathMatch) {
+		const [, field, rawGlob] = pathMatch;
+		if (!field || rawGlob === undefined) return { kind: "invalid" };
+		const negate = rawGlob.startsWith("!");
+		const glob = negate ? rawGlob.slice(1) : rawGlob;
+		if (glob.length > MAX_REGEX_LEN) return { kind: "invalid" };
+		const regex = compileGlob(glob);
+		if (!regex) return { kind: "invalid" };
+		return { kind: "pathMatches", field, glob: regex, negate };
+	}
 
 	// contains(field, "value")
-	const containsMatch = trimmed.match(
+	const containsMatch = expr.match(
 		/^contains\(\s*([\w.]+)\s*,\s*["']([^"']*)["']\s*\)$/,
 	);
 	if (containsMatch) {
-		const val = resolveField(containsMatch[1]!, request);
-		return typeof val === "string" && val.includes(containsMatch[2]!);
+		const [, field, value] = containsMatch;
+		if (!field || value === undefined) return { kind: "invalid" };
+		return { kind: "contains", field, value };
 	}
 
 	// Comparison: field op value
-	const cmpMatch = trimmed.match(
-		/^([\w.]+)\s*(==|!=|>=|<=|>|<)\s*(.+)$/,
-	);
-	if (!cmpMatch) return false;
+	const cmpMatch = expr.match(/^([\w.]+)\s*(==|!=|>=|<=|>|<)\s*(.+)$/);
+	if (!cmpMatch) return { kind: "invalid" };
+	const [, field, op, rawRight] = cmpMatch;
+	if (!field || !op) return { kind: "invalid" };
+	return {
+		kind: "cmp",
+		field,
+		op: op as "==" | "!=" | ">" | "<" | ">=" | "<=",
+		value: parseValue(rawRight!.trim()),
+	};
+}
 
-	const left = resolveField(cmpMatch[1]!, request);
-	const op = cmpMatch[2]!;
-	const rawRight = cmpMatch[3]!.trim();
-	const right = parseValue(rawRight);
-
-	switch (op) {
-		case "==": return left === right;
-		case "!=": return left !== right;
-		case ">": return typeof left === "number" && typeof right === "number" && left > right;
-		case "<": return typeof left === "number" && typeof right === "number" && left < right;
-		case ">=": return typeof left === "number" && typeof right === "number" && left >= right;
-		case "<=": return typeof left === "number" && typeof right === "number" && left <= right;
-		default: return false;
+/** Glob → anchored RegExp. Supports `**` (cross-slash), `*` (non-slash), `?` (single non-slash). */
+function compileGlob(glob: string): RegExp | null {
+	try {
+		// Escape regex specials, then re-introduce glob semantics with placeholders.
+		const DOUBLESTAR = "\u0000DS\u0000";
+		const STAR = "\u0000S\u0000";
+		const QMARK = "\u0000Q\u0000";
+		let pattern = glob
+			.replace(/\*\*/g, DOUBLESTAR)
+			.replace(/\*/g, STAR)
+			.replace(/\?/g, QMARK)
+			.replace(/[.+^${}()|[\]\\]/g, "\\$&")
+			.replace(new RegExp(DOUBLESTAR, "g"), ".*")
+			.replace(new RegExp(STAR, "g"), "[^/]*")
+			.replace(new RegExp(QMARK, "g"), "[^/]");
+		// `src/**` should also match exactly `src` — allow trailing `/.*` to be optional.
+		pattern = pattern.replace(/\/\.\*$/, "(/.*)?");
+		return new RegExp(`^${pattern}$`);
+	} catch {
+		return null;
 	}
 }
 
-function resolveField(field: string, request: ToolRequest): string | number | boolean | undefined {
-	switch (field) {
-		case "request.toolName": return request.toolName;
-		case "request.isReadOnly": return request.isReadOnly;
-		case "request.isDestructive": return request.isDestructive;
-		case "request.turnIndex": return request.turnIndex;
-		case "request.toolUseId": return request.toolUseId;
-		default: return undefined;
+function evaluateCondition(
+	compiled: CompiledCondition,
+	ctx: PermissionContext,
+): boolean {
+	return compiled.orGroups.some((andGroup) =>
+		andGroup.every((expr) => evaluateExpr(expr, ctx)),
+	);
+}
+
+function evaluateExpr(expr: CompiledExpr, ctx: PermissionContext): boolean {
+	switch (expr.kind) {
+		case "invalid":
+			return false;
+		case "contains": {
+			const v = resolveField(expr.field, ctx);
+			return typeof v === "string" && v.includes(expr.value);
+		}
+		case "matches": {
+			const v = resolveField(expr.field, ctx);
+			return typeof v === "string" && expr.regex.test(v);
+		}
+		case "pathMatches": {
+			const v = resolveField(expr.field, ctx);
+			if (typeof v !== "string") return false;
+			const normalized = normalizePosix(v);
+			const hit = expr.glob.test(normalized);
+			return expr.negate ? !hit : hit;
+		}
+		case "cmp": {
+			const left = resolveField(expr.field, ctx);
+			const right = expr.value;
+			switch (expr.op) {
+				case "==": return left === right;
+				case "!=": return left !== right;
+				case ">":
+					return (
+						typeof left === "number" && typeof right === "number" && left > right
+					);
+				case "<":
+					return (
+						typeof left === "number" && typeof right === "number" && left < right
+					);
+				case ">=":
+					return (
+						typeof left === "number" &&
+						typeof right === "number" &&
+						left >= right
+					);
+				case "<=":
+					return (
+						typeof left === "number" &&
+						typeof right === "number" &&
+						left <= right
+					);
+			}
+		}
 	}
+}
+
+/** Dot-path walker. Returns primitive leaves only; non-primitive → undefined. */
+function resolveField(
+	field: string,
+	ctx: PermissionContext,
+): string | number | boolean | undefined {
+	const parts = field.split(".");
+	if (parts.length > MAX_FIELD_DEPTH) return undefined;
+	let cur: unknown = ctx;
+	for (const part of parts) {
+		if (cur == null || typeof cur !== "object") return undefined;
+		cur = (cur as Record<string, unknown>)[part];
+	}
+	if (typeof cur === "string" || typeof cur === "number" || typeof cur === "boolean") {
+		return cur;
+	}
+	return undefined;
+}
+
+/** Normalize a POSIX-style path without resolving against cwd.
+ *  Collapses `//`, `.`, and interior `..` segments but preserves leading `..`. */
+function normalizePosix(p: string): string {
+	const isAbs = p.startsWith("/");
+	const segs = p.split(/[\\/]+/);
+	const out: string[] = [];
+	for (const seg of segs) {
+		if (seg === "" || seg === ".") continue;
+		if (seg === "..") {
+			if (out.length > 0 && out[out.length - 1] !== "..") out.pop();
+			else if (!isAbs) out.push("..");
+		} else {
+			out.push(seg);
+		}
+	}
+	const joined = out.join("/");
+	return isAbs ? "/" + joined : joined || ".";
 }
 
 function parseValue(raw: string): string | number | boolean {
@@ -227,7 +404,14 @@ export class PermissionEngine {
 			.map(compileRule);
 	}
 
-	async evaluate(request: ToolRequest): Promise<PermissionDecision> {
+	async evaluate(
+		request: ToolRequest,
+		context?: PermissionContext,
+	): Promise<PermissionDecision> {
+		const ctx = context ?? buildPermissionContext(request, {
+			envAllowlist: this.config.envAllowlist,
+		});
+
 		for (const compiled of this.compiledRules) {
 			// Skip disabled groups
 			if (compiled.rule.group && this.disabledGroups.has(compiled.rule.group)) {
@@ -236,8 +420,9 @@ export class PermissionEngine {
 
 			if (!matchCompiled(compiled, request)) continue;
 
-			// Condition check
-			if (compiled.rule.condition && !evaluateCondition(compiled.rule.condition, request)) {
+			// Condition check — precompiled at rule-compile time.
+			if (compiled.condition === "invalid") continue;
+			if (compiled.condition && !evaluateCondition(compiled.condition, ctx)) {
 				continue;
 			}
 

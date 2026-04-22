@@ -25,6 +25,11 @@ import type {
 	MultiAgentConfig,
 } from "@agentweave/types";
 import { PermissionEngine } from "./governance/permission-engine";
+import {
+	buildPermissionContext,
+	sessionContextFromInfo,
+} from "./governance/permission-context";
+import type { PermissionContext } from "./governance/permission-context";
 import { AskStore } from "./governance/ask-store";
 import { OutputPipeline } from "./governance/output-pipeline";
 import type { OutputPipelineConfig } from "./governance/output-pipeline";
@@ -115,6 +120,8 @@ export class OuterHarness implements OuterHarnessConsumer {
 	private lastKnownCost = 0;
 	private currentModel = "";
 	private currentToolName = "";
+	/** Last SessionInfo from onSessionStart — feeds `session.*` to rule conditions. */
+	private activeSession: Partial<PermissionContext["session"]> = {};
 
 	constructor(config: OuterHarnessConfig) {
 		this.permissions = new PermissionEngine(config.permissions);
@@ -175,7 +182,12 @@ export class OuterHarness implements OuterHarnessConsumer {
 
 	async onToolRequested(request: ToolRequest): Promise<ToolDecision> {
 		// 1. Permission engine -> PermissionDecision (allow/deny/ask)
-		const permDecision = await this.permissions.evaluate(request);
+		//    Build context with the ambient session/env so contextual rules can fire.
+		const ctx = buildPermissionContext(request, {
+			session: this.activeSession,
+			envAllowlist: this.permissions.config.envAllowlist,
+		});
+		const permDecision = await this.permissions.evaluate(request, ctx);
 
 		this.audit.log("permission_decision", {
 			tool: request.toolName,
@@ -321,6 +333,8 @@ export class OuterHarness implements OuterHarnessConsumer {
 		this.lastKnownCost = 0;
 		this.monitor.setSessionId(session.sessionId);
 		this.monitor.reset();
+		// Capture session for permission `session.*` field resolution (P2.2).
+		this.activeSession = sessionContextFromInfo(session);
 		await this.sessions.onSessionStart(session);
 	}
 

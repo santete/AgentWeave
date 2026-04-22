@@ -48,4 +48,10 @@ export interface PermissionConfig {
 	failMode: "open" | "closed"; // On timeout/error
 	timeoutMs: number; // Permission evaluation timeout
 	askTimeoutMs: number; // User interaction timeout (default 60000)
+	/**
+	 * Env var names exposed to rule conditions via `env.*`. Any var NOT in this
+	 * list resolves to `undefined` inside conditions (fail-closed; prevents
+	 * accidental secret reads in audit trail). Default: `[]` (no env access).
+	 */
+	envAllowlist?: readonly string[];
 }
