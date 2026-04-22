@@ -197,6 +197,17 @@ export class ProcessAdapter implements InnerHarnessProvider {
 			}, this.config.processTimeoutMs);
 		}
 
+		// Clear timers when the caller aborts — spawn's { signal } will kill the
+		// child, but the health-check interval + lifetime timers would otherwise
+		// leak until GC.
+		if (options?.signal) {
+			options.signal.addEventListener(
+				"abort",
+				() => this.clearTimers(),
+				{ once: true },
+			);
+		}
+
 		// Send prompt via stdin if in stdin mode
 		if (this.config.promptMode !== "arg") {
 			child.stdin.write(promptText + "\n");
@@ -350,6 +361,11 @@ export class ProcessAdapter implements InnerHarnessProvider {
 			killTree(this.process, "SIGTERM");
 		}
 		this.state.status = "aborted";
+		this.clearTimers();
+	}
+
+	/** Idempotent teardown of all timer resources held by this adapter. */
+	private clearTimers(): void {
 		this.stopHealthCheck();
 		if (this.lifetimeTimer) { clearTimeout(this.lifetimeTimer); this.lifetimeTimer = null; }
 		if (this.killTimer) { clearTimeout(this.killTimer); this.killTimer = null; }
