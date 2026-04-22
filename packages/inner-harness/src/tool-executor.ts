@@ -1,4 +1,13 @@
 /**
+ * REFERENCE IMPLEMENTATION — not production path (post-pivot 2026-04-22).
+ *
+ * In production, tool execution happens inside the target agent (Claude Code,
+ * Cursor, etc.) — AgentWeave governs via hooks and adapters. See
+ * product-spec/POSITIONING.md. This executor is kept for the reference
+ * agent-loop and outer-harness test infrastructure.
+ *
+ * ---
+ *
  * ToolExecutor — Executes tool calls with partition strategy.
  * Read-only tools run concurrently; write tools run serially.
  */

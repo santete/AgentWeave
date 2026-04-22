@@ -1,0 +1,267 @@
+{
+  "timestamp": "2026-04-20T04:39:28.511Z",
+  "agent": "mock",
+  "tasks": [
+    {
+      "id": "T1",
+      "name": "Bug Fix — Null Pointer",
+      "category": "bugfix",
+      "difficulty": "easy",
+      "prompt": "Fix the null pointer exception in the login function. The function getUserById returns null when user is not found, but the caller doesn't check for null before accessing user.name.",
+      "setupScript": "node benchmarks/tasks/setup/t1-setup.cjs",
+      "expectedFiles": [
+        "src/auth.ts"
+      ],
+      "testCommand": "node benchmarks/tasks/verify/t1-verify.js",
+      "maxExpectedFiles": 2
+    },
+    {
+      "id": "T2",
+      "name": "Bug Fix — Off-by-One",
+      "category": "bugfix",
+      "difficulty": "easy",
+      "prompt": "Fix the off-by-one error in the pagination function. When requesting page 1 with pageSize 10, it skips the first item. The offset calculation is wrong.",
+      "setupScript": "node benchmarks/tasks/setup/t2-setup.cjs",
+      "expectedFiles": [
+        "src/pagination.ts"
+      ],
+      "testCommand": "node benchmarks/tasks/verify/t2-verify.js",
+      "maxExpectedFiles": 2
+    },
+    {
+      "id": "T3",
+      "name": "Feature — Add Input Validation",
+      "category": "feature",
+      "difficulty": "medium",
+      "prompt": "Add email validation to the user registration function. Reject emails without @ symbol, without domain, or longer than 254 characters. Return a clear error message for each case.",
+      "setupScript": "node benchmarks/tasks/setup/t3-setup.cjs",
+      "expectedFiles": [
+        "src/registration.ts"
+      ],
+      "testCommand": "node benchmarks/tasks/verify/t3-verify.js",
+      "maxExpectedFiles": 3
+    },
+    {
+      "id": "T4",
+      "name": "Feature — Add Retry Logic",
+      "category": "feature",
+      "difficulty": "medium",
+      "prompt": "Add retry logic to the HTTP client fetchData function. Retry up to 3 times on 5xx errors with exponential backoff (1s, 2s, 4s). Don't retry on 4xx errors. Return the last error if all retries fail.",
+      "setupScript": "node benchmarks/tasks/setup/t4-setup.cjs",
+      "expectedFiles": [
+        "src/http-client.ts"
+      ],
+      "testCommand": "node benchmarks/tasks/verify/t4-verify.js",
+      "maxExpectedFiles": 3
+    },
+    {
+      "id": "T5",
+      "name": "Refactor — Extract Function",
+      "category": "refactor",
+      "difficulty": "medium",
+      "prompt": "The processOrder function is 80 lines long and does 3 things: validate order, calculate total, apply discount. Extract each into a separate function. Keep all existing tests passing.",
+      "setupScript": "node benchmarks/tasks/setup/t5-setup.cjs",
+      "expectedFiles": [
+        "src/order.ts"
+      ],
+      "testCommand": "node benchmarks/tasks/verify/t5-verify.js",
+      "maxExpectedFiles": 3
+    }
+  ],
+  "rawResults": [
+    {
+      "taskId": "T1",
+      "mode": "raw",
+      "m1_firstPassSuccess": false,
+      "m2_testPassRate": 0,
+      "m3_scopeAccuracy": 0,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 0.069,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 0,
+      "testsFailed": 0,
+      "testsTotal": 0,
+      "error": "Command failed: node \"C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t1-setup.cjs\"\nnode:internal/modules/cjs/loader:1368\r\n  throw err;\r\n  ^\r\n\r\nError: Cannot find module 'C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t1-setup.cjs'\r\n    at Function._resolveFilename (node:internal/modules/cjs/loader:1365:15)\r\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1021:19)\r\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1026:22)\r\n    at Function._load (node:internal/modules/cjs/loader:1175:37)\r\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\r\n    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)\r\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\r\n    at node:internal/main/run_main_module:36:49 {\r\n  code: 'MODULE_NOT_FOUND',\r\n  requireStack: []\r\n}\r\n\r\nNode.js v22.18.0\r\n"
+    },
+    {
+      "taskId": "T2",
+      "mode": "raw",
+      "m1_firstPassSuccess": false,
+      "m2_testPassRate": 0,
+      "m3_scopeAccuracy": 0,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 0.063,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 0,
+      "testsFailed": 0,
+      "testsTotal": 0,
+      "error": "Command failed: node \"C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t2-setup.cjs\"\nnode:internal/modules/cjs/loader:1368\r\n  throw err;\r\n  ^\r\n\r\nError: Cannot find module 'C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t2-setup.cjs'\r\n    at Function._resolveFilename (node:internal/modules/cjs/loader:1365:15)\r\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1021:19)\r\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1026:22)\r\n    at Function._load (node:internal/modules/cjs/loader:1175:37)\r\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\r\n    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)\r\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\r\n    at node:internal/main/run_main_module:36:49 {\r\n  code: 'MODULE_NOT_FOUND',\r\n  requireStack: []\r\n}\r\n\r\nNode.js v22.18.0\r\n"
+    },
+    {
+      "taskId": "T3",
+      "mode": "raw",
+      "m1_firstPassSuccess": false,
+      "m2_testPassRate": 0,
+      "m3_scopeAccuracy": 0,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 0.067,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 0,
+      "testsFailed": 0,
+      "testsTotal": 0,
+      "error": "Command failed: node \"C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t3-setup.cjs\"\nnode:internal/modules/cjs/loader:1368\r\n  throw err;\r\n  ^\r\n\r\nError: Cannot find module 'C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t3-setup.cjs'\r\n    at Function._resolveFilename (node:internal/modules/cjs/loader:1365:15)\r\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1021:19)\r\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1026:22)\r\n    at Function._load (node:internal/modules/cjs/loader:1175:37)\r\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\r\n    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)\r\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\r\n    at node:internal/main/run_main_module:36:49 {\r\n  code: 'MODULE_NOT_FOUND',\r\n  requireStack: []\r\n}\r\n\r\nNode.js v22.18.0\r\n"
+    },
+    {
+      "taskId": "T4",
+      "mode": "raw",
+      "m1_firstPassSuccess": false,
+      "m2_testPassRate": 0,
+      "m3_scopeAccuracy": 0,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 0.068,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 0,
+      "testsFailed": 0,
+      "testsTotal": 0,
+      "error": "Command failed: node \"C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t4-setup.cjs\"\nnode:internal/modules/cjs/loader:1368\r\n  throw err;\r\n  ^\r\n\r\nError: Cannot find module 'C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t4-setup.cjs'\r\n    at Function._resolveFilename (node:internal/modules/cjs/loader:1365:15)\r\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1021:19)\r\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1026:22)\r\n    at Function._load (node:internal/modules/cjs/loader:1175:37)\r\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\r\n    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)\r\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\r\n    at node:internal/main/run_main_module:36:49 {\r\n  code: 'MODULE_NOT_FOUND',\r\n  requireStack: []\r\n}\r\n\r\nNode.js v22.18.0\r\n"
+    },
+    {
+      "taskId": "T5",
+      "mode": "raw",
+      "m1_firstPassSuccess": false,
+      "m2_testPassRate": 0,
+      "m3_scopeAccuracy": 0,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 0.068,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 0,
+      "testsFailed": 0,
+      "testsTotal": 0,
+      "error": "Command failed: node \"C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t5-setup.cjs\"\nnode:internal/modules/cjs/loader:1368\r\n  throw err;\r\n  ^\r\n\r\nError: Cannot find module 'C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t5-setup.cjs'\r\n    at Function._resolveFilename (node:internal/modules/cjs/loader:1365:15)\r\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1021:19)\r\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1026:22)\r\n    at Function._load (node:internal/modules/cjs/loader:1175:37)\r\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\r\n    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)\r\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\r\n    at node:internal/main/run_main_module:36:49 {\r\n  code: 'MODULE_NOT_FOUND',\r\n  requireStack: []\r\n}\r\n\r\nNode.js v22.18.0\r\n"
+    }
+  ],
+  "pipelineResults": [
+    {
+      "taskId": "T1",
+      "mode": "pipeline",
+      "m1_firstPassSuccess": false,
+      "m2_testPassRate": 0,
+      "m3_scopeAccuracy": 0,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 0.06,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 0,
+      "testsFailed": 0,
+      "testsTotal": 0,
+      "error": "Command failed: node \"C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t1-setup.cjs\"\nnode:internal/modules/cjs/loader:1368\r\n  throw err;\r\n  ^\r\n\r\nError: Cannot find module 'C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t1-setup.cjs'\r\n    at Function._resolveFilename (node:internal/modules/cjs/loader:1365:15)\r\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1021:19)\r\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1026:22)\r\n    at Function._load (node:internal/modules/cjs/loader:1175:37)\r\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\r\n    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)\r\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\r\n    at node:internal/main/run_main_module:36:49 {\r\n  code: 'MODULE_NOT_FOUND',\r\n  requireStack: []\r\n}\r\n\r\nNode.js v22.18.0\r\n"
+    },
+    {
+      "taskId": "T2",
+      "mode": "pipeline",
+      "m1_firstPassSuccess": false,
+      "m2_testPassRate": 0,
+      "m3_scopeAccuracy": 0,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 0.061,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 0,
+      "testsFailed": 0,
+      "testsTotal": 0,
+      "error": "Command failed: node \"C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t2-setup.cjs\"\nnode:internal/modules/cjs/loader:1368\r\n  throw err;\r\n  ^\r\n\r\nError: Cannot find module 'C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t2-setup.cjs'\r\n    at Function._resolveFilename (node:internal/modules/cjs/loader:1365:15)\r\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1021:19)\r\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1026:22)\r\n    at Function._load (node:internal/modules/cjs/loader:1175:37)\r\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\r\n    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)\r\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\r\n    at node:internal/main/run_main_module:36:49 {\r\n  code: 'MODULE_NOT_FOUND',\r\n  requireStack: []\r\n}\r\n\r\nNode.js v22.18.0\r\n"
+    },
+    {
+      "taskId": "T3",
+      "mode": "pipeline",
+      "m1_firstPassSuccess": false,
+      "m2_testPassRate": 0,
+      "m3_scopeAccuracy": 0,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 0.063,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 0,
+      "testsFailed": 0,
+      "testsTotal": 0,
+      "error": "Command failed: node \"C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t3-setup.cjs\"\nnode:internal/modules/cjs/loader:1368\r\n  throw err;\r\n  ^\r\n\r\nError: Cannot find module 'C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t3-setup.cjs'\r\n    at Function._resolveFilename (node:internal/modules/cjs/loader:1365:15)\r\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1021:19)\r\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1026:22)\r\n    at Function._load (node:internal/modules/cjs/loader:1175:37)\r\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\r\n    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)\r\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\r\n    at node:internal/main/run_main_module:36:49 {\r\n  code: 'MODULE_NOT_FOUND',\r\n  requireStack: []\r\n}\r\n\r\nNode.js v22.18.0\r\n"
+    },
+    {
+      "taskId": "T4",
+      "mode": "pipeline",
+      "m1_firstPassSuccess": false,
+      "m2_testPassRate": 0,
+      "m3_scopeAccuracy": 0,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 0.064,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 0,
+      "testsFailed": 0,
+      "testsTotal": 0,
+      "error": "Command failed: node \"C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t4-setup.cjs\"\nnode:internal/modules/cjs/loader:1368\r\n  throw err;\r\n  ^\r\n\r\nError: Cannot find module 'C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t4-setup.cjs'\r\n    at Function._resolveFilename (node:internal/modules/cjs/loader:1365:15)\r\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1021:19)\r\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1026:22)\r\n    at Function._load (node:internal/modules/cjs/loader:1175:37)\r\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\r\n    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)\r\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\r\n    at node:internal/main/run_main_module:36:49 {\r\n  code: 'MODULE_NOT_FOUND',\r\n  requireStack: []\r\n}\r\n\r\nNode.js v22.18.0\r\n"
+    },
+    {
+      "taskId": "T5",
+      "mode": "pipeline",
+      "m1_firstPassSuccess": false,
+      "m2_testPassRate": 0,
+      "m3_scopeAccuracy": 0,
+      "m4_retryCount": 0,
+      "m5_costUsd": 0,
+      "m6_timeSeconds": 0.059,
+      "m7_noRegression": true,
+      "m10_codeQuality": 0,
+      "testsPassed": 0,
+      "testsFailed": 0,
+      "testsTotal": 0,
+      "error": "Command failed: node \"C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t5-setup.cjs\"\nnode:internal/modules/cjs/loader:1368\r\n  throw err;\r\n  ^\r\n\r\nError: Cannot find module 'C:\\Users\\nangh\\Documents\\workplace\\VibeCoding\\Agent-Harness-Framework\\node benchmarks\\tasks\\setup\\t5-setup.cjs'\r\n    at Function._resolveFilename (node:internal/modules/cjs/loader:1365:15)\r\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1021:19)\r\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1026:22)\r\n    at Function._load (node:internal/modules/cjs/loader:1175:37)\r\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\r\n    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)\r\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\r\n    at node:internal/main/run_main_module:36:49 {\r\n  code: 'MODULE_NOT_FOUND',\r\n  requireStack: []\r\n}\r\n\r\nNode.js v22.18.0\r\n"
+    }
+  ],
+  "summary": {
+    "raw": {
+      "avgTestPassRate": 0,
+      "avgScopeAccuracy": 0,
+      "totalRetries": 0,
+      "firstPassSuccessRate": 0,
+      "avgTimeSeconds": 0.067,
+      "totalCostUsd": 0,
+      "regressionCount": 0,
+      "overallScore": 80
+    },
+    "pipeline": {
+      "avgTestPassRate": 0,
+      "avgScopeAccuracy": 0,
+      "totalRetries": 0,
+      "firstPassSuccessRate": 0,
+      "avgTimeSeconds": 0.061399999999999996,
+      "totalCostUsd": 0,
+      "regressionCount": 0,
+      "overallScore": 80
+    },
+    "improvement": {
+      "testPassRate": "0.0%",
+      "scopeAccuracy": "0.0%",
+      "firstPassSuccess": "0.0%",
+      "retryCount": "0",
+      "regressions": "0 fewer",
+      "costDelta": "$0.0000",
+      "timeDelta": "-0.0s",
+      "overallScore": "0.0 points"
+    }
+  }
+}

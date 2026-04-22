@@ -1,5 +1,19 @@
 /**
+ * REFERENCE IMPLEMENTATION — not production path (post-pivot 2026-04-22).
+ * Production agents (Claude Code, Cursor) ship their own Bash tool; AgentWeave
+ * governs them via hooks + adapters, not by re-implementing. Kept for the
+ * reference agent-loop and outer-harness tests. See product-spec/POSITIONING.md.
+ *
+ * ---
+ *
  * Bash — Execute shell commands with timeout and cwd support.
+ *
+ * SECURITY NOTE: This tool intentionally uses shell execution (exec, not execFile).
+ * In standalone mode (noop control plane), ALL commands are auto-allowed.
+ * When connected to a real ControlPlane + OuterHarness, the PermissionEngine
+ * gates every command via tool_request intercept before execution.
+ *
+ * For standalone usage without governance, consider restricting tools passed to AgentLoop.
  */
 
 import { exec } from "node:child_process";

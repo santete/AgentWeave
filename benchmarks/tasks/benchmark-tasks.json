@@ -1,0 +1,71 @@
+{
+  "version": "1.0.0",
+  "description": "AgentWeave SDLC Benchmark — Standardized coding tasks for comparing raw agent vs pipeline-enhanced agent",
+  "tasks": [
+    {
+      "id": "T1",
+      "name": "Bug Fix — Null Pointer",
+      "category": "bugfix",
+      "difficulty": "easy",
+      "prompt": "Fix the null pointer exception in the login function. The function getUserById returns null when user is not found, but the caller doesn't check for null before accessing user.name.",
+      "setupScript": "benchmarks/tasks/setup/t1-setup.cjs",
+      "expectedFiles": ["src/auth.ts"],
+      "testCommand": "node benchmarks/tasks/verify/t1-verify.js",
+      "maxExpectedFiles": 2
+    },
+    {
+      "id": "T2",
+      "name": "Bug Fix — Off-by-One",
+      "category": "bugfix",
+      "difficulty": "easy",
+      "prompt": "Fix the off-by-one error in the pagination function. When requesting page 1 with pageSize 10, it skips the first item. The offset calculation is wrong.",
+      "setupScript": "benchmarks/tasks/setup/t2-setup.cjs",
+      "expectedFiles": ["src/pagination.ts"],
+      "testCommand": "node benchmarks/tasks/verify/t2-verify.js",
+      "maxExpectedFiles": 2
+    },
+    {
+      "id": "T3",
+      "name": "Feature — Add Input Validation",
+      "category": "feature",
+      "difficulty": "medium",
+      "prompt": "Add email validation to the user registration function. Reject emails without @ symbol, without domain, or longer than 254 characters. Return a clear error message for each case.",
+      "setupScript": "benchmarks/tasks/setup/t3-setup.cjs",
+      "expectedFiles": ["src/registration.ts"],
+      "testCommand": "node benchmarks/tasks/verify/t3-verify.js",
+      "maxExpectedFiles": 3
+    },
+    {
+      "id": "T4",
+      "name": "Feature — Add Retry Logic",
+      "category": "feature",
+      "difficulty": "medium",
+      "prompt": "Add retry logic to the HTTP client fetchData function. Retry up to 3 times on 5xx errors with exponential backoff (1s, 2s, 4s). Don't retry on 4xx errors. Return the last error if all retries fail.",
+      "setupScript": "benchmarks/tasks/setup/t4-setup.cjs",
+      "expectedFiles": ["src/http-client.ts"],
+      "testCommand": "node benchmarks/tasks/verify/t4-verify.js",
+      "maxExpectedFiles": 3
+    },
+    {
+      "id": "T5",
+      "name": "Refactor — Extract Function",
+      "category": "refactor",
+      "difficulty": "medium",
+      "prompt": "The processOrder function is 80 lines long and does 3 things: validate order, calculate total, apply discount. Extract each into a separate function. Keep all existing tests passing.",
+      "setupScript": "benchmarks/tasks/setup/t5-setup.cjs",
+      "expectedFiles": ["src/order.ts"],
+      "testCommand": "node benchmarks/tasks/verify/t5-verify.js",
+      "maxExpectedFiles": 3
+    }
+  ],
+  "scoring": {
+    "M1_firstPassSuccess": { "weight": 20, "description": "Code passes all checks on first attempt (no retries needed)" },
+    "M2_testPassRate": { "weight": 20, "description": "Percentage of verification tests that pass" },
+    "M3_scopeAccuracy": { "weight": 15, "description": "Only expected files were changed (no scope creep)" },
+    "M4_retryCount": { "weight": 10, "description": "Fewer retries = better (inverse scoring)" },
+    "M5_costUsd": { "weight": 5, "description": "Lower LLM cost per task" },
+    "M6_timeSeconds": { "weight": 5, "description": "Faster completion" },
+    "M7_noRegression": { "weight": 15, "description": "No previously passing tests broken" },
+    "M10_codeQuality": { "weight": 10, "description": "Fewer lint warnings after change" }
+  }
+}

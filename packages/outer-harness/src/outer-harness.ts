@@ -20,10 +20,17 @@ import type {
 	SessionInfo,
 	PermissionConfig,
 	AlertRule,
+	AlertSeverity,
 	HookDefinition,
 	MultiAgentConfig,
 } from "@agentweave/types";
 import { PermissionEngine } from "./governance/permission-engine";
+import {
+	buildPermissionContext,
+	sessionContextFromInfo,
+} from "./governance/permission-context";
+import type { PermissionContext } from "./governance/permission-context";
+import { AskStore } from "./governance/ask-store";
 import { OutputPipeline } from "./governance/output-pipeline";
 import type { OutputPipelineConfig } from "./governance/output-pipeline";
 import { BudgetManager } from "./governance/budget-manager";
@@ -37,6 +44,8 @@ import { SessionManager } from "./observability/session-manager";
 import type { SessionManagerConfig } from "./observability/session-manager";
 import { HookEngine } from "./governance/hook-engine";
 import { MultiAgentOrchestrator } from "./orchestration/multi-agent-orchestrator";
+import { PrometheusExporter } from "./observability/prometheus-exporter";
+import { StdoutSink, FileSink, WebhookSink } from "./observability/alert-sink";
 
 /** Events that can change alert-relevant state — skip noisy stream deltas */
 const ALERT_CHECK_EVENTS = new Set([
@@ -47,6 +56,36 @@ const ALERT_CHECK_EVENTS = new Set([
 	"permission:denied",
 ]);
 
+export type AlertSinkConfig =
+	| { type: "stdout"; severityFilter?: AlertSeverity[] }
+	| { type: "file"; path: string; severityFilter?: AlertSeverity[] }
+	| {
+			type: "webhook";
+			url: string;
+			method?: "POST" | "PUT";
+			headers?: Record<string, string>;
+			maxRetries?: number;
+			timeoutMs?: number;
+			severityFilter?: AlertSeverity[];
+	  };
+
+export interface MonitoringConfig {
+	prometheus?: {
+		enabled: boolean;
+		instance?: string;
+		includeSessionLabel?: boolean;
+	};
+	alertSinks?: AlertSinkConfig[];
+}
+
+export interface AskPersistenceConfig {
+	enabled: boolean;
+	/** Absolute or cwd-relative path. Default: `.agentweave/ask-approvals.json`. */
+	path?: string;
+	/** Override base directory for relative paths; defaults to `process.cwd()`. */
+	cwd?: string;
+}
+
 export interface OuterHarnessConfig {
 	permissions: PermissionConfig;
 	output: OutputPipelineConfig;
@@ -56,8 +95,12 @@ export interface OuterHarnessConfig {
 	alertRules?: AlertRule[];
 	multiAgent?: MultiAgentConfig;
 	inputGate?: InputGateConfig;
+	/** Opt-in observability — omit to keep current zero-behavior-change default. */
+	monitoring?: MonitoringConfig;
 	/** Handler for permission "ask" flow. If not set, falls back to failMode. */
 	onAsk?: (toolName: string, toolInput: Record<string, unknown>, message: string) => Promise<{ allow: boolean; alwaysAllow?: boolean }>;
+	/** Opt-in persistence of "always allow" decisions across process restarts. */
+	askPersistence?: AskPersistenceConfig;
 }
 
 export class OuterHarness implements OuterHarnessConsumer {
@@ -67,12 +110,18 @@ export class OuterHarness implements OuterHarnessConsumer {
 	private hookEngine: HookEngine;
 	private inputGate: InputGate;
 	private askHandler: OuterHarnessConfig["onAsk"];
+	private askStore: AskStore | null = null;
 	private audit: AuditLogger;
 	private monitor: MonitorCollector;
 	private alerts: AlertEngine;
 	private sessions: SessionManager;
 	private orchestrator: MultiAgentOrchestrator | null;
+	private prometheusExporter: PrometheusExporter | null = null;
 	private lastKnownCost = 0;
+	private currentModel = "";
+	private currentToolName = "";
+	/** Last SessionInfo from onSessionStart — feeds `session.*` to rule conditions. */
+	private activeSession: Partial<PermissionContext["session"]> = {};
 
 	constructor(config: OuterHarnessConfig) {
 		this.permissions = new PermissionEngine(config.permissions);
@@ -81,6 +130,15 @@ export class OuterHarness implements OuterHarnessConsumer {
 		this.hookEngine = new HookEngine({ hooks: config.hooks ?? {} });
 		this.inputGate = new InputGate(config.inputGate);
 		this.askHandler = config.onAsk;
+		if (config.askPersistence?.enabled) {
+			this.askStore = new AskStore({
+				path: config.askPersistence.path,
+				cwd: config.askPersistence.cwd,
+			});
+			for (const rule of this.askStore.load()) {
+				this.permissions.addRule(rule);
+			}
+		}
 		this.audit = new AuditLogger();
 		this.monitor = new MonitorCollector();
 		this.alerts = new AlertEngine();
@@ -92,6 +150,20 @@ export class OuterHarness implements OuterHarnessConsumer {
 		if (config.alertRules) {
 			for (const rule of config.alertRules) {
 				this.alerts.addRule(rule);
+			}
+		}
+
+		// Opt-in monitoring wiring. `monitoring` absent → zero behavior change.
+		if (config.monitoring) {
+			for (const sinkCfg of config.monitoring.alertSinks ?? []) {
+				this.alerts.addSink(buildSink(sinkCfg));
+			}
+			if (config.monitoring.prometheus?.enabled) {
+				const { instance, includeSessionLabel } = config.monitoring.prometheus;
+				this.prometheusExporter = new PrometheusExporter(this.monitor, this.alerts, {
+					instance,
+					includeSessionLabel,
+				});
 			}
 		}
 	}
@@ -110,12 +182,18 @@ export class OuterHarness implements OuterHarnessConsumer {
 
 	async onToolRequested(request: ToolRequest): Promise<ToolDecision> {
 		// 1. Permission engine -> PermissionDecision (allow/deny/ask)
-		const permDecision = await this.permissions.evaluate(request);
+		//    Build context with the ambient session/env so contextual rules can fire.
+		const ctx = buildPermissionContext(request, {
+			session: this.activeSession,
+			envAllowlist: this.permissions.config.envAllowlist,
+		});
+		const permDecision = await this.permissions.evaluate(request, ctx);
 
 		this.audit.log("permission_decision", {
 			tool: request.toolName,
 			behavior: permDecision.behavior,
 			source: permDecision.source,
+			matchedPattern: permDecision.matchedRule?.pattern,
 		});
 
 		// 2. Resolve ask via handler or failMode fallback
@@ -130,14 +208,16 @@ export class OuterHarness implements OuterHarnessConsumer {
 					source: "user",
 					resolvedFromAsk: true,
 				};
-				// Persist "always allow" as runtime rule
+				// Persist "always allow" as runtime rule (and to disk if configured)
 				if (response.allow && response.alwaysAllow) {
-					this.permissions.addRule({
+					const runtimeRule = {
 						pattern: `${request.toolName}(*)`,
-						behavior: "allow",
-						source: "runtime",
+						behavior: "allow" as const,
+						source: "runtime" as const,
 						priority: 75,
-					});
+					};
+					this.permissions.addRule(runtimeRule);
+					this.askStore?.persist(runtimeRule);
 				}
 			} else {
 				const fallback =
@@ -211,12 +291,23 @@ export class OuterHarness implements OuterHarnessConsumer {
 		this.audit.logEvent(event);
 		this.monitor.collect(event);
 
+		// Track current model and tool for cost metadata
+		if (event.type === "llm:request_start") {
+			this.currentModel = (event as unknown as Record<string, unknown>).model as string ?? "";
+		}
+		if (event.type === "tool:requested") {
+			this.currentToolName = (event as unknown as Record<string, unknown>).toolName as string ?? "";
+		}
+
 		// Track cost DELTA from LLM usage events (not cumulative total)
 		if (event.type === "llm:stream_end") {
 			const currentTotal = event.usage.totalCost;
 			const delta = currentTotal - this.lastKnownCost;
 			if (delta > 0) {
-				this.budget.addCost(delta);
+				this.budget.addCost(delta, {
+					model: this.currentModel || undefined,
+					toolName: this.currentToolName || undefined,
+				});
 				this.lastKnownCost = currentTotal;
 			}
 		}
@@ -243,6 +334,8 @@ export class OuterHarness implements OuterHarnessConsumer {
 		this.lastKnownCost = 0;
 		this.monitor.setSessionId(session.sessionId);
 		this.monitor.reset();
+		// Capture session for permission `session.*` field resolution (P2.2).
+		this.activeSession = sessionContextFromInfo(session);
 		await this.sessions.onSessionStart(session);
 	}
 
@@ -294,5 +387,28 @@ export class OuterHarness implements OuterHarnessConsumer {
 
 	getOrchestrator(): MultiAgentOrchestrator | null {
 		return this.orchestrator;
+	}
+
+	/** Returns a PrometheusExporter if `config.monitoring.prometheus.enabled`, else null. */
+	getPrometheusExporter(): PrometheusExporter | null {
+		return this.prometheusExporter;
+	}
+}
+
+function buildSink(cfg: AlertSinkConfig) {
+	switch (cfg.type) {
+		case "stdout":
+			return new StdoutSink({ severityFilter: cfg.severityFilter });
+		case "file":
+			return new FileSink({ path: cfg.path, severityFilter: cfg.severityFilter });
+		case "webhook":
+			return new WebhookSink({
+				url: cfg.url,
+				method: cfg.method,
+				headers: cfg.headers,
+				maxRetries: cfg.maxRetries,
+				timeoutMs: cfg.timeoutMs,
+				severityFilter: cfg.severityFilter,
+			});
 	}
 }

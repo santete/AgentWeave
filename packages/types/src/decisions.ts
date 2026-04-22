@@ -19,6 +19,8 @@ export interface PermissionDecision {
 	/** Only when behavior='ask': message shown to user */
 	askMessage?: string;
 	suggestions?: PermissionUpdate[];
+	/** The rule that matched this decision (null if default fallback) */
+	matchedRule?: import("./permissions").PermissionRule | null;
 }
 
 export interface PermissionUpdate {

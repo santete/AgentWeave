@@ -58,6 +58,7 @@ export interface HttpHook extends BaseHook {
 	method?: string;
 	headers?: Record<string, string>;
 	allowedEnvVars?: string[];
+	retries?: number; // Retry count on 5xx errors (default 0)
 }
 
 export interface FunctionHook extends BaseHook {

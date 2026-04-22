@@ -1,0 +1,54 @@
+{
+  "name": "@agentweave/mcp-server",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "AgentWeave MCP Server — expose Inner Harness QA modules as Model Context Protocol tools",
+  "bin": {
+    "agentweave-mcp": "./dist/server.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/santete/AgentWeave.git",
+    "directory": "packages/mcp-server"
+  },
+  "homepage": "https://github.com/santete/AgentWeave",
+  "keywords": [
+    "agentweave",
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "quality-gate",
+    "patch-validator"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts src/server.ts --format esm --dts --clean",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@agentweave/types": "workspace:*",
+    "@agentweave/inner-harness": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "tsup": "^8.3.0",
+    "vitest": "^2.1.0"
+  }
+}

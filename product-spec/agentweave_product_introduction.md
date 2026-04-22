@@ -1,8 +1,11 @@
 # AgentWeave
 
-## The Control Layer for AI Agents
+## Governance + QA Layer for AI Coding Agents
 
-> Your AI agent writes code. AgentWeave makes sure it does it right.
+> Claude Code, Cursor, and Aider write code.
+> AgentWeave enforces policy, measures SDLC quality, and audits every tool call — without replacing the agent you already use.
+
+> **Canonical positioning:** [`POSITIONING.md`](./POSITIONING.md). This document is marketing-facing prose; if anything conflicts, POSITIONING.md wins.
 
 ---
 
@@ -29,23 +32,31 @@ The AI model is not the problem. **The lack of governance around it** is.
 
 ## What Is AgentWeave?
 
-AgentWeave is an **open-source control framework** that wraps around any AI coding agent, giving you full visibility and governance over everything the agent does.
+AgentWeave is an **open-source governance + QA layer** that wraps around AI coding agents you already use — Claude Code, Cursor, Aider, or any MCP-compatible agent — and adds three things those agents don't provide:
 
-Think of it as a **firewall + monitoring + policy engine** — but for AI agents.
+1. **Governance** — permission rules, budget caps, audit trail, hooks.
+2. **QA Pipeline** — deterministic SDLC stages around the agent, with M1–M10 metrics measured across runs.
+3. **Adapters + MCP** — distribution channels so the same governance works against any agent.
+
+### What AgentWeave is NOT
+
+We do not rebuild the agent loop. Claude Code and Cursor ship excellent agent loops, tool-calling runtimes, and streaming UX. Competing with them there burns engineering hours for commodity parity. AgentWeave sits **around** those agents, not in their place.
 
 ```
 Before AgentWeave:
 
-  User --> [AI Agent] --> Output
-           (black box)
+  User --> [Claude Code / Cursor / ...] --> Output
+           (black box, no governance)
 
 After AgentWeave:
 
-  User --> [AgentWeave] --> [AI Agent] --> [AgentWeave] --> Output
-            (input gate)    (governed)     (output pipeline)
+  User --> [AgentWeave governance] --> [Agent] --> [AgentWeave audit + QA] --> Output
+           (permissions, budget,     (unchanged,   (metrics, validation,
+            input validation)         wrapped via   audit trail)
+                                      hooks/MCP)
 ```
 
-You don't modify the agent. You **wrap** it. AgentWeave intercepts every input, tool call, and output — and lets you observe, control, or transform any of them.
+You don't modify the agent. You **wrap** it — via Claude Code hooks, the MCP server, or the SDLC pipeline adapter. AgentWeave intercepts every tool call and measures every run, leaving the agent's execution to the vendor best-equipped to build it.
 
 ---
 
@@ -267,29 +278,40 @@ A developer can customize their experience. A team lead can enforce standards. A
 
 ## Technology
 
-### Architecture: Inner Harness + Outer Harness
+### Architecture: 3 Pillars
 
-AgentWeave separates **execution** from **governance**:
+AgentWeave is structured around **three independent pillars**. Each works standalone; combine any subset.
 
 ```
-INNER HARNESS (Execution)          OUTER HARNESS (Governance)
-- Agent loop                       - Permission engine
-- LLM API calling                  - Hook engine
-- Tool execution                   - Output pipeline
-- Context management               - Monitoring
-- Streaming                        - Session management
-- Retry & fallback                 - Budget management
-                                   - Audit logging
-        |                                   |
-        +------- CONTROL PLANE --------+
-                 (Event Bus + Interceptors)
+┌───────────────────────────────────────────────────────────┐
+│  Pillar 1: GOVERNANCE   (Outer Harness)                   │
+│    Permission · Budget · Hooks · Input Gate · Audit       │
+└───────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│  Pillar 2: QA PIPELINE   (SDLC Orchestrator)              │
+│    Norm → Ctx → Plan → Exec → Patch → QA → Retry → Out    │
+│    M1–M10 metrics · Exec delegates to agent via adapter   │
+└───────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│  Pillar 3: ADAPTERS + MCP   (Distribution)                │
+│    Claude Code hooks · MCP server · Cursor · Aider · …    │
+└───────────────────────────────────────────────────────────┘
 ```
 
 **Why this matters:**
-- Swap the Inner Harness without touching governance (use Claude today, GPT tomorrow)
-- Disable the Outer Harness for zero-overhead raw agent performance
-- Scale governance independently (one Gateway serves 100 developers)
-- Test each side independently
+- Use **governance alone** — raw Claude Code + `.claude/hooks/` + `agentweave guard`. Zero pipeline overhead, full policy enforcement.
+- Use **QA pipeline alone** — wraps any agent, adds measurable SDLC metrics without touching governance.
+- Combine both — governance policy enforced *inside* each pipeline run.
+- Agent vendor choice stays with the user. Swap Claude Code → Cursor → Aider; governance + pipeline stay the same.
+
+### Legacy note: Inner Harness as reference implementation
+
+The repo contains an inner-harness agent-loop implementation (`packages/inner-harness/src/agent-loop.ts`, built-in tools) from an earlier design. **It is no longer the production execution path** — execution delegates to external agents via adapters. The inner-harness code is retained as:
+
+- **Reference implementation** for teaching + offline/local use cases.
+- **Test infrastructure** for governance unit tests (mock LLM, deterministic tool execution).
+
+Do not build new features against the internal agent loop. New execution work goes into adapters (`packages/adapters/`) or the SDLC pipeline (`packages/inner-harness/src/sdlc/`).
 
 ### Built on Modern Standards
 
@@ -703,24 +725,26 @@ Configurable: fail-open (agent continues with no governance — for dev) or fail
 
 | What | AgentWeave |
 |---|---|
-| **Category** | AI Agent Governance Framework |
-| **Core function** | Control, monitor, and secure AI coding agents |
-| **Key feature** | Dual-mode output pipeline: streaming (per-buffer filter) + batch (full 6-stage) |
-| **Architecture** | Inner Harness (execution) + Outer Harness (governance), separated by Control Plane |
-| **Models** | Any LLM: Anthropic, OpenAI, Google, Azure, Bedrock, local (Ollama) |
+| **Category** | Governance + QA layer for AI coding agents |
+| **Core function** | Enforce policy, measure SDLC quality, audit tool calls — around Claude Code, Cursor, Aider, or any MCP agent |
+| **Architecture** | 3 independent pillars — Governance · QA Pipeline · Adapters + MCP |
+| **Key differentiator** | M1–M10 SDLC metrics measured across runs (first-pass success, retry count, quality delta) — data Claude Code does not expose |
+| **Distribution** | Claude Code hooks (`.claude/hooks/`), MCP server, per-agent adapters |
+| **What we do NOT build** | Agent loops, tool-calling runtimes, model routing — those belong to the agent vendor |
 | **Deployment** | Local binary to K8s cluster, progressive upgrade |
 | **Config** | YAML, 7-level hierarchy (defaults to enterprise policy) |
 | **Integrations** | Slack, GitHub Actions, Grafana, Prometheus, PagerDuty, any webhook |
 | **License** | Open source (MIT) |
-| **Languages** | TypeScript SDK (Python and Go planned) |
+| **Languages** | TypeScript SDK (Python planned) |
 | **Platforms** | macOS, Linux, Windows, Docker, Kubernetes |
 
 ---
 
-**Your AI agents are already writing code.**
-**AgentWeave makes sure they do it safely, efficiently, and under your control.**
+**Your AI coding agents already write code well.**
+**AgentWeave enforces the policy, measures the quality, and keeps the audit trail — so you can trust what they ship.**
 
 ```
 npm install -g @agentweave/cli
-agentweave run "Let's build something great."
+agentweave pipeline run "Fix the login bug"      # QA pipeline around your agent
+agentweave guard pre-tool-use                   # or: wire .claude/hooks for governance only
 ```

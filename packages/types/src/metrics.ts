@@ -83,6 +83,33 @@ export interface MonitorSnapshot {
 	sessionDurationMs: number;
 }
 
+// ─── Pipeline & Hook Metrics ────────────────────────────────────
+
+export interface StageTiming {
+	totalMs: number;
+	count: number;
+	avgMs: number;
+}
+
+export interface PipelineMetrics {
+	totalProcessed: number;
+	totalRedactions: number;
+	totalRejections: number;
+	stageTiming: Record<string, StageTiming>;
+	filterRedactionCounts: Record<string, number>;
+}
+
+export interface HookMetrics {
+	totalExecutions: number;
+	passCount: number;
+	blockCount: number;
+	modifyCount: number;
+	errorCount: number;
+	totalDurationMs: number;
+	avgDurationMs: number;
+	byEvent: Record<string, { count: number; durationMs: number }>;
+}
+
 // ─── Alert Types (Phase 2) ──────────────────────────────────────
 
 export type AlertSeverity = "info" | "warning" | "critical";

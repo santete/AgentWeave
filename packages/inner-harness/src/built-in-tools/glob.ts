@@ -1,13 +1,22 @@
 /**
+ * REFERENCE IMPLEMENTATION — not production path (post-pivot 2026-04-22).
+ * Production agents ship their own glob tool; AgentWeave governs them via
+ * hooks + adapters. Kept for the reference agent-loop + tests.
+ * See product-spec/POSITIONING.md.
+ *
+ * ---
+ *
  * Glob — Find files matching a glob pattern.
+ *
+ * SECURITY: Uses execFile (no shell) to prevent injection via pattern/path.
  */
 
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import type { ToolDefinition } from "@agentweave/types";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export const GlobTool: ToolDefinition<{ pattern: string; path?: string }, string> = {
 	name: "Glob",
@@ -19,19 +28,23 @@ export const GlobTool: ToolDefinition<{ pattern: string; path?: string }, string
 	execute: async ({ pattern, path }, context) => {
 		const searchPath = path ?? ".";
 
-		// Use find on Unix, dir on Windows
-		const isWindows = process.platform === "win32";
-		const cmd = isWindows
-			? `dir /S /B "${searchPath}\\${pattern}" 2>NUL`
-			: `find ${searchPath} -path '${pattern}' -type f 2>/dev/null | head -500`;
-
 		try {
-			const { stdout } = await execAsync(cmd, {
-				cwd: context.cwd,
-				timeout: 15_000,
-				signal: context.signal,
-			});
-			const files = stdout.trim().split("\n").filter(Boolean);
+			if (process.platform === "win32") {
+				const { stdout } = await execFileAsync(
+					"cmd.exe",
+					["/c", "dir", "/S", "/B", `${searchPath}\\${pattern}`],
+					{ cwd: context.cwd, timeout: 15_000, signal: context.signal },
+				);
+				const files = stdout.trim().split("\n").filter(Boolean).slice(0, 500);
+				return files.length > 0 ? files.join("\n") : "No files found";
+			}
+
+			const { stdout } = await execFileAsync(
+				"find",
+				[searchPath, "-path", pattern, "-type", "f"],
+				{ cwd: context.cwd, timeout: 15_000, signal: context.signal },
+			);
+			const files = stdout.trim().split("\n").filter(Boolean).slice(0, 500);
 			return files.length > 0 ? files.join("\n") : "No files found";
 		} catch {
 			return "No files found";

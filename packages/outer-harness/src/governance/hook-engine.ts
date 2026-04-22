@@ -4,15 +4,23 @@
  * 5 hook types: command, prompt, agent, http, function.
  * Hooks are matched by event type + optional matcher pattern.
  * Executed sequentially with timeout per hook. Results aggregated.
+ *
+ * Product-grade features:
+ * - Function hooks with dynamic import (handler path)
+ * - Hook execution metrics (pass/block/modify/error counts, timing)
+ * - HTTP hook retry with exponential backoff on 5xx
  */
 
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import { resolve, normalize } from "node:path";
 import type {
 	HookDefinition,
 	HookEvent,
 	HookResult,
+	HookMetrics,
 } from "@agentweave/types";
+import { fetchWithRetry } from "../shared/http-retry";
 
 const execAsync = promisify(exec);
 
@@ -22,6 +30,18 @@ export interface HookEngineConfig {
 
 export class HookEngine {
 	private hooksByEvent = new Map<string, HookDefinition[]>();
+
+	// Metrics
+	private metrics: HookMetrics = {
+		totalExecutions: 0,
+		passCount: 0,
+		blockCount: 0,
+		modifyCount: 0,
+		errorCount: 0,
+		totalDurationMs: 0,
+		avgDurationMs: 0,
+		byEvent: {},
+	};
 
 	constructor(config: HookEngineConfig) {
 		for (const [eventKey, hooks] of Object.entries(config.hooks)) {
@@ -39,7 +59,10 @@ export class HookEngine {
 		const aggregated: HookResult = { outcome: "pass" };
 
 		for (const hook of hooks) {
+			const start = performance.now();
 			const result = await this.executeSingle(hook, event);
+			const elapsed = performance.now() - start;
+			this.recordMetrics(event.type, result.outcome, elapsed);
 
 			// Merge result into aggregate
 			if (result.outcome === "block") {
@@ -86,6 +109,11 @@ export class HookEngine {
 	/** Get registered hooks for an event type. */
 	getHooks(eventType: string): ReadonlyArray<HookDefinition> {
 		return this.hooksByEvent.get(eventType) ?? [];
+	}
+
+	/** Get execution metrics. */
+	getMetrics(): HookMetrics {
+		return { ...this.metrics, byEvent: { ...this.metrics.byEvent } };
 	}
 
 	// ─── Internal ────────────────────────────────────────────────
@@ -165,7 +193,6 @@ export class HookEngine {
 		event: HookEvent,
 	): Promise<HookResult> {
 		// SECURITY: Only pass safe env vars to hook shell.
-		// Filter out secrets (*_KEY, *_SECRET, *_TOKEN, *_PASSWORD, *_CREDENTIAL).
 		const env = buildSafeEnv();
 		env.TOOL_NAME = event.toolName ?? "";
 		env.TOOL_INPUT = JSON.stringify(event.toolInput ?? {});
@@ -229,8 +256,41 @@ export class HookEngine {
 			}
 		}
 
-		// Handler path — not implemented in MVP (requires dynamic import)
+		// Handler path — dynamic import
+		if (hook.handler) {
+			return this.executeFunctionHandlerHook(hook.handler, event);
+		}
+
 		return { outcome: "pass" };
+	}
+
+	private async executeFunctionHandlerHook(
+		handlerPath: string,
+		event: HookEvent,
+	): Promise<HookResult> {
+		// SECURITY: validate path — reject traversal, require .js/.ts extension
+		const error = validateHandlerPath(handlerPath);
+		if (error) {
+			return { outcome: "error", message: error };
+		}
+
+		try {
+			const absPath = resolve(handlerPath);
+			const mod = await import(absPath);
+			const fn = mod.default ?? mod;
+
+			if (typeof fn !== "function") {
+				return { outcome: "error", message: `Handler at "${handlerPath}" does not export a function` };
+			}
+
+			const result = await fn(event.toolInput, event.toolResult, event);
+			return this.normalizeFunctionResult(result);
+		} catch (err) {
+			return {
+				outcome: "error",
+				message: err instanceof Error ? err.message : `Failed to import handler: ${handlerPath}`,
+			};
+		}
 	}
 
 	private normalizeFunctionResult(result: unknown): HookResult {
@@ -271,36 +331,35 @@ export class HookEngine {
 		hook: Extract<HookDefinition, { type: "http" }>,
 		event: HookEvent,
 	): Promise<HookResult> {
-		try {
-			const body = JSON.stringify({
-				event: event.type,
-				toolName: event.toolName,
-				toolInput: event.toolInput,
-				sessionId: event.sessionId,
-			});
+		const body = JSON.stringify({
+			event: event.type,
+			toolName: event.toolName,
+			toolInput: event.toolInput,
+			sessionId: event.sessionId,
+		});
 
-			const response = await fetch(hook.url, {
+		const result = await fetchWithRetry(
+			hook.url,
+			{
 				method: (hook.method as string) ?? "POST",
 				headers: {
 					"Content-Type": "application/json",
 					...(hook.headers ?? {}),
 				},
 				body,
-				signal: AbortSignal.timeout(hook.timeout ?? 10_000),
-			});
+			},
+			{
+				maxRetries: hook.retries ?? 0,
+				timeoutMs: hook.timeout ?? 10_000,
+			},
+		);
 
-			if (!response.ok) {
-				return { outcome: "error", message: `HTTP ${response.status}: ${response.statusText}` };
-			}
-
-			const text = await response.text();
+		if (result.ok) {
+			const text = await result.response.text();
 			return this.parseHookOutput(text, "");
-		} catch (err) {
-			return {
-				outcome: "error",
-				message: err instanceof Error ? err.message : "HTTP hook failed",
-			};
 		}
+
+		return { outcome: "error", message: result.error };
 	}
 
 	private async executePromptHook(
@@ -362,6 +421,47 @@ export class HookEngine {
 			};
 		}
 	}
+
+	// ─── Metrics ─────────────────────────────────────────────────
+
+	private recordMetrics(eventType: string, outcome: string, durationMs: number): void {
+		this.metrics.totalExecutions++;
+		this.metrics.totalDurationMs += durationMs;
+		this.metrics.avgDurationMs = this.metrics.totalDurationMs / this.metrics.totalExecutions;
+
+		switch (outcome) {
+			case "pass": this.metrics.passCount++; break;
+			case "block": this.metrics.blockCount++; break;
+			case "modify": this.metrics.modifyCount++; break;
+			case "error": this.metrics.errorCount++; break;
+		}
+
+		const byEvent = this.metrics.byEvent[eventType];
+		if (byEvent) {
+			byEvent.count++;
+			byEvent.durationMs += durationMs;
+		} else {
+			this.metrics.byEvent[eventType] = { count: 1, durationMs };
+		}
+	}
+}
+
+// ─── Handler Path Validation ─────────────────────────────────────
+
+function validateHandlerPath(handlerPath: string): string | null {
+	const normalized = normalize(handlerPath);
+
+	// Reject path traversal
+	if (normalized.includes("..")) {
+		return `Handler path rejected: path traversal detected in "${handlerPath}"`;
+	}
+
+	// Require .js or .ts extension
+	if (!normalized.endsWith(".js") && !normalized.endsWith(".ts") && !normalized.endsWith(".mjs")) {
+		return `Handler path rejected: must end in .js, .ts, or .mjs ("${handlerPath}")`;
+	}
+
+	return null;
 }
 
 // ─── Safe Environment Filtering ─────────────────────────────────
@@ -381,14 +481,11 @@ function buildSafeEnv(): Record<string, string> {
 	const env: Record<string, string> = {};
 	for (const [k, v] of Object.entries(process.env)) {
 		if (v === undefined) continue;
-		// Always include safe keys
 		if (ENV_SAFE_KEYS.has(k)) {
 			env[k] = v;
 			continue;
 		}
-		// Reject keys matching secret patterns
 		if (ENV_SECRET_PATTERNS.some((p) => p.test(k))) continue;
-		// Allow remaining non-secret keys
 		env[k] = v;
 	}
 	return env;

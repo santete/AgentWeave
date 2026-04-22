@@ -23,6 +23,30 @@ export {
 	GlobTool,
 } from "./built-in-tools/index";
 
+// Standalone (no control-plane needed)
+export { createNoopControlPlane } from "./noop-control-plane";
+
 // Testing
 export { createMockLLMCaller, MockScenarios } from "./mock-llm";
 export type { MockResponse } from "./mock-llm";
+
+// SDLC Engine
+export {
+	SDLCOrchestrator,
+	createSDLCPipeline,
+	MetricsCollector,
+	runModule,
+	ModuleError,
+	getDefaultSDLCConfig,
+	validateSDLCConfig,
+	SDLCConfigSchema,
+	TaskNormalizerModule,
+	ContextBuilderModule,
+	PlanGeneratorModule,
+	ExecutionBridgeModule,
+	PatchValidatorModule,
+	QualityGateModule,
+	RetryEngineModule,
+	OutputStandardizerModule,
+} from "./sdlc/index";
+export type { SDLCOrchestratorConfig, CreateSDLCPipelineOptions } from "./sdlc/index";

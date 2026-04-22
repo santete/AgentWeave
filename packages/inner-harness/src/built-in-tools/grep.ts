@@ -1,13 +1,22 @@
 /**
+ * REFERENCE IMPLEMENTATION — not production path (post-pivot 2026-04-22).
+ * Production agents ship their own grep tool; AgentWeave governs them via
+ * hooks + adapters. Kept for the reference agent-loop + tests.
+ * See product-spec/POSITIONING.md.
+ *
+ * ---
+ *
  * Grep — Search for a regex pattern in files recursively.
+ *
+ * SECURITY: Uses execFile (no shell) to prevent injection via pattern/path.
  */
 
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import type { ToolDefinition } from "@agentweave/types";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export const GrepTool: ToolDefinition<{ pattern: string; path?: string; include?: string }, string> = {
 	name: "Grep",
@@ -19,22 +28,29 @@ export const GrepTool: ToolDefinition<{ pattern: string; path?: string; include?
 	}),
 	execute: async ({ pattern, path, include }, context) => {
 		const searchPath = path ?? ".";
-		const includeFlag = include ? `--include='${include}'` : "";
-
-		// Use grep -rn for recursive search with line numbers
-		// Fallback to findstr on Windows
-		const isWindows = process.platform === "win32";
-		const cmd = isWindows
-			? `findstr /S /N /R "${pattern}" ${searchPath}\\*`
-			: `grep -rn ${includeFlag} '${pattern}' ${searchPath} 2>/dev/null | head -200`;
 
 		try {
-			const { stdout } = await execAsync(cmd, {
+			if (process.platform === "win32") {
+				const { stdout } = await execFileAsync(
+					"findstr",
+					["/S", "/N", "/R", pattern, `${searchPath}\\*`],
+					{ cwd: context.cwd, timeout: 30_000, signal: context.signal },
+				);
+				return stdout.slice(0, 100_000) || "No matches found";
+			}
+
+			const args = ["-rn"];
+			if (include) args.push(`--include=${include}`);
+			args.push(pattern, searchPath);
+
+			const { stdout } = await execFileAsync("grep", args, {
 				cwd: context.cwd,
 				timeout: 30_000,
 				signal: context.signal,
 			});
-			return stdout.slice(0, 100_000) || "No matches found";
+			// Limit output
+			const lines = stdout.split("\n").slice(0, 200).join("\n");
+			return lines.slice(0, 100_000) || "No matches found";
 		} catch {
 			return "No matches found";
 		}
