@@ -25,7 +25,7 @@ import { pipelineConfigCommand } from "./commands/pipeline-config.js";
 import { credentialsCommand } from "./commands/credentials.js";
 import { mcpStartCommand, mcpPrintCommand } from "./commands/mcp.js";
 import { runGuard, type GuardPhase } from "./commands/guard.js";
-import { auditViewCommand } from "./commands/audit.js";
+import { auditReplayCommand, auditViewCommand } from "./commands/audit.js";
 
 const args = process.argv.slice(2);
 
@@ -57,6 +57,11 @@ function printHelp(): void {
       --limit <n>              Max entries (default: 50)
       --format <table|json>    Output format (default: table)
       --tail                   Follow mode (stream new entries)
+      --path <path>            Custom audit log path
+    agentweave audit replay <session-id> [options]   Replay a single session as a timeline
+      --since <5m|1h|2d|ISO>   Only entries after this time
+      --until <5m|1h|2d|ISO>   Only entries before this time
+      --format <table|json>    Output format (default: table)
       --path <path>            Custom audit log path
 
   ═══ PILLAR 2 — QA PIPELINE (SDLC) ══════════════════════════════════════════
@@ -359,24 +364,39 @@ async function main(): Promise<void> {
 			case "audit": {
 				const auditIdx = args.indexOf("audit");
 				const sub = args[auditIdx + 1];
-				if (sub !== "view") {
-					console.error("Error: Usage: agentweave audit view [options]");
-					process.exit(1);
-				}
-				const limitRaw = getFlag(args, "--limit");
 				const fmt = getFlag(args, "--format");
 				const format: "table" | "json" | undefined =
 					fmt === "json" || fmt === "table" ? fmt : undefined;
-				const code = await auditViewCommand({
-					path: getFlag(args, "--path"),
-					since: getFlag(args, "--since"),
-					tool: getFlag(args, "--tool"),
-					decision: getFlag(args, "--decision"),
-					limit: limitRaw ? parseInt(limitRaw, 10) : undefined,
-					format,
-					tail: hasFlag(args, "--tail"),
-				});
-				process.exit(code);
+				if (sub === "view") {
+					const limitRaw = getFlag(args, "--limit");
+					const code = await auditViewCommand({
+						path: getFlag(args, "--path"),
+						since: getFlag(args, "--since"),
+						tool: getFlag(args, "--tool"),
+						decision: getFlag(args, "--decision"),
+						limit: limitRaw ? parseInt(limitRaw, 10) : undefined,
+						format,
+						tail: hasFlag(args, "--tail"),
+					});
+					process.exit(code);
+				}
+				if (sub === "replay") {
+					const sessionId = args[auditIdx + 2];
+					if (!sessionId || sessionId.startsWith("--")) {
+						console.error("Error: Usage: agentweave audit replay <session-id> [options]");
+						process.exit(1);
+					}
+					const code = await auditReplayCommand({
+						sessionId,
+						path: getFlag(args, "--path"),
+						since: getFlag(args, "--since"),
+						until: getFlag(args, "--until"),
+						format,
+					});
+					process.exit(code);
+				}
+				console.error("Error: Usage: agentweave audit view|replay [options]");
+				process.exit(1);
 			}
 
 			case "credentials": {
