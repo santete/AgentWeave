@@ -25,12 +25,14 @@ export interface PrometheusExporterOptions {
 export class PrometheusExporter {
 	private readonly instance: string;
 	private readonly includeSessionLabel: boolean;
+	private readonly alerts: AlertEngine;
 
 	constructor(
 		private readonly monitor: MonitorCollector,
-		private readonly _alerts: AlertEngine,
+		alerts: AlertEngine,
 		opts: PrometheusExporterOptions = {},
 	) {
+		this.alerts = alerts;
 		this.instance = opts.instance ?? "agentweave";
 		this.includeSessionLabel = opts.includeSessionLabel ?? false;
 	}
@@ -38,9 +40,8 @@ export class PrometheusExporter {
 	/** Render current state as Prometheus text exposition. */
 	render(): string {
 		const snap = this.monitor.getSnapshot();
-		const baseLabels = this.includeSessionLabel
-			? { instance: this.instance, session_id: snap.sessionId }
-			: { instance: this.instance };
+		const baseLabels: Record<string, string | number> = { instance: this.instance };
+		if (this.includeSessionLabel) baseLabels.session_id = snap.sessionId;
 
 		const out: string[] = [];
 
@@ -91,6 +92,13 @@ export class PrometheusExporter {
 			"counter",
 			"Total tool calls denied by the permission engine.",
 			[{ labels: baseLabels, value: snap.permissionDeniedCount }],
+		));
+
+		out.push(...metric(
+			"agentweave_alerts_fired_total",
+			"counter",
+			"Total alerts fired by the AlertEngine.",
+			[{ labels: baseLabels, value: this.alerts.getAlerts().length }],
 		));
 
 		// Per-tool metrics

@@ -58,6 +58,7 @@ describe("PrometheusExporter.render", () => {
 			"agentweave_cost_usd_total",
 			"agentweave_errors_total",
 			"agentweave_permission_denied_total",
+			"agentweave_alerts_fired_total",
 			"agentweave_tool_calls_total",
 			"agentweave_tool_errors_total",
 			"agentweave_tool_duration_ms_avg",
@@ -145,18 +146,18 @@ describe("PrometheusExporter.render", () => {
 		expect(text).toContain('session_id="ses\\"with\\\\quote"');
 	});
 
-	it("renders the 7 session-level counters/gauges even with zero tool calls", () => {
+	it("renders the 8 session-level counters/gauges even with zero tool calls", () => {
 		const c = new MonitorCollector();
 		c.setSessionId("ses_empty");
 
 		const text = new PrometheusExporter(c, new AlertEngine()).render();
 
 		// Each session-level metric gets one data line; tool_* metrics are
-		// HELP/TYPE-only with zero series. That should still leave 7 data lines.
+		// HELP/TYPE-only with zero series. 7 monitor counters + 1 alerts counter.
 		const dataLines = text
 			.split("\n")
 			.filter((l) => l.length > 0 && !l.startsWith("#"));
-		expect(dataLines.length).toBe(7);
+		expect(dataLines.length).toBe(8);
 	});
 
 	it("ends with a trailing newline (Prometheus spec)", () => {

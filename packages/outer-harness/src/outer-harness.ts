@@ -20,6 +20,7 @@ import type {
 	SessionInfo,
 	PermissionConfig,
 	AlertRule,
+	AlertSeverity,
 	HookDefinition,
 	MultiAgentConfig,
 } from "@agentweave/types";
@@ -37,6 +38,8 @@ import { SessionManager } from "./observability/session-manager";
 import type { SessionManagerConfig } from "./observability/session-manager";
 import { HookEngine } from "./governance/hook-engine";
 import { MultiAgentOrchestrator } from "./orchestration/multi-agent-orchestrator";
+import { PrometheusExporter } from "./observability/prometheus-exporter";
+import { StdoutSink, FileSink, WebhookSink } from "./observability/alert-sink";
 
 /** Events that can change alert-relevant state — skip noisy stream deltas */
 const ALERT_CHECK_EVENTS = new Set([
@@ -47,6 +50,28 @@ const ALERT_CHECK_EVENTS = new Set([
 	"permission:denied",
 ]);
 
+export type AlertSinkConfig =
+	| { type: "stdout"; severityFilter?: AlertSeverity[] }
+	| { type: "file"; path: string; severityFilter?: AlertSeverity[] }
+	| {
+			type: "webhook";
+			url: string;
+			method?: "POST" | "PUT";
+			headers?: Record<string, string>;
+			maxRetries?: number;
+			timeoutMs?: number;
+			severityFilter?: AlertSeverity[];
+	  };
+
+export interface MonitoringConfig {
+	prometheus?: {
+		enabled: boolean;
+		instance?: string;
+		includeSessionLabel?: boolean;
+	};
+	alertSinks?: AlertSinkConfig[];
+}
+
 export interface OuterHarnessConfig {
 	permissions: PermissionConfig;
 	output: OutputPipelineConfig;
@@ -56,6 +81,8 @@ export interface OuterHarnessConfig {
 	alertRules?: AlertRule[];
 	multiAgent?: MultiAgentConfig;
 	inputGate?: InputGateConfig;
+	/** Opt-in observability — omit to keep current zero-behavior-change default. */
+	monitoring?: MonitoringConfig;
 	/** Handler for permission "ask" flow. If not set, falls back to failMode. */
 	onAsk?: (toolName: string, toolInput: Record<string, unknown>, message: string) => Promise<{ allow: boolean; alwaysAllow?: boolean }>;
 }
@@ -72,6 +99,7 @@ export class OuterHarness implements OuterHarnessConsumer {
 	private alerts: AlertEngine;
 	private sessions: SessionManager;
 	private orchestrator: MultiAgentOrchestrator | null;
+	private prometheusExporter: PrometheusExporter | null = null;
 	private lastKnownCost = 0;
 	private currentModel = "";
 	private currentToolName = "";
@@ -94,6 +122,20 @@ export class OuterHarness implements OuterHarnessConsumer {
 		if (config.alertRules) {
 			for (const rule of config.alertRules) {
 				this.alerts.addRule(rule);
+			}
+		}
+
+		// Opt-in monitoring wiring. `monitoring` absent → zero behavior change.
+		if (config.monitoring) {
+			for (const sinkCfg of config.monitoring.alertSinks ?? []) {
+				this.alerts.addSink(buildSink(sinkCfg));
+			}
+			if (config.monitoring.prometheus?.enabled) {
+				const { instance, includeSessionLabel } = config.monitoring.prometheus;
+				this.prometheusExporter = new PrometheusExporter(this.monitor, this.alerts, {
+					instance,
+					includeSessionLabel,
+				});
 			}
 		}
 	}
@@ -307,5 +349,28 @@ export class OuterHarness implements OuterHarnessConsumer {
 
 	getOrchestrator(): MultiAgentOrchestrator | null {
 		return this.orchestrator;
+	}
+
+	/** Returns a PrometheusExporter if `config.monitoring.prometheus.enabled`, else null. */
+	getPrometheusExporter(): PrometheusExporter | null {
+		return this.prometheusExporter;
+	}
+}
+
+function buildSink(cfg: AlertSinkConfig) {
+	switch (cfg.type) {
+		case "stdout":
+			return new StdoutSink({ severityFilter: cfg.severityFilter });
+		case "file":
+			return new FileSink({ path: cfg.path, severityFilter: cfg.severityFilter });
+		case "webhook":
+			return new WebhookSink({
+				url: cfg.url,
+				method: cfg.method,
+				headers: cfg.headers,
+				maxRetries: cfg.maxRetries,
+				timeoutMs: cfg.timeoutMs,
+				severityFilter: cfg.severityFilter,
+			});
 	}
 }

@@ -180,3 +180,38 @@ describe("OuterHarness", () => {
 		expect(outer.getBudgetManager().getSessionCost()).toBeCloseTo(0.01, 4);
 	});
 });
+
+describe("OuterHarness monitoring wiring", () => {
+	it("omits PrometheusExporter when monitoring.prometheus is not enabled", () => {
+		const outer = new OuterHarness(defaultConfig());
+		expect(outer.getPrometheusExporter()).toBeNull();
+	});
+
+	it("exposes PrometheusExporter when monitoring.prometheus.enabled", () => {
+		const outer = new OuterHarness({
+			...defaultConfig(),
+			monitoring: {
+				prometheus: { enabled: true, instance: "test-x" },
+			},
+		});
+		const exp = outer.getPrometheusExporter();
+		expect(exp).not.toBeNull();
+		expect(exp!.render()).toContain('instance="test-x"');
+	});
+
+	it("registers configured AlertSinks on the AlertEngine", () => {
+		const outer = new OuterHarness({
+			...defaultConfig(),
+			monitoring: {
+				alertSinks: [
+					{ type: "stdout" },
+					{ type: "webhook", url: "http://example/", severityFilter: ["critical"] },
+				],
+			},
+		});
+		const sinks = outer.getAlertEngine().getSinks();
+		expect(sinks).toHaveLength(2);
+		expect(sinks[0]!.name).toBe("stdout");
+		expect(sinks[1]!.name).toBe("webhook");
+	});
+});
