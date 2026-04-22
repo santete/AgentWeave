@@ -6,7 +6,7 @@
  * AgentWeave is the Governance + QA layer for AI coding agents. Canonical
  * positioning: product-spec/POSITIONING.md. Commands below group by pillar.
  *
- * Pillar 1 — Governance:  guard, credentials
+ * Pillar 1 — Governance:  guard, credentials, audit
  * Pillar 2 — QA Pipeline: pipeline, task, metrics
  * Pillar 3 — Adapters + MCP: mcp
  * Reference (demoted):    run, monitor, session   // agent-loop, not production
@@ -25,6 +25,7 @@ import { pipelineConfigCommand } from "./commands/pipeline-config.js";
 import { credentialsCommand } from "./commands/credentials.js";
 import { mcpStartCommand, mcpPrintCommand } from "./commands/mcp.js";
 import { runGuard, type GuardPhase } from "./commands/guard.js";
+import { auditViewCommand } from "./commands/audit.js";
 
 const args = process.argv.slice(2);
 
@@ -47,6 +48,16 @@ function printHelp(): void {
     agentweave credentials list                      Show stored keys (masked)
     agentweave credentials remove <agent> <KEY>      Remove a key
     agentweave credentials check <agent>             Check if keys exist
+
+  AUDIT (inspect guard decisions written to .agentweave/audit.log):
+    agentweave audit view [options]                  Table view (default: last 50)
+      --since <5m|1h|2d|ISO>   Only entries after this time
+      --tool <name>            Filter by tool
+      --decision <approve|block>   Filter by decision
+      --limit <n>              Max entries (default: 50)
+      --format <table|json>    Output format (default: table)
+      --tail                   Follow mode (stream new entries)
+      --path <path>            Custom audit log path
 
   ═══ PILLAR 2 — QA PIPELINE (SDLC) ══════════════════════════════════════════
   Norm → Ctx → Plan → Exec → Patch → QA → Retry → Out. Delegates Exec to the
@@ -115,6 +126,7 @@ function printHelp(): void {
     # Pillar 1 — Governance (wire up via .claude/hooks/ then use guard)
     agentweave credentials set claude ANTHROPIC_API_KEY sk-...
     agentweave guard pre-tool-use < event.json    # normally invoked by hook
+    agentweave audit view --since 1h --decision block
 
     # Pillar 3 — MCP distribution
     agentweave mcp print-config > .mcp.json
@@ -333,6 +345,29 @@ async function main(): Promise<void> {
 					process.exit(1);
 				}
 				const code = await runGuard(phase);
+				process.exit(code);
+			}
+
+			case "audit": {
+				const auditIdx = args.indexOf("audit");
+				const sub = args[auditIdx + 1];
+				if (sub !== "view") {
+					console.error("Error: Usage: agentweave audit view [options]");
+					process.exit(1);
+				}
+				const limitRaw = getFlag(args, "--limit");
+				const fmt = getFlag(args, "--format");
+				const format: "table" | "json" | undefined =
+					fmt === "json" || fmt === "table" ? fmt : undefined;
+				const code = await auditViewCommand({
+					path: getFlag(args, "--path"),
+					since: getFlag(args, "--since"),
+					tool: getFlag(args, "--tool"),
+					decision: getFlag(args, "--decision"),
+					limit: limitRaw ? parseInt(limitRaw, 10) : undefined,
+					format,
+					tail: hasFlag(args, "--tail"),
+				});
 				process.exit(code);
 			}
 
