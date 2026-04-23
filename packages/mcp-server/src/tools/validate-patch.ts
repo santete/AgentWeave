@@ -24,11 +24,12 @@ export function registerValidatePatch(server: McpServer): void {
 				"Pure static analysis — does not run any code.",
 			inputSchema,
 		},
-		async (args) => {
+		async (args, extra) => {
 			const changedFiles = args.changedFiles ?? [];
 			const estimatedFiles = args.estimatedFiles ?? [];
 
 			const { context, collector } = buildStandaloneContext({
+				signal: extra.signal,
 				configOverrides: {
 					patchValidator: {
 						enabled: true,

@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createSDLCPipeline } from "@agentweave/inner-harness";
 import { createEmptyTokenUsage } from "@agentweave/types";
 import type {
@@ -259,5 +262,76 @@ describe("createSdlcGovernance — Prometheus scrape (P1.1 end-to-end)", () => {
 	it("omits exporter by default (zero-regression: monitoring config is opt-in)", () => {
 		const gov = createSdlcGovernance({ sessionId: "s_no_prom" });
 		expect(gov.outer.getPrometheusExporter()).toBeNull();
+	});
+});
+
+describe("createSdlcGovernance — policy cascade wiring (P3.1 step 8)", () => {
+	it("config.policy.paths loads a 3-file cascade and enforces an immutable deny", async () => {
+		const tmp = mkdtempSync(join(tmpdir(), "aw-pol-wire-"));
+		try {
+			const orgPath = join(tmp, "policy.org.yaml");
+			const userPath = join(tmp, "policy.user.yaml");
+			writeFileSync(
+				orgPath,
+				JSON.stringify({
+					version: 1,
+					rules: [
+						{ pattern: "Bash(rm *)", behavior: "deny", priority: 100, immutable: true },
+					],
+				}),
+			);
+			writeFileSync(
+				userPath,
+				JSON.stringify({
+					version: 1,
+					rules: [
+						{ pattern: "Bash(rm *)", behavior: "allow", priority: 200 },
+					],
+				}),
+			);
+
+			const { outer, controlPlane } = createSdlcGovernance({
+				sessionId: "s_pol",
+				config: {
+					policy: { paths: { org: orgPath, user: userPath } },
+				},
+			});
+
+			const decision = await controlPlane.intercept("tool_request", {
+				toolName: "Bash",
+				toolInput: { command: "rm -rf /" },
+				toolUseId: "t_pol",
+				turnIndex: 0,
+				isReadOnly: false,
+				isDestructive: true,
+			} as ToolRequest);
+
+			expect(decision.behavior).toBe("deny"); // org immutable wins over user allow
+
+			const audit = outer.getAuditLogger();
+			const loaded = audit.getEntriesByAction("policy_loaded");
+			expect(loaded.length).toBe(2); // org + user
+			const levels = loaded.map((e) => (e.details as Record<string, unknown>).level).sort();
+			expect(levels).toEqual(["org", "user"]);
+
+			const overrideBlocked = audit.getEntriesByAction("immutable_override_blocked");
+			expect(overrideBlocked.length).toBe(1);
+		} finally {
+			rmSync(tmp, { recursive: true, force: true });
+		}
+	});
+
+	it("policy.requireAll throws when a configured path is unresolvable", () => {
+		expect(() =>
+			createSdlcGovernance({
+				sessionId: "s_pol_req",
+				config: {
+					policy: {
+						paths: { org: "/does/not/exist/policy.org.yaml" },
+						requireAll: true,
+					},
+				},
+			}),
+		).toThrow(/requireAll/);
 	});
 });

@@ -26,7 +26,20 @@ export type { HookEngineConfig } from "./governance/hook-engine";
 export { InputGate } from "./governance/input-gate";
 export type { InputGateConfig, InputGateResult } from "./governance/input-gate";
 export { AskStore } from "./governance/ask-store";
-export type { AskStoreOptions } from "./governance/ask-store";
+export type { AskStoreOptions, OrphanedRecord } from "./governance/ask-store";
+export { PolicyLoader } from "./governance/policy-loader";
+export type {
+	PolicyPaths,
+	PolicyLevel,
+	LoadedPolicy,
+	LoadOptions as PolicyLoadOptions,
+} from "./governance/policy-loader";
+export {
+	PolicyLoadError,
+	InvalidImmutableLevel,
+	PermissionRuleConflictError,
+} from "./governance/policy-errors";
+export type { PolicyLoadReason } from "./governance/policy-errors";
 
 // Orchestration
 export { ConfigHierarchy, getDefaultConfig } from "./orchestration/config-hierarchy";

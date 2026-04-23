@@ -21,6 +21,13 @@ export interface PermissionDecision {
 	suggestions?: PermissionUpdate[];
 	/** The rule that matched this decision (null if default fallback) */
 	matchedRule?: import("./permissions").PermissionRule | null;
+	/**
+	 * When an immutable rule (org-level `immutable:true`) denies a request,
+	 * lists any lower-bucket mutable rules that would have matched the same
+	 * request with a different behavior. Used by OuterHarness to emit the
+	 * `immutable_override_blocked` audit event. Empty/undefined otherwise.
+	 */
+	immutableOverrideBlocked?: import("./permissions").PermissionRule[];
 }
 
 export interface PermissionUpdate {

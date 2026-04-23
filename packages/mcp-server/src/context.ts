@@ -3,8 +3,13 @@ import type { SDLCModuleContext, SDLCConfig } from "@agentweave/types";
 import { MetricsCollector, getDefaultSDLCConfig } from "@agentweave/inner-harness";
 
 export interface BuildContextOptions {
+	/**
+	 * Abort signal — required so that MCP client cancellations propagate into
+	 * long-running module work (spawned processes, validation loops). Callers
+	 * thread `extra.signal` from the MCP tool handler.
+	 */
+	signal: AbortSignal;
 	cwd?: string;
-	signal?: AbortSignal;
 	configOverrides?: Partial<SDLCConfig["modules"]>;
 }
 
@@ -13,7 +18,7 @@ export interface BuildContextOptions {
  * verification modules from the MCP server. Not tied to any orchestrator
  * run — each MCP tool call gets its own fresh context + MetricsCollector.
  */
-export function buildStandaloneContext(opts: BuildContextOptions = {}): {
+export function buildStandaloneContext(opts: BuildContextOptions): {
 	context: SDLCModuleContext;
 	collector: MetricsCollector;
 } {
@@ -27,7 +32,7 @@ export function buildStandaloneContext(opts: BuildContextOptions = {}): {
 	const context: SDLCModuleContext = {
 		sessionId: `mcp-${randomUUID()}`,
 		cwd: opts.cwd ?? process.cwd(),
-		signal: opts.signal ?? new AbortController().signal,
+		signal: opts.signal,
 		config,
 		metrics: collector.createHandle(),
 	};

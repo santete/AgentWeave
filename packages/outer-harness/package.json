@@ -29,7 +29,9 @@
   "publishConfig": {
     "access": "public"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
     "test:unit": "vitest run",
@@ -38,13 +40,16 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@agentweave/control-plane": "workspace:*",
     "@agentweave/types": "workspace:*",
-    "@agentweave/control-plane": "workspace:*"
+    "js-yaml": "^4.1.1",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
-    "typescript": "^5.7.0",
     "tsup": "^8.3.0",
+    "typescript": "^5.7.0",
     "vitest": "^2.1.0"
   }
 }

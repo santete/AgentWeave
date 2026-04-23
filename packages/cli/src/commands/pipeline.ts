@@ -11,6 +11,7 @@ import { execSync } from "node:child_process";
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import { createSDLCPipeline } from "@agentweave/inner-harness";
 import type { SDLCMetricsSnapshot, SDLCConfig } from "@agentweave/types";
+import type { PolicyPaths } from "@agentweave/outer-harness";
 import { loadConfig } from "../config-loader.js";
 import { resolveAgent, AGENT_PRESETS, listPresets } from "../agent-presets.js";
 import { getAgentEnv, hasCredentials, scrubCredentials, buildChildEnv, ensureGitignore } from "../credential-store.js";
@@ -26,6 +27,12 @@ export interface PipelineRunArgs {
 	checks?: string[];
 	retries?: number;
 	metricsDir?: string;
+	/** P3.1 — 3-file YAML policy overrides. Any key present opts into load. */
+	policyPaths?: PolicyPaths;
+	/** P3.1 — explicit disable; beats any policy-* flag. */
+	noPolicy?: boolean;
+	/** P3.1 — when true, unresolved --policy-* path is a fatal error. */
+	policyRequireAll?: boolean;
 }
 
 // ─── ANSI ────────────────────────────────────────────────────────
@@ -377,9 +384,24 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 	// `ask` decisions resolve via the terminal prompt when stdout is a TTY.
 	// Headless runs (CI, redirected stdout) fall through to failMode — no
 	// accidental blocking of unattended pipelines.
+	// Policy cascade opt-in (P3.1): activate when any --policy-* flag is set and
+	// --no-policy is absent. Empty overrides still trigger env + OS-path lookup,
+	// so use --no-policy when you want to suppress a system-wide policy.user.yaml.
+	const policyActive =
+		!args.noPolicy &&
+		(args.policyPaths !== undefined || args.policyRequireAll === true);
+
 	const sdlcGov: SdlcGovernanceBundle = createSdlcGovernance({
 		sessionId: governanceSessionId,
 		onAsk: process.stdout.isTTY ? terminalAskPrompt : undefined,
+		config: policyActive
+			? {
+					policy: {
+						paths: args.policyPaths,
+						requireAll: args.policyRequireAll === true,
+					},
+				}
+			: undefined,
 	});
 
 	const pipeline = createSDLCPipeline({

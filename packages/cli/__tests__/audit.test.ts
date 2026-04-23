@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { auditViewCommand, parseSince } from "../src/commands/audit";
+import { auditReplayCommand, auditViewCommand, parseSince } from "../src/commands/audit";
 
 // ─── Test harness ────────────────────────────────────────────────
 
@@ -234,5 +234,89 @@ describe("auditViewCommand — table format", () => {
 		expect(code).toBe(0);
 		const lines = stdoutBuf.trim().split("\n").filter(Boolean);
 		expect(lines).toHaveLength(2);
+	});
+});
+
+// ─── P3.1 step 9: LEVEL column + immutable marker ────────────────
+
+describe("auditViewCommand — LEVEL column + immutable marker", () => {
+	function strip(s: string): string {
+		return s.replace(/\x1b\[[0-9;]*m/g, "");
+	}
+
+	it("renders LEVEL header and maps source → label (org/team/user/rt/hook/-)", async () => {
+		writeLog([
+			fixture({ tool: "Bash", decision: "approve", source: "policy", ts: "2026-04-22T10:00:00.000Z" }),
+			fixture({ tool: "Bash", decision: "approve", source: "project", ts: "2026-04-22T10:01:00.000Z" }),
+			fixture({ tool: "Bash", decision: "approve", source: "user", ts: "2026-04-22T10:02:00.000Z" }),
+			fixture({ tool: "Bash", decision: "approve", source: "runtime", ts: "2026-04-22T10:03:00.000Z" }),
+			fixture({ tool: "Bash", decision: "approve", source: "hook", ts: "2026-04-22T10:04:00.000Z" }),
+			fixture({ tool: "Bash", decision: "approve", ts: "2026-04-22T10:05:00.000Z" }), // no source
+		]);
+		await auditViewCommand({ cwd: workDir });
+		const out = strip(stdoutBuf);
+		expect(out).toContain("LEVEL");
+		// every label must appear at least once
+		expect(out).toMatch(/\borg\b/);
+		expect(out).toMatch(/\bteam\b/);
+		expect(out).toMatch(/\buser\b/);
+		expect(out).toMatch(/\brt\b/);
+		expect(out).toMatch(/\bhook\b/);
+	});
+
+	it("appends (!) to decision when immutable=true, not when false/undefined", async () => {
+		writeLog([
+			fixture({ tool: "Bash", decision: "block", source: "policy", immutable: true, ts: "2026-04-22T10:00:00.000Z" }),
+			fixture({ tool: "Bash", decision: "approve", source: "user", ts: "2026-04-22T10:01:00.000Z" }),
+		]);
+		await auditViewCommand({ cwd: workDir });
+		const out = strip(stdoutBuf);
+		expect(out).toContain("block(!)");
+		// non-immutable approve must NOT have (!)
+		expect(out).not.toContain("approve(!)");
+		expect(out).toMatch(/\bapprove\b/);
+	});
+
+	it("JSON format preserves source + immutable fields intact", async () => {
+		writeLog([
+			fixture({ tool: "Bash", decision: "block", source: "policy", immutable: true }),
+		]);
+		await auditViewCommand({ cwd: workDir, format: "json" });
+		const parsed = JSON.parse(stdoutBuf.trim());
+		expect(parsed.source).toBe("policy");
+		expect(parsed.immutable).toBe(true);
+	});
+});
+
+describe("auditReplayCommand — LEVEL + immutable in replay", () => {
+	function strip(s: string): string {
+		return s.replace(/\x1b\[[0-9;]*m/g, "");
+	}
+
+	it("renders OFFSET + LEVEL columns and (!) marker for immutable decisions", async () => {
+		writeLog([
+			fixture({ session_id: "ses_r", decision: "approve", source: "user", ts: "2026-04-22T10:00:00.000Z" }),
+			fixture({ session_id: "ses_r", decision: "block", source: "policy", immutable: true, reason: "rm denied", ts: "2026-04-22T10:00:01.500Z" }),
+			fixture({ session_id: "ses_other", tool: "Bash", ts: "2026-04-22T10:00:02.000Z" }),
+		]);
+		const code = await auditReplayCommand({ cwd: workDir, sessionId: "ses_r" });
+		expect(code).toBe(0);
+		const out = strip(stdoutBuf);
+		expect(out).toContain("OFFSET");
+		expect(out).toContain("LEVEL");
+		expect(out).toMatch(/\borg\b/);
+		expect(out).toMatch(/\buser\b/);
+		expect(out).toContain("block(!)");
+		expect(out).toContain("+1.50s");
+	});
+
+	it("JSON format preserves source + immutable in replay output", async () => {
+		writeLog([
+			fixture({ session_id: "ses_j", decision: "block", source: "policy", immutable: true, ts: "2026-04-22T10:00:00.000Z" }),
+		]);
+		await auditReplayCommand({ cwd: workDir, sessionId: "ses_j", format: "json" });
+		const parsed = JSON.parse(stdoutBuf.trim());
+		expect(parsed.source).toBe("policy");
+		expect(parsed.immutable).toBe(true);
 	});
 });

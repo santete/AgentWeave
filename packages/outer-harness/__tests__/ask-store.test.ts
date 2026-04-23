@@ -78,3 +78,70 @@ describe("AskStore", () => {
 		expect(() => new Date(raw[0]!.savedAt).toISOString()).not.toThrow();
 	});
 });
+
+// ─── Orphaning (P3.1 step 5) ─────────────────────────────────────
+
+describe("AskStore.markOrphaned", () => {
+	it("excludes orphaned entries from load() but keeps them on disk", () => {
+		const store = new AskStore({ cwd: workDir });
+		store.persist(rule("Bash(git push *)"));
+		store.persist(rule("Write(*)"));
+
+		const changed = store.markOrphaned("Bash(git push *)", {
+			reason: "masked by immutable org deny",
+			conflictWith: "Bash(*)",
+		});
+
+		expect(changed).toBe(true);
+		const active = store.load();
+		expect(active.map((r) => r.pattern)).toEqual(["Write(*)"]);
+
+		// On-disk JSON still has 2 entries
+		const raw = JSON.parse(readFileSync(storePath, "utf-8")) as unknown[];
+		expect(raw).toHaveLength(2);
+	});
+
+	it("listOrphaned() returns only orphaned entries with metadata", () => {
+		const store = new AskStore({ cwd: workDir });
+		store.persist(rule("Bash(sudo *)"));
+		store.persist(rule("Grep(*)"));
+		store.markOrphaned("Bash(sudo *)", {
+			reason: "immutable deny added",
+			conflictWith: "Bash(*)",
+		});
+
+		const orphaned = store.listOrphaned();
+		expect(orphaned).toHaveLength(1);
+		expect(orphaned[0]!.rule.pattern).toBe("Bash(sudo *)");
+		expect(orphaned[0]!.orphaned.reason).toBe("immutable deny added");
+		expect(orphaned[0]!.orphaned.conflictWith).toBe("Bash(*)");
+		expect(() => new Date(orphaned[0]!.orphaned.at).toISOString()).not.toThrow();
+	});
+
+	it("is idempotent: second call returns false and preserves original at-timestamp", async () => {
+		const store = new AskStore({ cwd: workDir });
+		store.persist(rule("Bash(*)"));
+
+		const first = store.markOrphaned("Bash(*)", { reason: "r1", conflictWith: "*" });
+		expect(first).toBe(true);
+		const firstAt = store.listOrphaned()[0]!.orphaned.at;
+
+		// Nudge the clock forward so a second timestamp would differ
+		await new Promise((r) => setTimeout(r, 10));
+
+		const second = store.markOrphaned("Bash(*)", { reason: "r2", conflictWith: "*" });
+		expect(second).toBe(false);
+		expect(store.listOrphaned()[0]!.orphaned.at).toBe(firstAt);
+	});
+
+	it("returns false when the pattern is not persisted", () => {
+		const store = new AskStore({ cwd: workDir });
+		store.persist(rule("Write(*)"));
+		const changed = store.markOrphaned("Bash(missing)", {
+			reason: "x",
+			conflictWith: "*",
+		});
+		expect(changed).toBe(false);
+		expect(store.listOrphaned()).toEqual([]);
+	});
+});
