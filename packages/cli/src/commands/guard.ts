@@ -123,6 +123,9 @@ async function handlePre(hook: HookInput, config: GuardConfig, cwd: string): Pro
 			tool: hook.tool_name,
 			decision: "approve",
 			reason: decision.reason,
+			matched: decision.matchedRule?.pattern,
+			source: decision.matchedRule?.source,
+			immutable: decision.matchedRule?.immutable === true ? true : undefined,
 			session_id: hook.session_id,
 		});
 		emit({ decision: "approve", reason: decision.reason });
@@ -141,6 +144,8 @@ async function handlePre(hook: HookInput, config: GuardConfig, cwd: string): Pro
 		decision: "block",
 		reason,
 		matched: decision.matchedRule?.pattern,
+		source: decision.matchedRule?.source,
+		immutable: decision.matchedRule?.immutable === true ? true : undefined,
 		session_id: hook.session_id,
 	});
 	emit({ decision: "block", reason });
@@ -245,12 +250,34 @@ function toToolRequest(hook: HookInput): ToolRequest {
 
 // ─── Audit writer ────────────────────────────────────────────────
 
+/**
+ * Scrub common secret shapes out of any string that's about to be persisted.
+ * Mirrors `redactForAudit` in outer-harness/permission-engine — the guard
+ * writes to disk directly so redaction must happen here, not only in memory.
+ * Applied per-field (string values in the entry object) right before serialize.
+ */
+function redactForAudit(s: string): string {
+	return s
+		.replace(/sk-(ant-)?[A-Za-z0-9_-]{20,}/g, "sk-***")
+		.replace(/Bearer\s+[A-Za-z0-9._-]{16,}/gi, "Bearer ***")
+		.replace(/(password|token|secret|api[_-]?key)\s*=\s*["']?[^"'\s]+["']?/gi, "$1=***");
+}
+
+function redactEntry(entry: Record<string, unknown>): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const [k, v] of Object.entries(entry)) {
+		out[k] = typeof v === "string" ? redactForAudit(v) : v;
+	}
+	return out;
+}
+
 function writeAudit(config: GuardConfig, cwd: string, entry: Record<string, unknown>): void {
 	if (!config.audit.enabled) return;
 	const path = isAbsolute(config.audit.path) ? config.audit.path : resolve(cwd, config.audit.path);
 	try {
 		mkdirSync(dirname(path), { recursive: true });
-		const line = JSON.stringify({ ts: new Date().toISOString(), ...entry }) + "\n";
+		const redacted = redactEntry(entry);
+		const line = JSON.stringify({ ts: new Date().toISOString(), ...redacted }) + "\n";
 		appendFileSync(path, line, "utf-8");
 	} catch {
 		// Best-effort; audit failure must not brick the agent.

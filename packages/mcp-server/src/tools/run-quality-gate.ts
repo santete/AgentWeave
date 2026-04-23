@@ -28,10 +28,11 @@ export function registerRunQualityGate(server: McpServer): void {
 				"Use this after editing files to verify no regressions.",
 			inputSchema,
 		},
-		async (args) => {
+		async (args, extra) => {
 			const checks = (args.checks ?? []) as QualityGateCheck[];
 
 			const { context, collector } = buildStandaloneContext({
+				signal: extra.signal,
 				cwd: args.cwd,
 				configOverrides: {
 					qualityGate: { enabled: true, checks },

@@ -26,6 +26,8 @@ import { credentialsCommand } from "./commands/credentials.js";
 import { mcpStartCommand, mcpPrintCommand } from "./commands/mcp.js";
 import { runGuard, type GuardPhase } from "./commands/guard.js";
 import { auditReplayCommand, auditViewCommand } from "./commands/audit.js";
+import { policyShowCommand, policyLintCommand } from "./commands/policy.js";
+import type { PolicyLevel, PolicyPaths } from "@agentweave/outer-harness";
 
 const args = process.argv.slice(2);
 
@@ -48,6 +50,14 @@ function printHelp(): void {
     agentweave credentials list                      Show stored keys (masked)
     agentweave credentials remove <agent> <KEY>      Remove a key
     agentweave credentials check <agent>             Check if keys exist
+
+  POLICY (3-file YAML cascade — org/team/user; org may set immutable rules):
+    agentweave policy show [options]                 Show resolved cascade
+      --policy-org <path>      Override org-level file
+      --policy-team <path>     Override team-level file
+      --policy-user <path>     Override user-level file
+      --format <table|json>    Output format (default: table)
+    agentweave policy lint <file> [--as org|team|user]   Validate a single file
 
   AUDIT (inspect guard decisions written to .agentweave/audit.log):
     agentweave audit view [options]                  Table view (default: last 50)
@@ -92,6 +102,11 @@ function printHelp(): void {
     --checks <cmds>       QA check commands (comma-separated)
     --retries <n>         Max retries (default: 3)
     --metrics-dir <path>  Metrics storage dir (default: .agentweave/metrics)
+    --policy-org <path>   Override org-level policy YAML
+    --policy-team <path>  Override team-level policy YAML
+    --policy-user <path>  Override user-level policy YAML
+    --policy-require-all  Fail if any configured --policy-* path is unresolvable
+    --no-policy           Disable policy load even if env/OS paths exist
 
   METRICS OPTIONS:
     --dir <path>          Metrics directory (default: .agentweave/metrics)
@@ -156,6 +171,19 @@ function getFlag(args: string[], flag: string): string | undefined {
 
 function hasFlag(args: string[], flag: string): boolean {
 	return args.includes(flag);
+}
+
+/** P3.1 — build PolicyPaths from CLI flags. Returns undefined if none set. */
+function collectPolicyPaths(args: string[]): PolicyPaths | undefined {
+	const org = getFlag(args, "--policy-org");
+	const team = getFlag(args, "--policy-team");
+	const user = getFlag(args, "--policy-user");
+	if (!org && !team && !user) return undefined;
+	const out: PolicyPaths = {};
+	if (org) out.org = org;
+	if (team) out.team = team;
+	if (user) out.user = user;
+	return out;
 }
 
 export function parseArgs(args: string[]): {
@@ -301,6 +329,9 @@ async function main(): Promise<void> {
 					checks: checksRaw ? checksRaw.split(",").map((s) => s.trim()) : undefined,
 					retries: retriesRaw ? parseInt(retriesRaw, 10) : undefined,
 					metricsDir: getFlag(args, "--metrics-dir"),
+					policyPaths: collectPolicyPaths(args),
+					noPolicy: hasFlag(args, "--no-policy"),
+					policyRequireAll: hasFlag(args, "--policy-require-all"),
 				});
 			}
 			break;
@@ -396,6 +427,41 @@ async function main(): Promise<void> {
 					process.exit(code);
 				}
 				console.error("Error: Usage: agentweave audit view|replay [options]");
+				process.exit(1);
+			}
+
+			case "policy": {
+				const polIdx = args.indexOf("policy");
+				const sub = args[polIdx + 1];
+				if (sub === "show") {
+					const fmt = getFlag(args, "--format");
+					const format: "table" | "json" | undefined =
+						fmt === "json" || fmt === "table" ? fmt : undefined;
+					const code = policyShowCommand({
+						paths: collectPolicyPaths(args),
+						format,
+					});
+					process.exit(code);
+				}
+				if (sub === "lint") {
+					const file = args[polIdx + 2];
+					if (!file || file.startsWith("--")) {
+						console.error("Error: Usage: agentweave policy lint <file> [--as org|team|user]");
+						process.exit(1);
+					}
+					const asRaw = getFlag(args, "--as");
+					let as: PolicyLevel | undefined;
+					if (asRaw) {
+						if (asRaw !== "org" && asRaw !== "team" && asRaw !== "user") {
+							console.error(`Error: --as must be one of: org, team, user (got "${asRaw}")`);
+							process.exit(1);
+						}
+						as = asRaw;
+					}
+					const code = policyLintCommand({ file, as });
+					process.exit(code);
+				}
+				console.error("Error: Usage: agentweave policy show|lint [options]");
 				process.exit(1);
 			}
 

@@ -19,6 +19,7 @@ import type {
 	HookResult,
 	SessionInfo,
 	PermissionConfig,
+	PermissionRule,
 	AlertRule,
 	AlertSeverity,
 	HookDefinition,
@@ -31,6 +32,8 @@ import {
 } from "./governance/permission-context";
 import type { PermissionContext } from "./governance/permission-context";
 import { AskStore } from "./governance/ask-store";
+import { PolicyLoader } from "./governance/policy-loader";
+import type { PolicyPaths, LoadedPolicy } from "./governance/policy-loader";
 import { OutputPipeline } from "./governance/output-pipeline";
 import type { OutputPipelineConfig } from "./governance/output-pipeline";
 import { BudgetManager } from "./governance/budget-manager";
@@ -101,6 +104,12 @@ export interface OuterHarnessConfig {
 	onAsk?: (toolName: string, toolInput: Record<string, unknown>, message: string) => Promise<{ allow: boolean; alwaysAllow?: boolean }>;
 	/** Opt-in persistence of "always allow" decisions across process restarts. */
 	askPersistence?: AskPersistenceConfig;
+	/** Opt-in 3-file YAML policy hierarchy (org/team/user). P3.1. */
+	policy?: {
+		paths?: PolicyPaths;
+		/** If true, any configured path that fails to resolve is an error. Default false. */
+		requireAll?: boolean;
+	};
 }
 
 export class OuterHarness implements OuterHarnessConsumer {
@@ -124,22 +133,66 @@ export class OuterHarness implements OuterHarnessConsumer {
 	private activeSession: Partial<PermissionContext["session"]> = {};
 
 	constructor(config: OuterHarnessConfig) {
-		this.permissions = new PermissionEngine(config.permissions);
+		// Audit logger first — policy_loaded events emitted during load need it.
+		this.audit = new AuditLogger();
+
+		// P3.1 §5: optionally load the 3-file YAML policy cascade and merge
+		// its rules into the engine config BEFORE the engine is constructed.
+		const loadedPolicy = config.policy
+			? PolicyLoader.load(
+					config.policy.paths ? { overrides: config.policy.paths } : {},
+				)
+			: null;
+		if (config.policy?.requireAll && loadedPolicy) {
+			assertAllPolicyPathsResolved(config.policy.paths, loadedPolicy);
+		}
+		const mergedPermissions: PermissionConfig = loadedPolicy
+			? {
+					...config.permissions,
+					rules: [...loadedPolicy.rules, ...config.permissions.rules],
+				}
+			: config.permissions;
+
+		this.permissions = new PermissionEngine(mergedPermissions);
 		this.outputPipeline = new OutputPipeline(config.output);
 		this.budget = new BudgetManager(config.budget);
 		this.hookEngine = new HookEngine({ hooks: config.hooks ?? {} });
 		this.inputGate = new InputGate(config.inputGate);
 		this.askHandler = config.onAsk;
+
+		// Emit one policy_loaded event per resolved file — the sha256 lets
+		// forensic verify which version was in effect. (P3.1 §6.2)
+		if (loadedPolicy) {
+			emitPolicyLoaded(this.audit, loadedPolicy);
+		}
+
+		// Persisted ask approvals: load, reconcile against immutable bucket,
+		// orphan on conflict (fail-safe: keep on disk for audit) — P3.1 §4.2.
 		if (config.askPersistence?.enabled) {
 			this.askStore = new AskStore({
 				path: config.askPersistence.path,
 				cwd: config.askPersistence.cwd,
 			});
 			for (const rule of this.askStore.load()) {
+				const conflict = this.permissions.findImmutableConflictFor(
+					rule.pattern,
+					rule.behavior,
+				);
+				if (conflict) {
+					this.askStore.markOrphaned(rule.pattern, {
+						reason: "immutable_conflict",
+						conflictWith: conflict.pattern,
+					});
+					this.audit.log("ask_approval_orphaned", {
+						persisted: rule,
+						conflictingImmutable: conflict,
+					});
+					continue;
+				}
 				this.permissions.addRule(rule);
 			}
 		}
-		this.audit = new AuditLogger();
+
 		this.monitor = new MonitorCollector();
 		this.alerts = new AlertEngine();
 		this.sessions = new SessionManager(config.session);
@@ -195,6 +248,30 @@ export class OuterHarness implements OuterHarnessConsumer {
 			source: permDecision.source,
 			matchedPattern: permDecision.matchedRule?.pattern,
 		});
+
+		// P3.1 §3.2: emit when an immutable deny blocked a mutable allow/ask
+		// that would have matched. One event per tool_request — audit only.
+		if (
+			permDecision.immutableOverrideBlocked &&
+			permDecision.immutableOverrideBlocked.length > 0
+		) {
+			this.audit.log("immutable_override_blocked", {
+				tool: request.toolName,
+				immutableRule: permDecision.matchedRule
+					? {
+							pattern: permDecision.matchedRule.pattern,
+							source: permDecision.matchedRule.source,
+							message: permDecision.matchedRule.message,
+						}
+					: undefined,
+				overridden: permDecision.immutableOverrideBlocked.map((r) => ({
+					pattern: r.pattern,
+					behavior: r.behavior,
+					source: r.source,
+					priority: r.priority,
+				})),
+			});
+		}
 
 		// 2. Resolve ask via handler or failMode fallback
 		let toolDecision: ToolDecision;
@@ -410,5 +487,41 @@ function buildSink(cfg: AlertSinkConfig) {
 				timeoutMs: cfg.timeoutMs,
 				severityFilter: cfg.severityFilter,
 			});
+	}
+}
+
+function emitPolicyLoaded(audit: AuditLogger, loaded: LoadedPolicy): void {
+	const levels: Array<{ level: "org" | "team" | "user"; path?: string; hash?: string }> = [
+		{ level: "org", path: loaded.sources.orgPath, hash: loaded.hashes.org },
+		{ level: "team", path: loaded.sources.teamPath, hash: loaded.hashes.team },
+		{ level: "user", path: loaded.sources.userPath, hash: loaded.hashes.user },
+	];
+	for (const { level, path, hash } of levels) {
+		if (!path) continue;
+		const ruleCount = loaded.rules.filter((r) => {
+			const source: PermissionRule["source"] =
+				level === "org" ? "policy" : level === "team" ? "project" : "user";
+			return r.source === source;
+		}).length;
+		audit.log("policy_loaded", { level, path, ruleCount, sha256: hash });
+	}
+}
+
+/** Enforce requireAll: every key present in `paths` (if any) must have been
+ *  resolved to a file. When `paths` is undefined, requireAll is a no-op —
+ *  OS-default discovery alone can't satisfy "all three levels" meaningfully. */
+function assertAllPolicyPathsResolved(
+	paths: PolicyPaths | undefined,
+	loaded: LoadedPolicy,
+): void {
+	if (!paths) return;
+	const missing: string[] = [];
+	if (paths.org !== undefined && !loaded.sources.orgPath) missing.push("org");
+	if (paths.team !== undefined && !loaded.sources.teamPath) missing.push("team");
+	if (paths.user !== undefined && !loaded.sources.userPath) missing.push("user");
+	if (missing.length > 0) {
+		throw new Error(
+			`policy.requireAll: could not resolve configured path(s) for level(s): ${missing.join(", ")}`,
+		);
 	}
 }
