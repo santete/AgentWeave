@@ -30,6 +30,7 @@ export type { AskStoreOptions, OrphanedRecord } from "./governance/ask-store";
 export { PolicyLoader } from "./governance/policy-loader";
 export type {
 	PolicyPaths,
+	PolicyLevel,
 	LoadedPolicy,
 	LoadOptions as PolicyLoadOptions,
 } from "./governance/policy-loader";

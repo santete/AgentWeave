@@ -55,7 +55,8 @@ export interface LoadOptions {
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_RULES_PER_FILE = 10_000;
 
-type Level = "org" | "team" | "user";
+export type PolicyLevel = "org" | "team" | "user";
+type Level = PolicyLevel;
 type Source = "policy" | "project" | "user";
 
 const LEVEL_TO_SOURCE: Record<Level, Source> = {
@@ -208,6 +209,18 @@ function parseFile(path: string, level: Level): { rules: PermissionRule[]; hash:
 // ─── Public API ──────────────────────────────────────────────────
 
 export class PolicyLoader {
+	/**
+	 * Parse + validate a single file as if it lived at `level`. Used by
+	 * `agentweave policy lint` so operators can dry-run a draft file before
+	 * dropping it into the org/team/user slot.
+	 */
+	static lint(
+		filePath: string,
+		level: Level,
+	): { rules: PermissionRule[]; hash: string } {
+		return parseFile(resolve(filePath), level);
+	}
+
 	/**
 	 * Resolve paths → parse → validate → merge. Throws PolicyLoadError or
 	 * InvalidImmutableLevel on any malformed file. Missing files are skipped.
