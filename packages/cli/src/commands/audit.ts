@@ -43,8 +43,30 @@ interface AuditEntry {
 	decision?: "approve" | "block";
 	reason?: string;
 	matched?: string;
+	/** P3.1 — PermissionRule.source of the matched rule, if any. */
+	source?: "policy" | "project" | "user" | "runtime" | "hook";
+	/** P3.1 — true when matched rule was org-level immutable. */
+	immutable?: boolean;
 	session_id?: string;
 	[k: string]: unknown;
+}
+
+/** Map PermissionRule.source → short human label shown in the LEVEL column. */
+function levelLabel(source: AuditEntry["source"] | undefined): string {
+	switch (source) {
+		case "policy":
+			return "org";
+		case "project":
+			return "team";
+		case "user":
+			return "user";
+		case "runtime":
+			return "rt";
+		case "hook":
+			return "hook";
+		default:
+			return "-";
+	}
 }
 
 const C = {
@@ -162,17 +184,26 @@ function printReplay(entries: AuditEntry[], sessionId: string): void {
 	const first = Date.parse(entries[0]!.ts);
 	console.log(`\n${C.cyan}${C.bold}  AgentWeave Audit Replay — session ${sessionId} (${entries.length} entries)${C.reset}`);
 	console.log(`${C.gray}  ${DIVIDER}${C.reset}`);
-	const header = `  ${pad("OFFSET", 10)} ${pad("PHASE", 5)} ${pad("TOOL", 14)} ${pad("DECISION", 8)} REASON`;
+	const header = `  ${pad("OFFSET", 10)} ${pad("PHASE", 5)} ${pad("TOOL", 14)} ${pad("LEVEL", 6)} ${pad("DECISION", 10)} REASON`;
 	console.log(`${C.dim}${header}${C.reset}`);
 	for (const e of entries) {
 		const offset = fmtOffset(Date.parse(e.ts) - first);
 		const phase = e.phase ?? "-";
 		const tool = e.tool ?? "-";
-		const decision = e.decision ?? "-";
+		const level = levelLabel(e.source);
+		const decisionText = e.decision
+			? e.immutable === true
+				? `${e.decision}(!)`
+				: e.decision
+			: "-";
 		const reason = truncate(e.reason ?? (e.matched ? `matched ${e.matched}` : "-"), 40);
 		const color =
-			decision === "block" ? C.red : decision === "approve" ? C.green : C.gray;
-		console.log(`  ${pad(offset, 10)} ${pad(phase, 5)} ${pad(tool, 14)} ${color}${pad(decision, 8)}${C.reset} ${reason}`);
+			e.decision === "block"
+				? C.red
+				: e.decision === "approve"
+					? C.green
+					: C.gray;
+		console.log(`  ${pad(offset, 10)} ${pad(phase, 5)} ${pad(tool, 14)} ${pad(level, 6)} ${color}${pad(decisionText, 10)}${C.reset} ${reason}`);
 	}
 	console.log(`${C.gray}  ${DIVIDER}${C.reset}\n`);
 }
@@ -290,7 +321,7 @@ function printTable(entries: AuditEntry[], total: number): void {
 }
 
 function printTableHeader(): void {
-	const header = `  ${pad("TIME", 20)} ${pad("PHASE", 5)} ${pad("TOOL", 14)} ${pad("DECISION", 8)} REASON`;
+	const header = `  ${pad("TIME", 20)} ${pad("PHASE", 5)} ${pad("TOOL", 14)} ${pad("LEVEL", 6)} ${pad("DECISION", 10)} REASON`;
 	console.log(`${C.dim}${header}${C.reset}`);
 }
 
@@ -298,12 +329,21 @@ function printRow(e: AuditEntry): void {
 	const ts = shortTs(e.ts);
 	const phase = e.phase ?? "-";
 	const tool = e.tool ?? "-";
-	const decision = e.decision ?? "-";
+	const level = levelLabel(e.source);
+	const decisionText = e.decision
+		? e.immutable === true
+			? `${e.decision}(!)`
+			: e.decision
+		: "-";
 	const reason = truncate(e.reason ?? (e.matched ? `matched ${e.matched}` : "-"), 40);
 
 	const color =
-		decision === "block" ? C.red : decision === "approve" ? C.green : C.gray;
-	const row = `  ${pad(ts, 20)} ${pad(phase, 5)} ${pad(tool, 14)} ${color}${pad(decision, 8)}${C.reset} ${reason}`;
+		e.decision === "block"
+			? C.red
+			: e.decision === "approve"
+				? C.green
+				: C.gray;
+	const row = `  ${pad(ts, 20)} ${pad(phase, 5)} ${pad(tool, 14)} ${pad(level, 6)} ${color}${pad(decisionText, 10)}${C.reset} ${reason}`;
 	console.log(row);
 }
 

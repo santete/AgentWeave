@@ -123,6 +123,9 @@ async function handlePre(hook: HookInput, config: GuardConfig, cwd: string): Pro
 			tool: hook.tool_name,
 			decision: "approve",
 			reason: decision.reason,
+			matched: decision.matchedRule?.pattern,
+			source: decision.matchedRule?.source,
+			immutable: decision.matchedRule?.immutable === true ? true : undefined,
 			session_id: hook.session_id,
 		});
 		emit({ decision: "approve", reason: decision.reason });
@@ -141,6 +144,8 @@ async function handlePre(hook: HookInput, config: GuardConfig, cwd: string): Pro
 		decision: "block",
 		reason,
 		matched: decision.matchedRule?.pattern,
+		source: decision.matchedRule?.source,
+		immutable: decision.matchedRule?.immutable === true ? true : undefined,
 		session_id: hook.session_id,
 	});
 	emit({ decision: "block", reason });
