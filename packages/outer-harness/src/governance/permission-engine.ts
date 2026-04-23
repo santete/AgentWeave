@@ -653,6 +653,22 @@ export class PermissionEngine {
 		return this.immutableCompiled.map((c) => c.rule);
 	}
 
+	/** Non-throwing variant of addRule's conflict check. Returns the first
+	 *  immutable rule whose pattern overlaps `pattern` with a different
+	 *  behavior, or `undefined` if no conflict. Used by the AskStore
+	 *  reconciliation pass at boot (P3.1 §4.2). */
+	findImmutableConflictFor(
+		pattern: string,
+		behavior: PermissionRule["behavior"],
+	): PermissionRule | undefined {
+		const hit = this.immutableCompiled.find(
+			(c) =>
+				patternsOverlap(c.rule.pattern, pattern) &&
+				c.rule.behavior !== behavior,
+		);
+		return hit?.rule;
+	}
+
 	// ─── Rule Groups ────────────────────────────────────────────
 
 	enableGroup(group: string): void {
