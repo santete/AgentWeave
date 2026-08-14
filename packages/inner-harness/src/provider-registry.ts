@@ -93,6 +93,25 @@ export class ProviderRegistry {
 
 // ─── Provider dựng sẵn ────────────────────────────────────────────
 
+/**
+ * Chuẩn hoá OLLAMA_HOST thành baseURL đầy đủ.
+ *
+ * Tài liệu của Ollama quy định OLLAMA_HOST là "host:port" KHÔNG có scheme
+ * (vd `OLLAMA_HOST=0.0.0.0:11434`, đúng dạng nằm trong systemd override).
+ * Bản trước ghép thẳng thành "127.0.0.1:11434/v1" → `Failed to parse URL`,
+ * mà AgentLoop lại nuốt lỗi và báo "completed" nên rất khó truy ra.
+ *
+ * `0.0.0.0` là địa chỉ LẮNG NGHE, không phải địa chỉ để gọi tới — đổi sang
+ * loopback giống cách client của Ollama làm.
+ */
+export function normalizeOllamaBaseUrl(raw?: string): string {
+	const base = (raw ?? "").trim() || "http://127.0.0.1:11434";
+	const coScheme = /^https?:\/\//i.test(base) ? base : `http://${base}`;
+	const goiLoopback = coScheme.replace("//0.0.0.0", "//127.0.0.1").replace("//[::]", "//[::1]");
+	const boGachCuoi = goiLoopback.replace(/\/+$/, "");
+	return boGachCuoi.endsWith("/v1") ? boGachCuoi : `${boGachCuoi}/v1`;
+}
+
 /** Ollama — model chạy cục bộ, qua endpoint tương thích OpenAI. */
 export const ollamaProvider: ModelProvider = {
 	id: "ollama",
@@ -102,9 +121,8 @@ export const ollamaProvider: ModelProvider = {
 	matches: () => process.env.AGENTWEAVE_DEFAULT_PROVIDER === "ollama",
 	async resolve(model) {
 		const { createOpenAI } = await import("@ai-sdk/openai");
-		const base = process.env.OLLAMA_HOST ?? "http://127.0.0.1:11434";
 		const ollama = createOpenAI({
-			baseURL: base.endsWith("/v1") ? base : `${base}/v1`,
+			baseURL: normalizeOllamaBaseUrl(process.env.OLLAMA_HOST),
 			apiKey: process.env.OLLAMA_API_KEY ?? "ollama", // Ollama bỏ qua giá trị này
 			name: "ollama",
 		});

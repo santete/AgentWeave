@@ -3,6 +3,7 @@ import {
 	ProviderRegistry,
 	UnknownProviderError,
 	createDefaultRegistry,
+	normalizeOllamaBaseUrl,
 	type ModelProvider,
 } from "../src/provider-registry";
 
@@ -107,5 +108,32 @@ describe("ProviderRegistry", () => {
 		])("%s → %s", (model, expected) => {
 			expect(createDefaultRegistry().whichProvider(model)).toBe(expected);
 		});
+	});
+});
+
+describe("normalizeOllamaBaseUrl", () => {
+	// Tài liệu Ollama quy định OLLAMA_HOST là "host:port" KHÔNG scheme.
+	// Bản trước ghép thẳng → "Failed to parse URL from 127.0.0.1:11434/v1/...".
+	it.each([
+		["127.0.0.1:11434", "http://127.0.0.1:11434/v1"],
+		["localhost:11434", "http://localhost:11434/v1"],
+		["http://127.0.0.1:11434", "http://127.0.0.1:11434/v1"],
+		["http://127.0.0.1:11434/v1", "http://127.0.0.1:11434/v1"],
+		["http://127.0.0.1:11434/", "http://127.0.0.1:11434/v1"],
+		["https://ollama.noi-bo:443", "https://ollama.noi-bo:443/v1"],
+	])("%s → %s", (dauVao, mongDoi) => {
+		expect(normalizeOllamaBaseUrl(dauVao)).toBe(mongDoi);
+	});
+
+	it("không khai thì dùng loopback mặc định", () => {
+		expect(normalizeOllamaBaseUrl(undefined)).toBe("http://127.0.0.1:11434/v1");
+		expect(normalizeOllamaBaseUrl("")).toBe("http://127.0.0.1:11434/v1");
+		expect(normalizeOllamaBaseUrl("   ")).toBe("http://127.0.0.1:11434/v1");
+	});
+
+	it("0.0.0.0 là địa chỉ LẮNG NGHE — phải đổi sang loopback khi gọi tới", () => {
+		// Đúng dạng đang nằm trong systemd override của máy này.
+		expect(normalizeOllamaBaseUrl("0.0.0.0:11434")).toBe("http://127.0.0.1:11434/v1");
+		expect(normalizeOllamaBaseUrl("http://0.0.0.0:11434")).toBe("http://127.0.0.1:11434/v1");
 	});
 });

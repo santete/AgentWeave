@@ -178,7 +178,21 @@ export class AgentLoop implements InnerHarnessProvider {
 
 			// The LLM response will be injected via the adapter pattern.
 			// For the MVP, we use a pluggable LLM caller interface.
-			const llmResult = await this.callLLM();
+			//
+			// Lỗi gọi LLM PHẢI kết thúc bằng reason "error". Bản trước nuốt lỗi và
+			// trả về kết quả rỗng, nên endpoint sai vẫn báo "completed" với 0 token —
+			// nhìn y hệt một câu trả lời rỗng hợp lệ.
+			let llmResult: LLMCallResult;
+			try {
+				llmResult = await this.callLLM();
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				this.state.status = "completed";
+				const usage = this.tokenCounter.getUsage();
+				yield this.makeEvent({ type: "error", error: msg, recoverable: false });
+				yield this.makeEvent({ type: "terminal", reason: "error", usage });
+				return { reason: "error", usage };
+			}
 
 			// Track usage
 			if (llmResult.usage) {
@@ -380,15 +394,12 @@ export class AgentLoop implements InnerHarnessProvider {
 			return this.llmCaller(this.messages.getMessages(), this.model);
 		}
 
-		// Default: try real Vercel AI SDK
-		try {
-			console.log("  [debug] Calling real LLM with model:", this.model);
-			return await this.callRealLLM();
-		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			console.error(`[AgentWeave] LLM call failed: ${msg}`);
-			return { text: "", toolCalls: [], stopReason: "end_turn", usage: undefined };
+		// Default: try real Vercel AI SDK. KHÔNG bắt lỗi ở đây — vòng lặp chính
+		// phải thấy được lỗi để kết thúc với reason "error".
+		if (process.env.AGENTWEAVE_DEBUG) {
+			console.error(`[AgentWeave:debug] goi LLM that voi model: ${this.model}`);
 		}
+		return await this.callRealLLM();
 	}
 
 	private async callRealLLM(): Promise<LLMCallResult> {
