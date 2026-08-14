@@ -68,16 +68,18 @@ export class MetricsCollector {
 
 		// M2: test pass rate from QA checks
 		const testChecks = qaResult?.checks.filter((c) => c.name === "test") ?? [];
+		// null chứ KHÔNG phải 1: không chạy check nào thì ta không biết gì cả,
+		// mà "không biết" khác hẳn "hoàn hảo".
 		const testPassRate = testChecks.length > 0
 			? testChecks.filter((c) => c.passed).length / testChecks.length
-			: 1;
+			: null;
 
 		// M3: scope accuracy
 		const expectedFiles = plan?.estimatedFiles ?? [];
 		const changedFiles = executionResult?.changedFiles ?? [];
 		const scopeAccuracy = changedFiles.length > 0 && expectedFiles.length > 0
 			? changedFiles.filter((f) => expectedFiles.includes(f)).length / changedFiles.length
-			: 1;
+			: null;
 
 		// M5: cost
 		const costUsd = executionResult?.usage.totalCost ?? 0;
@@ -91,7 +93,7 @@ export class MetricsCollector {
 		// M8: plan accuracy
 		const totalSteps = plan?.steps.length ?? 0;
 		const doneSteps = plan?.steps.filter((s) => s.done).length ?? 0;
-		const planAccuracy = totalSteps > 0 ? doneSteps / totalSteps : 1;
+		const planAccuracy = totalSteps > 0 ? doneSteps / totalSteps : null;
 
 		// M9: context utilization — null if not recorded
 		const contextUtilization = (this.recordings.get("contextUtilization") as number) ?? null;
@@ -126,15 +128,22 @@ export class MetricsCollector {
 		}
 
 		const deltas: Record<string, number> = {
-			m2_testPassRate: current.m2_testPassRate - baseline.m2_testPassRate,
-			m3_scopeAccuracy: current.m3_scopeAccuracy - baseline.m3_scopeAccuracy,
 			m4_retryCount: current.m4_retryCount - baseline.m4_retryCount,
 			m5_costUsd: current.m5_costUsd - baseline.m5_costUsd,
 			m6_timeToCompletionMs: current.m6_timeToCompletionMs - baseline.m6_timeToCompletionMs,
-			m8_planAccuracy: current.m8_planAccuracy - baseline.m8_planAccuracy,
 		};
 
-		// Only compute delta for nullable metrics when both sides have real values
+		// Chỉ tính chênh lệch khi CẢ HAI phía có số thật. So một số đo được với
+		// một số không đo được sẽ ra chênh lệch vô nghĩa nhưng trông rất thuyết phục.
+		if (current.m2_testPassRate != null && baseline.m2_testPassRate != null) {
+			deltas.m2_testPassRate = current.m2_testPassRate - baseline.m2_testPassRate;
+		}
+		if (current.m3_scopeAccuracy != null && baseline.m3_scopeAccuracy != null) {
+			deltas.m3_scopeAccuracy = current.m3_scopeAccuracy - baseline.m3_scopeAccuracy;
+		}
+		if (current.m8_planAccuracy != null && baseline.m8_planAccuracy != null) {
+			deltas.m8_planAccuracy = current.m8_planAccuracy - baseline.m8_planAccuracy;
+		}
 		if (current.m9_contextUtilization != null && baseline.m9_contextUtilization != null) {
 			deltas.m9_contextUtilization = current.m9_contextUtilization - baseline.m9_contextUtilization;
 		}

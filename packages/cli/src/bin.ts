@@ -14,6 +14,7 @@
 
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import { runCommand } from "./commands/run.js";
+import { chatCommand } from "./commands/chat.js";
 import { monitorCommand, monitorExportCommand, monitorServeCommand } from "./commands/monitor.js";
 import { sessionCommand } from "./commands/session.js";
 import { taskCommand } from "./commands/task.js";
@@ -479,6 +480,18 @@ async function main(): Promise<void> {
 			} else {
 				credentialsCommand({ action: "list" });
 			}
+			break;
+		}
+
+		case "chat": {
+			// REPL — giữ hội thoại qua nhiều lượt. Prompt là tuỳ chọn.
+			await chatCommand({
+				prompt: parsed.prompt || undefined,
+				model: parsed.model,
+				budget: parsed.budget,
+				maxTurns: parsed.maxTurns,
+				permissionMode: parsed.permissionMode,
+			});
 			break;
 		}
 

@@ -14,6 +14,26 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
 
 const DEFAULT_PRICING = { input: 3, output: 15 }; // Default to Sonnet pricing
 
+/** Model chạy cục bộ — không tốn tiền. */
+const MIEN_PHI = { input: 0, output: 0 };
+
+/**
+ * Model này có chạy cục bộ không?
+ *
+ * Vì sao cần: mặc định rơi về giá Sonnet ($3/$15) nên một phiên Ollama hoàn
+ * toàn miễn phí báo $0,1322. Không chỉ sai hiển thị — con số này nuôi luôn
+ * `--budget`, nên một lượt chạy cục bộ có thể bị cắt giữa chừng vì đã "tiêu"
+ * hết ngân sách tưởng tượng.
+ *
+ * Nhận theo tiền tố tường minh trước, rồi tới họ model cục bộ phổ biến.
+ */
+export function laModelCucBo(model: string): boolean {
+	const m = model.toLowerCase();
+	if (m.startsWith("ollama/") || m.startsWith("local/") || m.startsWith("lmstudio/")) return true;
+	if (process.env.AGENTWEAVE_DEFAULT_PROVIDER === "ollama") return true;
+	return /^(qwen|llama|mistral|mixtral|gemma|phi|deepseek|codellama|glm|granite|starcoder)/.test(m);
+}
+
 export class TokenCounter {
 	private usage: TokenUsage = createEmptyTokenUsage();
 
@@ -32,7 +52,7 @@ export class TokenCounter {
 	}
 
 	recalculateCost(model: string): void {
-		const pricing = MODEL_PRICING[model] ?? DEFAULT_PRICING;
+		const pricing = MODEL_PRICING[model] ?? (laModelCucBo(model) ? MIEN_PHI : DEFAULT_PRICING);
 		const inputCost =
 			((this.usage.inputTokens + this.usage.cacheCreationTokens) *
 				pricing.input) /
