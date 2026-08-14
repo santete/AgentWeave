@@ -31,6 +31,25 @@ export interface ToolContext {
 	onProgress?: (progress: unknown) => void;
 	/** Sandbox constraints for tool execution. */
 	sandbox?: SandboxConfig;
+	/**
+	 * Cô lập ở tầng NHÂN hệ điều hành cho tool chạy tiến trình.
+	 *
+	 * Khác `sandbox` ở trên: trường kia là chính sách đường dẫn, so khớp chuỗi
+	 * trong tham số tool nên luật viết sót là lọt. Trường này bọc lệnh bằng
+	 * bubblewrap/sandbox-exec — chặn được cả thứ không lường trước, kể cả khi
+	 * chính sách viết sai.
+	 *
+	 * Khai kiểu tối thiểu ở đây để `@agentweave/types` không phụ thuộc ngược
+	 * vào inner-harness.
+	 */
+	processSandbox?: ProcessSandboxBinding;
+}
+
+export interface ProcessSandboxBinding {
+	/** Định danh cơ chế: "bubblewrap" | "seatbelt" | "none". */
+	id: string;
+	/** Bọc argv theo chính sách đã gắn sẵn. Trả về argv mới, chưa chạy. */
+	wrap(argv: string[]): string[];
 }
 
 export interface SandboxConfig {

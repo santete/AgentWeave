@@ -90,7 +90,14 @@ export type InnerEventPayload =
 			isError: boolean;
 	  }
 	// Context
-	| { type: "context:compacted"; freedTokens: number }
+	// strategy/messagesRemoved tuỳ chọn để không phá bản dùng cũ, nhưng có thì
+	// nhật ký kiểm toán biết ngữ cảnh đã bị cắt theo cách nào.
+	| {
+			type: "context:compacted";
+			freedTokens: number;
+			strategy?: string;
+			messagesRemoved?: number;
+	  }
 	| { type: "context:usage"; usedTokens: number; maxTokens: number }
 	// Recovery
 	| { type: "recovery:retry"; reason: string; attempt: number }

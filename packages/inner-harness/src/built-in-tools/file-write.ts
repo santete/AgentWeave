@@ -11,6 +11,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { z } from "zod";
 import type { ToolDefinition } from "@agentweave/types";
+import { ghiNhanDaGhi, kiemTraTruocKhiGhi } from "../file-access-tracker";
 
 export const FileWriteTool: ToolDefinition<{ path: string; content: string }, string> = {
 	name: "FileWrite",
@@ -21,8 +22,11 @@ export const FileWriteTool: ToolDefinition<{ path: string; content: string }, st
 	}),
 	execute: async ({ path, content }, context) => {
 		const absPath = resolve(context.cwd, path);
+		// Đè lên file có sẵn mà chưa đọc = ghi mù. Tạo file mới thì không chặn.
+		await kiemTraTruocKhiGhi(context.sessionId, absPath, path);
 		await mkdir(dirname(absPath), { recursive: true });
 		await writeFile(absPath, content, "utf-8");
+		await ghiNhanDaGhi(context.sessionId, absPath);
 		return `Written ${content.length} bytes to ${path}`;
 	},
 	metadata: {

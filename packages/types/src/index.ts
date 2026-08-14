@@ -52,7 +52,13 @@ export type {
 } from "./decisions";
 
 // Tools
-export type { ToolDefinition, ToolContext, ToolResult, SandboxConfig } from "./tools";
+export type {
+	ToolDefinition,
+	ToolContext,
+	ToolResult,
+	SandboxConfig,
+	ProcessSandboxBinding,
+} from "./tools";
 
 // Hooks
 export type {

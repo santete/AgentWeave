@@ -57,6 +57,32 @@ export type {
 	ScopeScan,
 } from "./skills/index";
 
+// Quản lý ngữ cảnh — đo độ đầy và nén khi gần tràn
+export {
+	suyRaCuaSo,
+	capNhatDoDay,
+	canNen,
+	nenTinNhan,
+	nenManhTay,
+	CUA_SO_CUC_BO,
+	CUA_SO_DAM_MAY,
+	NGUONG_NEN,
+} from "./context-manager";
+export type { KetQuaNen } from "./context-manager";
+
+// Cứu tool-call model nhả ra dạng chữ
+export { cuuToolCall } from "./tool-call-recovery";
+export type { KetQuaCuu } from "./tool-call-recovery";
+
+// Theo dõi đọc/ghi file — chặn ghi đè mù
+export {
+	ghiNhanDaDoc,
+	ghiNhanDaGhi,
+	kiemTraTruocKhiGhi,
+	xoaDauVetPhien,
+	GhiDeMuError,
+} from "./file-access-tracker";
+
 // Standalone (no control-plane needed)
 export { createNoopControlPlane } from "./noop-control-plane";
 
@@ -108,3 +134,5 @@ export {
 	SandboxUnavailableError,
 } from "./sandbox";
 export type { Sandbox, SandboxCapabilities, SandboxPolicy } from "./sandbox";
+export { taoRangBuocSandbox } from "./sandbox/binding";
+export type { TuyChonCoLap } from "./sandbox/binding";

@@ -16,12 +16,13 @@
  * For standalone usage without governance, consider restricting tools passed to AgentLoop.
  */
 
-import { exec } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import type { ToolDefinition } from "@agentweave/types";
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export const BashTool: ToolDefinition<{ command: string; timeout?: number }, string> = {
 	name: "Bash",
@@ -31,13 +32,25 @@ export const BashTool: ToolDefinition<{ command: string; timeout?: number }, str
 		timeout: z.number().positive().optional().describe("Timeout in ms (default 120000)"),
 	}),
 	execute: async ({ command, timeout }, context) => {
+		const chung = {
+			cwd: context.cwd,
+			timeout: timeout ?? 120_000,
+			signal: context.signal,
+		};
+
+		// Có sandbox tầng nhân thì KHÔNG dùng shell của máy chủ nữa: bọc argv
+		// rồi chạy qua execFile. Đây là ranh giới cứng, chặn được cả lệnh mà
+		// permission-engine viết sót luật.
+		const chay = context.processSandbox
+			? () => {
+					const argv = context.processSandbox!.wrap(["/bin/sh", "-c", command]);
+					return execFileAsync(argv[0]!, argv.slice(1), chung);
+				}
+			: () => execAsync(command, chung);
+
 		try {
-			const { stdout, stderr } = await execAsync(command, {
-				cwd: context.cwd,
-				timeout: timeout ?? 120_000,
-				signal: context.signal,
-			});
-			return format(stdout, stderr, 0, false);
+			const { stdout, stderr } = await chay();
+			return format(String(stdout), String(stderr), 0, false);
 		} catch (err) {
 			// `exec` NÉM LỖI khi lệnh trả mã thoát ≠ 0 — nhưng với agent lập trình
 			// thì đó chính là lúc output quan trọng nhất: `npm test`, `pytest`,

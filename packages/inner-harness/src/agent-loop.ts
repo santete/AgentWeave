@@ -32,6 +32,7 @@ import type {
 	InjectableMessage,
 	Message,
 	ToolDecision,
+	ProcessSandboxBinding,
 } from "@agentweave/types";
 import { createEmptyTokenUsage, createEmptyContextUsage } from "@agentweave/types";
 import type { ContextUsage, TokenUsage } from "@agentweave/types";
@@ -43,6 +44,7 @@ import { MessageStore } from "./message-store";
 import { TokenCounter } from "./token-counter";
 import { createNoopControlPlane } from "./noop-control-plane";
 import { cuuToolCall } from "./tool-call-recovery";
+import { canNen, capNhatDoDay, mucNen, nenManhTay, suyRaCuaSo } from "./context-manager";
 
 export interface AgentLoopConfig {
 	/** Control plane for governance integration. If omitted, runs standalone (all tools allowed, no output filtering). */
@@ -53,6 +55,20 @@ export interface AgentLoopConfig {
 	systemPrompt?: string;
 	maxTurns?: number;
 	thinkingEnabled?: boolean;
+	/**
+	 * Cửa sổ ngữ cảnh của model, tính bằng token. Không khai thì suy ra: model
+	 * cục bộ lấy theo OLLAMA_CONTEXT_LENGTH (mặc định 65.536), model đám mây
+	 * 200.000. Khai sai làm cơ chế nén kích hoạt nhầm lúc.
+	 */
+	contextWindow?: number;
+	/** Tự nén khi ngữ cảnh đầy tới ngưỡng. Mặc định bật. */
+	autoCompact?: boolean;
+	/**
+	 * Cô lập tool chạy tiến trình bằng sandbox tầng nhân (bubblewrap/seatbelt).
+	 * Không khai thì KHÔNG cô lập — giữ nguyên hành vi cũ để không phá bản dùng
+	 * sẵn có; nơi nào cần thì bật tường minh.
+	 */
+	processSandbox?: ProcessSandboxBinding;
 }
 
 export class AgentLoop implements InnerHarnessProvider {
@@ -72,6 +88,12 @@ export class AgentLoop implements InnerHarnessProvider {
 	private abortController: AbortController | null = null;
 	private sessionId = "";
 	private agentId: string;
+	private autoCompact = true;
+	private processSandbox?: ProcessSandboxBinding;
+	/** Đặt bởi lệnh force_compact — nén ở đầu lượt kế tiếp. */
+	private yeuCauNen = false;
+	/** Mức nén hiện tại. Tăng khi nén xong vẫn chưa đủ chỗ. */
+	private mucNenHienTai = 0;
 
 	private state: InnerState = {
 		status: "idle",
@@ -91,8 +113,15 @@ export class AgentLoop implements InnerHarnessProvider {
 		this.systemPrompt = config.systemPrompt ?? "";
 		this.maxTurns = config.maxTurns ?? 100;
 		this.thinkingEnabled = config.thinkingEnabled ?? true;
+		this.autoCompact = config.autoCompact ?? true;
+		this.processSandbox = config.processSandbox;
 		this.agentId = `agent_${nanoid(8)}`;
 		this.state.model = this.model;
+		// Cửa sổ ngữ cảnh THẬT của model. Mặc định cũ là 200.000 — cửa sổ của
+		// Claude — nên với model cục bộ 64K thì số đo sai gấp ba lần.
+		this.state.contextUsage = createEmptyContextUsage(
+			suyRaCuaSo(this.model, config.contextWindow),
+		);
 
 		if (config.tools) {
 			for (const tool of config.tools) {
@@ -168,6 +197,37 @@ export class AgentLoop implements InnerHarnessProvider {
 
 			yield this.makeEvent({ type: "turn:start", turnIndex: this.state.turnIndex });
 
+			// ── Nén ngữ cảnh TRƯỚC khi gọi LLM ──
+			// Phải nén trước chứ không phải sau: gọi khi đã tràn thì Ollama lặng
+			// lẽ cắt phần đầu hội thoại, agent quên đề bài mà không báo gì.
+			if (this.yeuCauNen || (this.autoCompact && canNen(this.state.contextUsage))) {
+				const truoc = this.messages.getMessageCount();
+				// Leo thang: nén ở mức hiện tại. Nếu lượt trước đã nén mà vẫn chật
+				// thì mức tăng lên, giữ ít lượt hơn và cắt tool result ngắn hơn.
+				const muc = mucNen(this.mucNenHienTai);
+				const kq = nenManhTay(this.messages.getMessages(), muc.giuGanNhat, muc.tranToolResult);
+				this.yeuCauNen = false;
+				this.mucNenHienTai++;
+
+				if (kq.daNen) {
+					this.messages.setMessages(kq.messages);
+					this.state.contextUsage = {
+						...this.state.contextUsage,
+						compactionCount: this.state.contextUsage.compactionCount + 1,
+					};
+					this.state.messageCount = this.messages.getMessageCount();
+
+					yield this.makeEvent({
+						type: "context:compacted",
+						// ~4 ký tự một token — ước lượng thô, đủ để người vận hành
+						// thấy quy mô. Số chính xác sẽ có ở lượt gọi LLM kế tiếp.
+						freedTokens: Math.round(kq.kyTuBoDi / 4),
+						strategy: kq.cach,
+						messagesRemoved: truoc - kq.messages.length,
+					});
+				}
+			}
+
 			// ── LLM Call ──
 			// Provider được phân giải qua ProviderRegistry (xem provider-registry.ts).
 			// Có thể tiêm llmCaller để test tất định mà không gọi mạng.
@@ -203,6 +263,22 @@ export class AgentLoop implements InnerHarnessProvider {
 
 			this.state.usage = this.tokenCounter.getUsage();
 			this.state.messageCount = this.messages.getMessageCount();
+
+			// Độ đầy ngữ cảnh THẬT: số token đầu vào provider vừa báo chính là
+			// lượng ngữ cảnh đang dùng. Trước đây trường này luôn bằng 0, nên
+			// không có tín hiệu nào để biết khi nào cần nén.
+			this.state.contextUsage = capNhatDoDay(
+				this.state.contextUsage,
+				llmResult.usage?.inputTokens,
+			);
+			// Đã xuống dưới ngưỡng thì hạ mức nén về mặc định, để lượt sau không
+			// bị cắt gắt hơn mức cần thiết.
+			if (!canNen(this.state.contextUsage)) this.mucNenHienTai = 0;
+			yield this.makeEvent({
+				type: "context:usage",
+				usedTokens: this.state.contextUsage.usedTokens,
+				maxTokens: this.state.contextUsage.maxTokens,
+			});
 
 			yield this.makeEvent({
 				type: "llm:stream_end",
@@ -279,6 +355,7 @@ export class AgentLoop implements InnerHarnessProvider {
 				agentId: this.agentId,
 				cwd: process.cwd(),
 				signal: this.abortController.signal,
+				processSandbox: this.processSandbox,
 			});
 
 			const permittedCalls: ToolCall[] = [];
@@ -614,6 +691,13 @@ export class AgentLoop implements InnerHarnessProvider {
 					return { accepted: true };
 				case "inject":
 					this.injectMessage(cmd.message);
+					return { accepted: true };
+				case "force_compact":
+					// Lệnh này đã có trong kiểu dữ liệu từ lâu nhưng KHÔNG có nhánh
+					// xử lý, nên gọi vào chỉ nhận "Unknown command". Nén ngay giữa
+					// lượt sẽ đụng danh sách tin nhắn đang dùng, nên đặt cờ và nén
+					// ở đầu lượt kế tiếp.
+					this.yeuCauNen = true;
 					return { accepted: true };
 				default:
 					return { accepted: false, reason: `Unknown command: ${cmd.type}` };
