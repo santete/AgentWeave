@@ -151,7 +151,20 @@ export class OllamaAdapter implements InnerHarnessProvider {
             }
             
             if (data.done) {
-              // End of response
+              // Chunk cuối của Ollama mang số liệu token thật.
+              // Trước đây bị bỏ qua nên usage luôn bằng 0 — không theo dõi
+              // được chi phí, trong khi ngân sách là tính năng cốt lõi.
+              const inTok = typeof data.prompt_eval_count === "number" ? data.prompt_eval_count : 0;
+              const outTok = typeof data.eval_count === "number" ? data.eval_count : 0;
+              this.state.usage = {
+                ...this.state.usage,
+                inputTokens: inTok,
+                outputTokens: outTok,
+              };
+              this.state.contextUsage = {
+                ...this.state.contextUsage,
+                usedTokens: inTok + outTok,
+              };
               break;
             }
           } catch (err) {
