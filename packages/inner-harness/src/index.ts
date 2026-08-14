@@ -50,3 +50,16 @@ export {
 	OutputStandardizerModule,
 } from "./sdlc/index";
 export type { SDLCOrchestratorConfig, CreateSDLCPipelineOptions } from "./sdlc/index";
+
+// Provider Registry — điểm mở rộng nhà cung cấp model
+export {
+	ProviderRegistry,
+	UnknownProviderError,
+	createDefaultRegistry,
+	ollamaProvider,
+	openrouterProvider,
+	googleProvider,
+	openaiProvider,
+	anthropicProvider,
+} from "./provider-registry";
+export type { ModelProvider, ResolvedModel } from "./provider-registry";

@@ -36,6 +36,7 @@ import type {
 import { createEmptyTokenUsage, createEmptyContextUsage } from "@agentweave/types";
 import type { ContextUsage, TokenUsage } from "@agentweave/types";
 import { ToolRegistry } from "./tool-registry";
+import { createDefaultRegistry, type ModelProvider, type ProviderRegistry } from "./provider-registry";
 import { ToolExecutor } from "./tool-executor";
 import type { ToolCall } from "./tool-executor";
 import { MessageStore } from "./message-store";
@@ -62,6 +63,7 @@ export class AgentLoop implements InnerHarnessProvider {
 	private thinkingEnabled: boolean;
 
 	private registry = new ToolRegistry();
+	private providers: ProviderRegistry = createDefaultRegistry();
 	private messages = new MessageStore();
 	private tokenCounter = new TokenCounter();
 	private abortController: AbortController | null = null;
@@ -163,9 +165,9 @@ export class AgentLoop implements InnerHarnessProvider {
 
 			yield this.makeEvent({ type: "turn:start", turnIndex: this.state.turnIndex });
 
-			// ── LLM Call (simulated — real Vercel AI SDK integration later) ──
-			// For now, yield request_start event. Actual streamText() call
-			// will be wired when providers are configured.
+			// ── LLM Call ──
+			// Provider được phân giải qua ProviderRegistry (xem provider-registry.ts).
+			// Có thể tiêm llmCaller để test tất định mà không gọi mạng.
 			yield this.makeEvent({
 				type: "llm:request_start",
 				model: this.model,
@@ -443,33 +445,19 @@ export class AgentLoop implements InnerHarnessProvider {
 	 * Supports: gemini-* → @ai-sdk/google, gpt-* → @ai-sdk/openai, default → @ai-sdk/anthropic
 	 */
 	private async resolveModel(): Promise<Parameters<typeof import("ai").generateText>[0]["model"]> {
-		const m = this.model;
+		return (await this.providers.resolve(this.model)) as Parameters<
+			typeof import("ai").generateText
+		>[0]["model"];
+	}
 
-		// OpenRouter: use if OPENROUTER_API_KEY is set (any model name)
-		if (process.env.OPENROUTER_API_KEY) {
-			const { createOpenAI } = await import("@ai-sdk/openai");
-			const openrouter = createOpenAI({
-				baseURL: "https://openrouter.ai/api/v1",
-				apiKey: process.env.OPENROUTER_API_KEY,
-				headers: {
-					"HTTP-Referer": "https://github.com/santete/AgentWeave",
-					"X-Title": "AgentWeave",
-				},
-			});
-			return openrouter(m);
-		}
+	/** Đăng ký provider tuỳ chỉnh (vd: endpoint nội bộ của công ty). */
+	registerProvider(provider: ModelProvider): void {
+		this.providers.register(provider);
+	}
 
-		if (m.startsWith("gemini")) {
-			const { google } = await import("@ai-sdk/google");
-			return google(m);
-		}
-		if (m.startsWith("gpt") || m.startsWith("o1") || m.startsWith("o3") || m.startsWith("o4")) {
-			const { openai } = await import("@ai-sdk/openai");
-			return openai(m);
-		}
-		// Default: Anthropic (claude-*)
-		const { anthropic } = await import("@ai-sdk/anthropic");
-		return anthropic(m);
+	/** Provider nào sẽ xử lý model hiện tại — dùng để chẩn đoán. */
+	whichProvider(): string | null {
+		return this.providers.whichProvider(this.model);
 	}
 
 	// ─── InnerHarnessProvider interface ──────────────────────────

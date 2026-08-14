@@ -13,3 +13,7 @@ export type { AiderAdapterConfig } from "./aider-adapter";
 // Cursor Adapter (preset)
 export { createCursorAdapter, buildCursorAdapterConfig } from "./cursor-adapter";
 export type { CursorAdapterConfig } from "./cursor-adapter";
+
+// Ollama Adapter (preset)
+export { OllamaAdapter } from "./ollama-adapter";
+export type { OllamaAdapterConfig } from "./ollama-adapter";
