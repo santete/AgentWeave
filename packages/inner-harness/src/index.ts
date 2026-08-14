@@ -63,3 +63,14 @@ export {
 	anthropicProvider,
 } from "./provider-registry";
 export type { ModelProvider, ResolvedModel } from "./provider-registry";
+
+// Sandbox — cô lập tool có tác dụng phụ, đa nền tảng
+export {
+	detectSandbox,
+	registerSandbox,
+	BubblewrapSandbox,
+	SeatbeltSandbox,
+	NoopSandbox,
+	SandboxUnavailableError,
+} from "./sandbox";
+export type { Sandbox, SandboxCapabilities, SandboxPolicy } from "./sandbox";
