@@ -42,6 +42,7 @@ import type { ToolCall } from "./tool-executor";
 import { MessageStore } from "./message-store";
 import { TokenCounter } from "./token-counter";
 import { createNoopControlPlane } from "./noop-control-plane";
+import { cuuToolCall } from "./tool-call-recovery";
 
 export interface AgentLoopConfig {
 	/** Control plane for governance integration. If omitted, runs standalone (all tools allowed, no output filtering). */
@@ -210,7 +211,24 @@ export class AgentLoop implements InnerHarnessProvider {
 			});
 
 			// ── Check for tool calls ──
-			const toolCalls = llmResult.toolCalls;
+			let toolCalls = llmResult.toolCalls;
+
+			// Model cục bộ đôi khi nhả tool-call ra dạng CHỮ (khuôn Hermes XML
+			// hoặc JSON) thay vì tool call thật. Không cứu thì vòng lặp tưởng
+			// model đã trả lời xong và kết thúc "completed" mà chưa làm gì.
+			if ((!toolCalls || toolCalls.length === 0) && llmResult.text) {
+				const cuu = cuuToolCall(llmResult.text, this.registry.names());
+				if (cuu.toolCalls.length > 0) {
+					toolCalls = cuu.toolCalls;
+					llmResult.text = cuu.conLai;
+					// Phát sự kiện để việc cứu nằm trong nhật ký kiểm toán.
+					yield this.makeEvent({
+						type: "recovery:retry",
+						reason: `tool-call dang chu (khuon ${cuu.khuon}) — da cuu ${cuu.toolCalls.length} loi goi`,
+						attempt: this.state.turnIndex,
+					});
+				}
+			}
 
 			if (!toolCalls || toolCalls.length === 0) {
 				// Terminal: LLM did not request any tools
