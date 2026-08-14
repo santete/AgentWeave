@@ -23,6 +23,40 @@ export {
 	GlobTool,
 } from "./built-in-tools/index";
 
+// Skill — tri thức quy trình nạp theo nhu cầu
+export {
+	SkillRegistry,
+	UnknownSkillError,
+	installSkills,
+	summarizeSkillReport,
+	renderSkillIndex,
+	projectSkillsDir,
+	createLoadSkillTool,
+	SkillManifestSchema,
+	LOAD_SKILL_TOOL_NAME,
+	SKILL_INDEX_SECTION,
+	SKILL_NAME_PATTERN,
+	SKILL_MANIFEST_FILE,
+	SKILL_CONTENT_FILE,
+	DEFAULT_MAX_SKILLS_PER_SCOPE,
+	DEFAULT_MAX_CONTENT_BYTES,
+	WHEN_TO_USE_SOFT_LIMIT,
+} from "./skills/index";
+export type {
+	Skill,
+	SkillManifest,
+	SkillScope,
+	SkillProblem,
+	SkillProblemKind,
+	SkillDiscoveryReport,
+	SkillRegistryOptions,
+	SkillHost,
+	InstallSkillsOptions,
+	InstallSkillsResult,
+	ShadowedSkill,
+	ScopeScan,
+} from "./skills/index";
+
 // Standalone (no control-plane needed)
 export { createNoopControlPlane } from "./noop-control-plane";
 

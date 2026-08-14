@@ -59,6 +59,8 @@ export class AgentLoop implements InnerHarnessProvider {
 	private model: string;
 	private fallbackModel?: string;
 	private systemPrompt: string;
+	/** Các mục prompt đặt qua setSystemPromptSection(), giữ theo tên để không lặp. */
+	private promptSections = new Map<string, string>();
 	private maxTurns: number;
 	private thinkingEnabled: boolean;
 
@@ -404,8 +406,14 @@ export class AgentLoop implements InnerHarnessProvider {
 			});
 		}
 
+		const system = this.getSystemPrompt();
+
 		const result = await generateText({
 			model: llmModel,
+			// Trước đây systemPrompt được lưu nhưng không bao giờ gửi đi: mọi thứ
+			// đặt qua setSystemPromptSection() (kể cả chỉ mục skill) đều vô hình
+			// với model mà không có dấu hiệu nào báo sai.
+			system: system.trim() === "" ? undefined : system,
 			messages: this.messages.getMessages().map((m) => ({
 				role: m.role as "user" | "assistant",
 				content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
@@ -502,16 +510,32 @@ export class AgentLoop implements InnerHarnessProvider {
 		});
 	}
 
+	/**
+	 * Đặt/xoá một mục có tên trong system prompt.
+	 *
+	 * Giữ theo Map thay vì nối chuỗi rồi cắt bằng regex, vì bản cũ có hai lỗi:
+	 * đặt lại cùng một tên thì mục bị lặp, và nội dung chứa "[" làm regex xoá
+	 * cắt nhầm chỗ. Chỉ mục skill dính cả hai.
+	 */
 	setSystemPromptSection(name: string, content: string | null): void {
-		const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 		if (content === null) {
-			this.systemPrompt = this.systemPrompt.replace(
-				new RegExp(`\\[${escaped}\\][\\s\\S]*?(?=\\[|$)`),
-				"",
-			);
+			this.promptSections.delete(name);
 		} else {
-			this.systemPrompt += `\n[${name}]\n${content}\n`;
+			this.promptSections.set(name, content);
 		}
+	}
+
+	/**
+	 * System prompt thật sự gửi tới model — prompt gốc cộng các mục đã đặt.
+	 * Công khai để bộ tự kiểm tra xác nhận được chỉ mục skill đã vào prompt,
+	 * thay vì tin là đã vào.
+	 */
+	getSystemPrompt(): string {
+		let out = this.systemPrompt;
+		for (const [name, content] of this.promptSections) {
+			out += `\n[${name}]\n${content}\n`;
+		}
+		return out;
 	}
 
 	setModel(model: string): void {
