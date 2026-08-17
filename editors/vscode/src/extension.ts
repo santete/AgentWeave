@@ -156,6 +156,9 @@ function dungHtml(webview: vscode.Webview, goc: vscode.Uri): string {
 	const js = webview.asWebviewUri(vscode.Uri.joinPath(goc, "media", "chat.js"));
 	const css = webview.asWebviewUri(vscode.Uri.joinPath(goc, "media", "chat.css"));
 	const nonce = Math.random().toString(36).slice(2);
+	// Cỡ chữ chỉnh được: khung chat là chỗ để ĐỌC, không phải giao diện dày đặc
+	// như phần còn lại của editor, nên 13px mặc định là quá nhỏ.
+	const coChu = vscode.workspace.getConfiguration("agentweave").get<number>("fontSize", 14);
 
 	return `<!DOCTYPE html>
 <html lang="vi">
@@ -164,10 +167,16 @@ function dungHtml(webview: vscode.Webview, goc: vscode.Uri): string {
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
 <link href="${css}" rel="stylesheet">
+<style>:root { --aw-co-chu: ${Math.min(Math.max(coChu, 10), 24)}px; }</style>
 </head>
 <body>
   <div id="tin-nhan"></div>
   <div id="dang-cho-quyen"></div>
+  <div id="dang-chay">
+    <span class="cham-nhay"></span>
+    <span class="viec" id="viec-hien-tai">đang nghĩ…</span>
+    <span class="dong-ho" id="dong-ho">0.0s</span>
+  </div>
   <div id="thanh-nhap">
     <textarea id="o-nhap" rows="3" placeholder="Hỏi gì đó… dùng @đường-dẫn để chèn file"></textarea>
     <div id="nut">

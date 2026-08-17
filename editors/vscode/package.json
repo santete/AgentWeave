@@ -2,7 +2,7 @@
   "name": "agentweave-vscode",
   "displayName": "AgentWeave",
   "description": "Agent lập trình chạy hoàn toàn cục bộ, có quản trị quyền và kiểm toán",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "agentweave",
   "license": "MIT",
   "engines": { "vscode": "^1.90.0" },
@@ -51,6 +51,13 @@
           "enum": ["default", "strict", "permissive", "plan"],
           "default": "default",
           "description": "default: hỏi trước khi ghi file · permissive: không hỏi · strict: siết chặt"
+        },
+        "agentweave.fontSize": {
+          "type": "number",
+          "default": 14,
+          "minimum": 10,
+          "maximum": 24,
+          "description": "Cỡ chữ khung chat (px). Mặc định 14 — lớn hơn cỡ giao diện VS Code vì đây là chỗ để đọc."
         },
         "agentweave.ollamaHost": {
           "type": "string",

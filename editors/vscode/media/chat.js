@@ -8,7 +8,79 @@ const oQuyen = document.getElementById("dang-cho-quyen");
 const oNhap = document.getElementById("o-nhap");
 
 let khoiDangChay = null; // khối chữ model đang sinh
+let chuDangChay = ""; // chữ thô, để dựng lại markdown khi đoạn kết thúc
 let dangBan = false;
+let dongHo = null;
+let lucBatDau = 0;
+
+const oDangChay = document.getElementById("dang-chay");
+const oViec = document.getElementById("viec-hien-tai");
+const oDongHo = document.getElementById("dong-ho");
+
+/** Thanh "đang chạy" kèm đồng hồ — dấu hiệu agent còn sống chứ chưa dừng. */
+function batDauChay(viec) {
+  lucBatDau = Date.now();
+  oViec.textContent = viec;
+  oDangChay.classList.add("hien");
+  clearInterval(dongHo);
+  dongHo = setInterval(() => {
+    oDongHo.textContent = `${((Date.now() - lucBatDau) / 1000).toFixed(1)}s`;
+  }, 100);
+}
+function datViec(viec) {
+  if (oDangChay.classList.contains("hien")) oViec.textContent = viec;
+}
+function ngungChay() {
+  clearInterval(dongHo);
+  dongHo = null;
+  oDangChay.classList.remove("hien");
+}
+
+/**
+ * Dựng markdown ở mức tối thiểu: khối ```mã```, `mã trong dòng`, **đậm**.
+ * CỐ Ý không dùng innerHTML — chữ do model sinh ra, nhét thẳng vào HTML là mở
+ * cửa cho chèn mã. Mọi thứ dựng bằng createElement + textContent.
+ */
+function veChu(khung, chu) {
+  khung.textContent = "";
+  chu.split(/```/).forEach((doan, i) => {
+    if (i % 2 === 1) {
+      const pre = document.createElement("pre");
+      pre.className = "ma";
+      const dong = doan.split("\n");
+      if (dong.length > 1 && /^[a-zA-Z0-9+#-]{0,15}$/.test(dong[0].trim())) dong.shift();
+      pre.textContent = dong.join("\n").replace(/^\n+|\n+$/g, "");
+      khung.appendChild(pre);
+      return;
+    }
+    for (const mau of doan.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/)) {
+      if (!mau) continue;
+      if (mau.startsWith("`") && mau.endsWith("`") && mau.length > 2) {
+        const c = document.createElement("code");
+        c.className = "trong-dong";
+        c.textContent = mau.slice(1, -1);
+        khung.appendChild(c);
+      } else if (mau.startsWith("**") && mau.endsWith("**") && mau.length > 4) {
+        const b = document.createElement("strong");
+        b.textContent = mau.slice(2, -2);
+        khung.appendChild(b);
+      } else {
+        khung.appendChild(document.createTextNode(mau));
+      }
+    }
+  });
+}
+
+/** Một ô số đo. `muc` = "nhanh" | "cham" | "" để tô màu. */
+function oSo(nhan, giaTri, muc) {
+  const d = document.createElement("span");
+  d.className = `o ${muc || ""}`.trim();
+  d.textContent = `${nhan} `;
+  const b = document.createElement("b");
+  b.textContent = giaTri;
+  d.appendChild(b);
+  return d;
+}
 
 function themKhoi(lop, noiDung) {
   const d = document.createElement("div");
@@ -84,17 +156,33 @@ window.addEventListener("message", (ev) => {
       break;
 
     case "delta":
-      // Chữ chảy tới đâu hiện tới đó — đây là khác biệt lớn nhất so với việc
-      // ngồi nhìn màn hình trống chờ model nghĩ xong.
-      if (!khoiDangChay) khoiDangChay = themKhoi("tra-loi", "");
-      khoiDangChay.textContent += e.text;
+      // Trong lúc chảy để nguyên văn cho nhanh; dựng markdown khi đoạn kết
+      // thúc, vì dựng lại ở mỗi mẩu thì giật.
+      if (!khoiDangChay) {
+        khoiDangChay = themKhoi("tra-loi", "");
+        chuDangChay = "";
+      }
+      chuDangChay += e.text;
+      khoiDangChay.textContent = chuDangChay;
+      datViec("đang trả lời");
       oTinNhan.scrollTop = oTinNhan.scrollHeight;
       break;
 
+    case "first_token":
+      datViec("đang trả lời");
+      break;
+
     case "tool": {
+      if (khoiDangChay && chuDangChay) veChu(khoiDangChay, chuDangChay);
       khoiDangChay = null;
+      chuDangChay = "";
+      datViec(`đang chạy ${e.name}`);
       const d = themKhoi("tool");
-      d.innerHTML = `<span class="nhan">⚡ ${e.name}</span>`;
+      // KHÔNG innerHTML: e.name tới từ model.
+      const nhan = document.createElement("span");
+      nhan.className = "nhan";
+      nhan.textContent = `⚡ ${e.name}`;
+      d.appendChild(nhan);
       const chiTiet = document.createElement("code");
       chiTiet.textContent = JSON.stringify(e.input).slice(0, 200);
       d.appendChild(chiTiet);
@@ -116,7 +204,10 @@ window.addEventListener("message", (ev) => {
       break;
 
     case "permission_request": {
+      if (khoiDangChay && chuDangChay) veChu(khoiDangChay, chuDangChay);
       khoiDangChay = null;
+      chuDangChay = "";
+      datViec(`đang chờ bạn duyệt ${e.tool}`);
       oQuyen.innerHTML = "";
       const the = document.createElement("div");
       the.className = "the-quyen";
@@ -194,8 +285,33 @@ window.addEventListener("message", (ev) => {
       break;
 
     case "turn_end": {
+      if (khoiDangChay && chuDangChay) veChu(khoiDangChay, chuDangChay);
       khoiDangChay = null;
+      chuDangChay = "";
+      ngungChay();
       datBan(false);
+
+      // Số đo hiệu năng THẬT. Với model cục bộ đây không phải trang trí: tok/s
+      // tụt theo độ dài ngữ cảnh, người dùng cần thấy để biết khi nào nên xoá
+      // hội thoại hoặc đổi model.
+      if (e.perf) {
+        const p = e.perf;
+        const bang = themKhoi("so-do");
+        bang.textContent = "";
+        if (p.tokPerSec != null) {
+          bang.appendChild(oSo("⚡", `${p.tokPerSec.toFixed(1)} tok/s`, p.tokPerSec >= 30 ? "nhanh" : "cham"));
+        }
+        if (p.ttftMs != null) {
+          bang.appendChild(oSo("⏱ chờ", `${(p.ttftMs / 1000).toFixed(1)}s`, p.ttftMs > 5000 ? "cham" : ""));
+        }
+        bang.appendChild(oSo("⌛ tổng", `${(p.totalMs / 1000).toFixed(1)}s`));
+        if (p.toolCalls) bang.appendChild(oSo("🔧", `${p.toolCalls} tool`));
+        bang.appendChild(oSo("↕", `${e.usage.inputTokens.toLocaleString()}/${e.usage.outputTokens.toLocaleString()} tok`));
+        if (e.context && e.context.maxTokens) {
+          const pct = Math.round((e.context.usedTokens / e.context.maxTokens) * 100);
+          bang.appendChild(oSo("▦ ngữ cảnh", `${pct}%`, pct >= 80 ? "cham" : ""));
+        }
+      }
 
       // Cảnh báo dựa trên QUAN SÁT, không dựa vào lời model tự nhận. Model 30B
       // hay tuyên bố "các test đều pass" mà chưa chạy lệnh nào.
@@ -221,10 +337,6 @@ window.addEventListener("message", (ev) => {
         themKhoi("he-thong-mo", `✓ đã sửa ${e.edited.length} file và có chạy kiểm tra`);
       }
 
-      themKhoi(
-        "he-thong-mo",
-        `${e.usage.inputTokens.toLocaleString()} vào / ${e.usage.outputTokens.toLocaleString()} ra`,
-      );
       break;
     }
 
@@ -235,6 +347,8 @@ window.addEventListener("message", (ev) => {
 
     case "error":
       khoiDangChay = null;
+      chuDangChay = "";
+      ngungChay();
       datBan(false);
       themKhoi("loi", `✗ ${e.message}`);
       break;
@@ -247,13 +361,16 @@ function gui() {
   themKhoi("cau-hoi", t);
   oNhap.value = "";
   khoiDangChay = null;
+  chuDangChay = "";
   datBan(true);
+  batDauChay("đang nghĩ…");
   vscode.postMessage({ type: "hoi", text: t });
 }
 
 document.getElementById("gui").onclick = gui;
 document.getElementById("huy").onclick = () => {
   vscode.postMessage({ type: "huy" });
+  ngungChay();
   datBan(false);
 };
 document.getElementById("xoa").onclick = () => vscode.postMessage({ type: "xoa" });

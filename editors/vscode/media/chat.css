@@ -1,9 +1,17 @@
-/* Dùng biến màu của VS Code để tự hợp theme sáng/tối, không tự chế bảng màu. */
+/* Dùng biến màu của VS Code để tự hợp theme sáng/tối, không tự chế bảng màu.
+   Cỡ chữ thì KHÔNG theo VS Code: --vscode-font-size thường 13px, hợp cho giao
+   diện dày đặc của editor nhưng quá nhỏ để đọc một đoạn văn dài. Khung chat là
+   chỗ để ĐỌC, nên đặt riêng và cho chỉnh qua Settings. */
+:root {
+	--aw-co-chu: 14px;
+}
+
 body {
 	margin: 0;
 	padding: 0;
 	font-family: var(--vscode-font-family);
-	font-size: var(--vscode-font-size);
+	font-size: var(--aw-co-chu);
+	line-height: 1.65;
 	color: var(--vscode-foreground);
 	background: var(--vscode-editor-background);
 	display: flex;
@@ -14,7 +22,7 @@ body {
 #tin-nhan {
 	flex: 1;
 	overflow-y: auto;
-	padding: 12px;
+	padding: 16px 18px;
 }
 
 .khoi {
@@ -25,14 +33,121 @@ body {
 }
 
 .cau-hoi {
-	padding: 8px 10px;
+	padding: 10px 14px;
+	margin: 18px 0 10px;
 	background: var(--vscode-input-background);
 	border-left: 3px solid var(--vscode-focusBorder);
-	border-radius: 3px;
+	border-radius: 0 6px 6px 0;
+	font-weight: 500;
 }
 
 .tra-loi {
 	padding: 2px 0;
+}
+/* Model xuất markdown — dựng lại cho dễ đọc thay vì để nguyên dấu ``` */
+pre.ma {
+	font-family: var(--vscode-editor-font-family);
+	font-size: calc(var(--aw-co-chu) - 1px);
+	background: var(--vscode-textCodeBlock-background);
+	border: 1px solid var(--vscode-panel-border);
+	border-radius: 5px;
+	padding: 10px 12px;
+	margin: 10px 0;
+	overflow-x: auto;
+	line-height: 1.5;
+	white-space: pre;
+}
+code.trong-dong {
+	font-family: var(--vscode-editor-font-family);
+	font-size: calc(var(--aw-co-chu) - 1px);
+	background: var(--vscode-textCodeBlock-background);
+	border-radius: 3px;
+	padding: 1px 5px;
+}
+.tra-loi strong {
+	font-weight: 600;
+}
+
+/* ── Bảng số đo hiệu năng ──
+   Với model cục bộ, tok/s và thời gian chờ token đầu quyết định "dùng được hay
+   không" — đáng hiện rõ chứ không lẫn vào chữ mờ. */
+.so-do {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 10px 0 4px;
+	font-size: calc(var(--aw-co-chu) - 2.5px);
+	font-family: var(--vscode-editor-font-family);
+}
+.so-do .o {
+	padding: 3px 9px;
+	border-radius: 10px;
+	background: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	white-space: nowrap;
+}
+.so-do .o b {
+	font-weight: 700;
+}
+.so-do .o.nhanh {
+	background: var(--vscode-charts-green);
+	color: var(--vscode-editor-background);
+}
+.so-do .o.cham {
+	background: var(--vscode-editorWarning-foreground);
+	color: var(--vscode-editor-background);
+}
+
+/* ── Thanh báo đang chạy ──
+   Không có nó thì agent im ru, người dùng không phân biệt được "đang nghĩ" với
+   "đã treo". Đây là khác biệt giữa chờ được và tưởng hỏng. */
+#dang-chay {
+	display: none;
+	align-items: center;
+	gap: 10px;
+	padding: 9px 18px;
+	border-top: 1px solid var(--vscode-panel-border);
+	background: var(--vscode-editorWidget-background);
+	font-size: calc(var(--aw-co-chu) - 1.5px);
+	color: var(--vscode-descriptionForeground);
+}
+#dang-chay.hien {
+	display: flex;
+}
+.cham-nhay {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: var(--vscode-charts-green);
+	animation: nhay 1.1s ease-in-out infinite;
+	flex-shrink: 0;
+}
+@keyframes nhay {
+	0%,
+	100% {
+		opacity: 0.25;
+		transform: scale(0.8);
+	}
+	50% {
+		opacity: 1;
+		transform: scale(1.15);
+	}
+}
+#dang-chay .viec {
+	color: var(--vscode-foreground);
+	font-weight: 500;
+}
+#dang-chay .dong-ho {
+	margin-left: auto;
+	font-family: var(--vscode-editor-font-family);
+	opacity: 0.8;
+}
+/* Người dùng tắt hiệu ứng động ở mức hệ điều hành — tôn trọng. */
+@media (prefers-reduced-motion: reduce) {
+	.cham-nhay {
+		animation: none;
+		opacity: 0.9;
+	}
 }
 
 .tool {
@@ -130,9 +245,11 @@ body {
 }
 .diff .them {
 	color: var(--vscode-gitDecoration-addedResourceForeground);
+	background: rgba(0, 200, 0, 0.07);
 }
 .diff .bot {
 	color: var(--vscode-gitDecoration-deletedResourceForeground);
+	background: rgba(255, 0, 0, 0.07);
 }
 .diff .giu {
 	opacity: 0.6;
@@ -154,7 +271,8 @@ body {
 	box-sizing: border-box;
 	resize: vertical;
 	font-family: var(--vscode-font-family);
-	font-size: var(--vscode-font-size);
+	font-size: var(--aw-co-chu);
+	line-height: 1.5;
 	color: var(--vscode-input-foreground);
 	background: var(--vscode-input-background);
 	border: 1px solid var(--vscode-input-border, transparent);

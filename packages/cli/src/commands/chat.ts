@@ -17,6 +17,7 @@ import type { InnerEvent, Message } from "@agentweave/types";
 import type { CauHinhAgent, LuatQuyen } from "../lib/agent-config.js";
 import { redactSecrets, terminalAskPrompt } from "../lib/terminal-ask.js";
 import { chenFile } from "../lib/at-file.js";
+import { doanLenhKiemTra, dungCauDanHeThong } from "../lib/system-prompt.js";
 import { docCauHinhAgent } from "../lib/agent-config.js";
 import {
 	docPhien,
@@ -85,6 +86,13 @@ export async function chatCommand(args: ChatCommandArgs): Promise<void> {
 		budget: args.budget ?? cauHinh.budget,
 		permissionMode: args.permissionMode ?? cauHinh.permissionMode,
 	};
+
+	// Câu dẫn hệ thống — REPL trước đây chạy với system prompt RỖNG, nên model
+	// không biết phải chạy test sau khi sửa.
+	const cauDan = dungCauDanHeThong({
+		cuaDuAn: cauHinh.systemPrompt,
+		lenhKiemTra: await doanLenhKiemTra(goc),
+	});
 
 	let lichSu: ReadonlyArray<Message> = [];
 	let tongVao = 0;
@@ -192,7 +200,7 @@ export async function chatCommand(args: ChatCommandArgs): Promise<void> {
 			console.log(`  ${C.yellow}⚠ @${f.duong}: ${f.lyDo}${C.reset}`);
 		}
 
-		const harness = createHarness(taoCauHinh(hieuLuc, cauHinh));
+		const harness = createHarness(taoCauHinh(hieuLuc, cauHinh, cauDan));
 		// Skill: chỉ mục vào system prompt + tool LoadSkill, nạp lại mỗi lượt để
 		// skill thêm giữa chừng có hiệu lực ngay.
 		await installSkills(harness.inner, {
@@ -208,13 +216,57 @@ export async function chatCommand(args: ChatCommandArgs): Promise<void> {
 				initialMessages: lichSu,
 			});
 
+			// Quan sát thay vì tin lời: model 30B hay tuyên bố "test đều pass"
+			// mà chưa chạy lệnh nào.
+			const daSua = new Set<string>();
+			let daChayKiemTra = false;
+			const batDau = Date.now();
+			let lucTokenDau: number | null = null;
+
 			for (;;) {
 				const { value, done } = await gen.next();
 				if (done) {
 					if (value.reason !== "completed") {
 						console.log(`  ${C.yellow}⚠ kết thúc: ${value.reason}${C.reset}`);
 					}
+					if (daSua.size > 0 && !daChayKiemTra) {
+						console.log(
+							`  ${C.yellow}⚠ đã sửa ${daSua.size} file nhưng CHƯA chạy kiểm tra nào: ` +
+								`${[...daSua].join(", ")}${C.reset}`,
+						);
+						console.log(
+							`  ${C.dim}mọi khẳng định "chạy ổn" ở trên đều chưa được kiểm chứng${C.reset}`,
+						);
+					}
+					const msSinh = lucTokenDau ? Date.now() - lucTokenDau : 0;
+					if (msSinh > 500 && lucTokenDau) {
+						const ra = harness.getUsage().outputTokens;
+						console.log(
+							`  ${C.gray}${((Date.now() - batDau) / 1000).toFixed(1)}s · ` +
+								`chờ token đầu ${((lucTokenDau - batDau) / 1000).toFixed(1)}s · ` +
+								`${((ra / msSinh) * 1000).toFixed(1)} tok/s${C.reset}`,
+						);
+					}
 					break;
+				}
+				if (value.type === "llm:stream_delta" && lucTokenDau === null) {
+					lucTokenDau = Date.now();
+				}
+				if (value.type === "tool:requested") {
+					const vao = value.toolInput as Record<string, unknown>;
+					if (
+						(value.toolName === "FileEdit" || value.toolName === "FileWrite") &&
+						typeof vao.path === "string"
+					) {
+						daSua.add(vao.path);
+					}
+					if (
+						value.toolName === "Bash" &&
+						typeof vao.command === "string" &&
+						/\b(test|pytest|jest|vitest|build|lint|tsc|gradle|mvn|dotnet)\b/.test(vao.command)
+					) {
+						daChayKiemTra = true;
+					}
 				}
 				inSuKien(value);
 			}
@@ -262,10 +314,15 @@ export async function chatCommand(args: ChatCommandArgs): Promise<void> {
 
 // ─── Cấu hình ───────────────────────────────────────────────────
 
-function taoCauHinh(args: ChatCommandArgs, duAn: CauHinhAgent = {}): CreateHarnessOptions {
+function taoCauHinh(
+	args: ChatCommandArgs,
+	duAn: CauHinhAgent = {},
+	cauDan = "",
+): CreateHarnessOptions {
 	return {
 		model: args.model,
 		tools: BUILT_IN_TOOLS,
+		systemPrompt: cauDan,
 		maxTurns: args.maxTurns ?? 50,
 		permissions: {
 			mode: args.permissionMode ?? "default",

@@ -35,6 +35,7 @@ import type { HarnessInstance } from "@agentweave/sdk";
 import type { InnerEvent, Message } from "@agentweave/types";
 import { docCauHinhAgent, type CauHinhAgent, type LuatQuyen } from "../lib/agent-config.js";
 import { chenFile } from "../lib/at-file.js";
+import { doanLenhKiemTra, dungCauDanHeThong } from "../lib/system-prompt.js";
 import { dungDiff } from "../lib/diff.js";
 
 export interface ServeArgs {
@@ -71,6 +72,16 @@ export async function serveCommand(args: ServeArgs): Promise<void> {
 	const dangCho = new Map<string, (kq: { allow: boolean; alwaysAllow?: boolean }) => void>();
 	let demXinQuyen = 0;
 
+	// "Luôn cho phép" phải sống qua các lượt: mỗi lượt dựng harness mới nên bộ
+	// nhớ quyền bên trong mất theo, bấm xong lượt sau lại hỏi.
+	const luonChoPhep = new Set<string>();
+
+	// Câu dẫn hệ thống: dựng một lần, dùng cho mọi lượt.
+	const cauDan = dungCauDanHeThong({
+		cuaDuAn: cauHinh.systemPrompt,
+		lenhKiemTra: await doanLenhKiemTra(goc),
+	});
+
 	phat({
 		type: "ready",
 		version: AGENTWEAVE_VERSION,
@@ -100,7 +111,13 @@ export async function serveCommand(args: ServeArgs): Promise<void> {
 				const traLoi = dangCho.get(id);
 				if (traLoi) {
 					dangCho.delete(id);
-					traLoi({ allow: msg.allow === true, alwaysAllow: msg.alwaysAllow === true });
+					const luon = msg.alwaysAllow === true;
+					const tenTool = typeof msg.tool === "string" ? msg.tool : "";
+					if (luon && tenTool) {
+						luonChoPhep.add(tenTool);
+						phat({ type: "always_allowed", tool: tenTool });
+					}
+					traLoi({ allow: msg.allow === true, alwaysAllow: luon });
 				}
 				break;
 			}
@@ -166,6 +183,8 @@ export async function serveCommand(args: ServeArgs): Promise<void> {
 					cauHinh,
 					lichSu,
 					dangCho,
+					luonChoPhep,
+					cauDan,
 					layId: () => `q${++demXinQuyen}`,
 					datDangChay: (h) => {
 						chay.hien = h;
@@ -198,6 +217,9 @@ interface ThamSoLuot {
 	cauHinh: CauHinhAgent;
 	lichSu: ReadonlyArray<Message>;
 	dangCho: Map<string, (kq: { allow: boolean; alwaysAllow?: boolean }) => void>;
+	/** Tool người dùng đã bấm "Luôn cho phép" ở các lượt trước. */
+	luonChoPhep: Set<string>;
+	cauDan: string;
 	layId: () => string;
 	datDangChay: (h: HarnessInstance | null) => void;
 }
@@ -211,6 +233,7 @@ async function chayMotLuot(t: ThamSoLuot): Promise<ReadonlyArray<Message>> {
 	const harness = createHarness({
 		model: t.model,
 		tools: BUILT_IN_TOOLS,
+		systemPrompt: t.cauDan,
 		maxTurns: t.maxTurns,
 		permissions: {
 			mode: t.cheDoQuyen,
@@ -222,6 +245,15 @@ async function chayMotLuot(t: ThamSoLuot): Promise<ReadonlyArray<Message>> {
 				{ pattern: "Grep(*)", behavior: "allow", source: "project", priority: 50 },
 				{ pattern: "Glob(*)", behavior: "allow", source: "project", priority: 50 },
 				{ pattern: "LoadSkill(*)", behavior: "allow", source: "project", priority: 50 },
+				// Ưu tiên 45: cao hơn luật dự án nhưng THẤP HƠN luật chặn cứng (100),
+				// nên "Luôn cho phép Bash" vẫn không mở được rm -rf, sudo, ghi .env.
+				...[...t.luonChoPhep].map((ten) => ({
+					pattern: `${ten}(*)`,
+					behavior: "allow" as const,
+					source: "user" as const,
+					priority: 45,
+					message: "nguoi dung da chon Luon cho phep",
+				})),
 				...(t.cauHinh.rules ?? []).map((r: LuatQuyen) => ({
 					pattern: r.pattern,
 					behavior: r.behavior,
@@ -258,18 +290,64 @@ async function chayMotLuot(t: ThamSoLuot): Promise<ReadonlyArray<Message>> {
 	}).catch(() => undefined);
 	t.datDangChay(harness);
 
+	// Không tin lời model tuyên bố "đã kiểm tra" — QUAN SÁT xem nó có thật sự
+	// chạy lệnh kiểm tra không.
+	const daSua = new Set<string>();
+	let daChayKiemTra = false;
+
+	// Đo hiệu năng thật: với model cục bộ, tok/s và thời gian chờ token đầu là
+	// hai con số quyết định "dùng được hay không", và chúng đổi theo ngữ cảnh.
+	const batDau = Date.now();
+	let lucTokenDau: number | null = null;
+	let soToolGoi = 0;
+
 	try {
 		const gen = harness.stream(prompt, { maxTurns: t.maxTurns, initialMessages: t.lichSu });
 		for (;;) {
 			const { value, done } = await gen.next();
 			if (done) {
+				const dung = harness.getUsage();
+				// tok/s tính trên khoảng SINH (từ token đầu tới hết) — gộp cả thời
+				// gian nạp model và xử lý prompt vào thì số tụt hẳn, không so sánh
+				// được giữa các lượt.
+				const msSinh = lucTokenDau ? Date.now() - lucTokenDau : 0;
 				phat({
 					type: "turn_end",
 					reason: value.reason,
-					usage: harness.getUsage(),
+					usage: dung,
 					context: harness.inner.getContextUsage(),
+					edited: [...daSua],
+					ranCheck: daChayKiemTra,
+					perf: {
+						totalMs: Date.now() - batDau,
+						ttftMs: lucTokenDau ? lucTokenDau - batDau : null,
+						genMs: msSinh,
+						tokPerSec: msSinh > 500 ? (dung.outputTokens / msSinh) * 1000 : null,
+						toolCalls: soToolGoi,
+					},
 				});
 				break;
+			}
+			if (value.type === "llm:stream_delta" && lucTokenDau === null) {
+				lucTokenDau = Date.now();
+				phat({ type: "first_token", afterMs: lucTokenDau - batDau });
+			}
+			if (value.type === "tool:requested") {
+				soToolGoi++;
+				const vao = value.toolInput as Record<string, unknown>;
+				if (
+					(value.toolName === "FileEdit" || value.toolName === "FileWrite") &&
+					typeof vao.path === "string"
+				) {
+					daSua.add(vao.path);
+				}
+				if (
+					value.toolName === "Bash" &&
+					typeof vao.command === "string" &&
+					/\b(test|pytest|jest|vitest|build|lint|tsc|gradle|mvn|dotnet)\b/.test(vao.command)
+				) {
+					daChayKiemTra = true;
+				}
 			}
 			chuyenSuKien(value);
 		}
