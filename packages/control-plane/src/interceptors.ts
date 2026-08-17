@@ -47,6 +47,11 @@ function getDefaultDecision(
 	}
 }
 
+/** Thay lý do trong một quyết định mặc định, giữ nguyên phần còn lại. */
+function withReason<T extends { reason?: string }>(quyetDinh: T, lyDo: string): T {
+	return { ...quyetDinh, reason: lyDo };
+}
+
 export class InterceptorRegistry {
 	private handlers = new Map<InterceptType, InterceptHandler<InterceptType>>();
 	private failMode: "open" | "closed" = "closed";
@@ -83,8 +88,16 @@ export class InterceptorRegistry {
 				}),
 			]);
 			return result;
-		} catch {
-			return getDefaultDecision(type, this.failMode) as InterceptResponse[T];
+		} catch (err) {
+			// Handler CÓ tồn tại nhưng hết giờ hoặc ném lỗi. Bản trước trả về
+			// getDefaultDecision với lý do "No interceptor" — sai hoàn toàn so với
+			// nguyên nhân thật, khiến người ta đi tìm interceptor bị thiếu trong
+			// khi vấn đề là timeout. Nói đúng chuyện gì đã xảy ra.
+			const lyDo = err instanceof Error ? err.message : String(err);
+			return withReason(
+				getDefaultDecision(type, this.failMode),
+				`Interceptor loi: ${lyDo}`,
+			) as InterceptResponse[T];
 		} finally {
 			if (timer !== undefined) clearTimeout(timer);
 		}

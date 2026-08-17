@@ -1,0 +1,74 @@
+{
+  "name": "agentweave-vscode",
+  "displayName": "AgentWeave",
+  "description": "Agent lập trình chạy hoàn toàn cục bộ, có quản trị quyền và kiểm toán",
+  "version": "0.1.0",
+  "publisher": "agentweave",
+  "license": "MIT",
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["AI", "Programming Languages"],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentweave.chat",
+        "title": "AgentWeave: Mở khung chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "agentweave.restart",
+        "title": "AgentWeave: Khởi động lại agent"
+      },
+      {
+        "command": "agentweave.addFile",
+        "title": "AgentWeave: Đưa file đang mở vào ngữ cảnh"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        { "command": "agentweave.addFile", "group": "agentweave" }
+      ]
+    },
+    "keybindings": [
+      { "command": "agentweave.chat", "key": "ctrl+alt+a", "mac": "cmd+alt+a" }
+    ],
+    "configuration": {
+      "title": "AgentWeave",
+      "properties": {
+        "agentweave.cliPath": {
+          "type": "string",
+          "default": "agentweave",
+          "description": "Đường dẫn tới CLI agentweave. Để nguyên nếu đã có trong PATH."
+        },
+        "agentweave.model": {
+          "type": "string",
+          "default": "qwen3-coder:30b",
+          "description": "Model dùng cho agent. Bỏ trống để lấy theo .agentweave/agent.json."
+        },
+        "agentweave.permissionMode": {
+          "type": "string",
+          "enum": ["default", "strict", "permissive", "plan"],
+          "default": "default",
+          "description": "default: hỏi trước khi ghi file · permissive: không hỏi · strict: siết chặt"
+        },
+        "agentweave.ollamaHost": {
+          "type": "string",
+          "default": "127.0.0.1:11434",
+          "description": "Địa chỉ Ollama. Dạng host:port theo đúng chuẩn của Ollama."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "watch": "npm run build -- --watch",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  }
+}

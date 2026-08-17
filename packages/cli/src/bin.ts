@@ -15,6 +15,7 @@
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import { runCommand } from "./commands/run.js";
 import { chatCommand, lietKePhienCommand } from "./commands/chat.js";
+import { serveCommand } from "./commands/serve.js";
 import { monitorCommand, monitorExportCommand, monitorServeCommand } from "./commands/monitor.js";
 import { sessionCommand } from "./commands/session.js";
 import { taskCommand } from "./commands/task.js";
@@ -131,6 +132,7 @@ function printHelp(): void {
   ─── REFERENCE IMPLEMENTATION (agent-loop, demoted post-pivot 2026-04-22) ───
   Use only when no wrapped agent is available. Not the production path.
 
+    agentweave serve --stdio               Giao thức JSON dòng cho editor/extension
     agentweave chat [prompt] [options]     REPL tương tác — giữ hội thoại nhiều lượt
       --resume [id]         Tiếp tục phiên gần nhất (hoặc phiên có id)
       --list-sessions       Liệt kê phiên đã lưu
@@ -503,6 +505,16 @@ async function main(): Promise<void> {
 			} else {
 				credentialsCommand({ action: "list" });
 			}
+			break;
+		}
+
+		case "serve": {
+			// Giao thức JSON dòng cho editor. stdout CHỈ có JSON.
+			await serveCommand({
+				model: parsed.model,
+				permissionMode: parsed.permissionMode,
+				maxTurns: parsed.maxTurns,
+			});
 			break;
 		}
 
