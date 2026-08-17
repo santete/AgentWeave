@@ -125,6 +125,11 @@ export const ollamaProvider: ModelProvider = {
 			baseURL: normalizeOllamaBaseUrl(process.env.OLLAMA_HOST),
 			apiKey: process.env.OLLAMA_API_KEY ?? "ollama", // Ollama bỏ qua giá trị này
 			name: "ollama",
+			// BẮT BUỘC khi chảy chữ: chỉ ở chế độ "strict" thì AI SDK mới gửi
+			// `stream_options: {include_usage: true}`. Thiếu nó, Ollama trả
+			// usage toàn null — mất số token nghĩa là mù luôn cơ chế đo ngữ cảnh
+			// và nén. Đã đo: "compatible" → null, "strict" → 34/10 token.
+			compatibility: "strict",
 		});
 		return ollama(model);
 	},

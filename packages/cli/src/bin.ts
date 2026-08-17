@@ -14,7 +14,7 @@
 
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import { runCommand } from "./commands/run.js";
-import { chatCommand } from "./commands/chat.js";
+import { chatCommand, lietKePhienCommand } from "./commands/chat.js";
 import { monitorCommand, monitorExportCommand, monitorServeCommand } from "./commands/monitor.js";
 import { sessionCommand } from "./commands/session.js";
 import { taskCommand } from "./commands/task.js";
@@ -131,6 +131,11 @@ function printHelp(): void {
   ─── REFERENCE IMPLEMENTATION (agent-loop, demoted post-pivot 2026-04-22) ───
   Use only when no wrapped agent is available. Not the production path.
 
+    agentweave chat [prompt] [options]     REPL tương tác — giữ hội thoại nhiều lượt
+      --resume [id]         Tiếp tục phiên gần nhất (hoặc phiên có id)
+      --list-sessions       Liệt kê phiên đã lưu
+      Trong REPL: @đường-dẫn chèn file · /moi · /trangthai · /phien · /thoat
+      Cấu hình dự án: .agentweave/agent.json
     agentweave run <prompt> [options]      Run reference agent-loop directly
     agentweave monitor --gateway <url>     Monitor reference gateway (legacy)
     agentweave session list [--dir <path>] List reference-loop sessions
@@ -194,6 +199,8 @@ export function parseArgs(args: string[]): {
 	budget?: number;
 	maxTurns?: number;
 	permissionMode?: "default" | "strict" | "permissive" | "plan";
+	resume?: boolean | string;
+	listSessions?: boolean;
 } {
 	let command = "";
 	let prompt = "";
@@ -201,6 +208,8 @@ export function parseArgs(args: string[]): {
 	let budget: number | undefined;
 	let maxTurns: number | undefined;
 	let permissionMode: "default" | "strict" | "permissive" | "plan" | undefined;
+	let resume: boolean | string | undefined;
+	let listSessions = false;
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i]!;
@@ -237,6 +246,20 @@ export function parseArgs(args: string[]): {
 				}
 				break;
 			}
+			case "--resume": {
+				// `--resume` không kèm gì = phiên gần nhất; kèm id = phiên đó.
+				const ke = args[i + 1];
+				if (ke && !ke.startsWith("--")) {
+					resume = ke;
+					i++;
+				} else {
+					resume = true;
+				}
+				break;
+			}
+			case "--list-sessions":
+				listSessions = true;
+				break;
 			default:
 				if (arg.startsWith("--")) break; // skip unknown flags
 				if (!command) {
@@ -248,7 +271,7 @@ export function parseArgs(args: string[]): {
 		}
 	}
 
-	return { command, prompt, model, budget, maxTurns, permissionMode };
+	return { command, prompt, model, budget, maxTurns, permissionMode, resume, listSessions };
 }
 
 // ─── Main ────────────────────────────────────────────────────────
@@ -484,8 +507,13 @@ async function main(): Promise<void> {
 		}
 
 		case "chat": {
+			if (parsed.listSessions) {
+				await lietKePhienCommand();
+				break;
+			}
 			// REPL — giữ hội thoại qua nhiều lượt. Prompt là tuỳ chọn.
 			await chatCommand({
+				resume: parsed.resume,
 				prompt: parsed.prompt || undefined,
 				model: parsed.model,
 				budget: parsed.budget,

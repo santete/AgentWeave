@@ -41,6 +41,8 @@ let toolCallCount = 0;
 let permissionAllowed = 0;
 let permissionDenied = 0;
 let turnCount = 0;
+/** Đang ở giữa đoạn chữ đang chảy. */
+let dangChayChu = false;
 const startTime = Date.now();
 
 // ─── Main ───────────────────────────────────────────────────────
@@ -135,6 +137,10 @@ function printEvent(event: InnerEvent): void {
 			break;
 
 		case "tool:requested":
+			if (dangChayChu) {
+				process.stdout.write("\n");
+				dangChayChu = false;
+			}
 			console.log(`  ${C.yellow}  ⚡ TOOL${C.reset} ${C.bold}${event.toolName}${C.reset}(${redactSecrets(JSON.stringify(event.toolInput)).slice(0, 100)})`);
 			break;
 
@@ -164,13 +170,19 @@ function printEvent(event: InnerEvent): void {
 			console.log(`  ${C.red}  ✗ FAIL${C.reset}  ${event.error} ${C.dim}(${event.durationMs.toFixed(0)}ms)${C.reset}`);
 			break;
 
+		case "llm:stream_delta":
+			if (!dangChayChu) {
+				process.stdout.write(`\n  ${C.bold}${C.white}Agent:${C.reset} `);
+				dangChayChu = true;
+			}
+			process.stdout.write(event.delta);
+			break;
+
 		case "message:assistant":
-			for (const block of event.content) {
-				if (block.type === "text" && block.text.trim()) {
-					console.log("");
-					console.log(`  ${C.bold}${C.white}Agent:${C.reset} ${block.text}`);
-					console.log("");
-				}
+			// Chữ đã chảy ra ở llm:stream_delta; chỉ đóng đoạn.
+			if (dangChayChu) {
+				process.stdout.write("\n\n");
+				dangChayChu = false;
 			}
 			break;
 

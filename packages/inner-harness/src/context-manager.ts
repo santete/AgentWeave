@@ -93,7 +93,10 @@ export function capNhatDoDay(
 	hienTai: ContextUsage,
 	tokenDauVao: number | undefined,
 ): ContextUsage {
-	if (tokenDauVao === undefined || tokenDauVao < 0) return hienTai;
+	// null, NaN, âm — đều là "không đo được", giữ nguyên số cũ chứ không ghi đè.
+	if (typeof tokenDauVao !== "number" || !Number.isFinite(tokenDauVao) || tokenDauVao < 0) {
+		return hienTai;
+	}
 	const max = hienTai.maxTokens > 0 ? hienTai.maxTokens : CUA_SO_CUC_BO;
 	return {
 		...hienTai,

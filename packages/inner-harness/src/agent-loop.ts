@@ -245,7 +245,20 @@ export class AgentLoop implements InnerHarnessProvider {
 			// nhìn y hệt một câu trả lời rỗng hợp lệ.
 			let llmResult: LLMCallResult;
 			try {
-				llmResult = await this.callLLM();
+				// Vừa nhận vừa phát: mỗi mẩu chữ ra ngoài ngay, không đợi hết câu.
+				const luong = this.goiLLM();
+				for (;;) {
+					const { value, done } = await luong.next();
+					if (done) {
+						llmResult = value;
+						break;
+					}
+					yield this.makeEvent({
+						type: "llm:stream_delta",
+						delta: value,
+						blockType: "text",
+					});
+				}
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
 				this.state.status = "completed";
@@ -484,22 +497,34 @@ export class AgentLoop implements InnerHarnessProvider {
 		this.llmCaller = caller;
 	}
 
-	private async callLLM(): Promise<LLMCallResult> {
+	/**
+	 * Gọi LLM, vừa chảy chữ ra vừa trả kết quả cuối.
+	 *
+	 * Là generator chứ không phải Promise: vòng lặp chính cần PHÁT được sự kiện
+	 * `llm:stream_delta` ngay khi từng mẩu chữ tới. Kiểu sự kiện đó có trong
+	 * events.ts từ lâu nhưng chưa ai phát — nên người dùng ngồi im lặng chờ hết
+	 * câu trả lời. Với model cục bộ 40-60 tok/s thì một câu 500 token là 10 giây
+	 * không thấy gì, rất giống lúc treo máy.
+	 *
+	 * @yields từng mẩu chữ
+	 * @returns kết quả đầy đủ của lượt gọi
+	 */
+	private async *goiLLM(): AsyncGenerator<string, LLMCallResult, void> {
+		// llmCaller do test/mock tiêm vào: không có gì để chảy, trả thẳng.
 		if (this.llmCaller) {
-			return this.llmCaller(this.messages.getMessages(), this.model);
+			return await this.llmCaller(this.messages.getMessages(), this.model);
 		}
 
-		// Default: try real Vercel AI SDK. KHÔNG bắt lỗi ở đây — vòng lặp chính
-		// phải thấy được lỗi để kết thúc với reason "error".
+		// KHÔNG bắt lỗi ở đây — vòng lặp chính phải thấy để kết thúc reason "error".
 		if (process.env.AGENTWEAVE_DEBUG) {
 			console.error(`[AgentWeave:debug] goi LLM that voi model: ${this.model}`);
 		}
-		return await this.callRealLLM();
+		return yield* this.chayStream();
 	}
 
-	private async callRealLLM(): Promise<LLMCallResult> {
+	private async *chayStream(): AsyncGenerator<string, LLMCallResult, void> {
 		// Dynamic import — avoids crash if provider SDK not installed
-		const { generateText, tool } = await import("ai");
+		const { streamText, tool } = await import("ai");
 
 		// Auto-detect provider from model name
 		const llmModel = await this.resolveModel();
@@ -514,7 +539,7 @@ export class AgentLoop implements InnerHarnessProvider {
 
 		const system = this.getSystemPrompt();
 
-		const result = await generateText({
+		const result = streamText({
 			model: llmModel,
 			// Trước đây systemPrompt được lưu nhưng không bao giờ gửi đi: mọi thứ
 			// đặt qua setSystemPromptSection() (kể cả chỉ mục skill) đều vô hình
@@ -524,33 +549,50 @@ export class AgentLoop implements InnerHarnessProvider {
 				role: m.role as "user" | "assistant",
 				content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
 			})),
-			tools: tools as Parameters<typeof generateText>[0]["tools"],
+			tools: tools as Parameters<typeof streamText>[0]["tools"],
 			maxSteps: 1,
 			abortSignal: this.abortController?.signal,
 		});
 
-		// Debug: log raw result for troubleshooting
-		if (process.env.AGENTWEAVE_DEBUG) {
-			console.error(`[AgentWeave:debug] text=${(result.text ?? "").slice(0, 100)}`);
-			console.error(`[AgentWeave:debug] toolCalls=${JSON.stringify(result.toolCalls ?? [])}`);
-			console.error(`[AgentWeave:debug] finishReason=${result.finishReason}`);
-			console.error(`[AgentWeave:debug] usage=${JSON.stringify(result.usage)}`);
+		// Chảy chữ ra ngoài ngay khi tới.
+		let text = "";
+		for await (const mau of result.textStream) {
+			text += mau;
+			yield mau;
 		}
 
-		const toolCalls = (result.toolCalls ?? []).map((tc) => ({
+		// Các trường này chỉ chốt được SAU khi luồng chảy hết.
+		const [toolCallsTho, usage, finishReason] = await Promise.all([
+			result.toolCalls,
+			result.usage,
+			result.finishReason,
+		]);
+
+		if (process.env.AGENTWEAVE_DEBUG) {
+			console.error(`[AgentWeave:debug] text=${text.slice(0, 100)}`);
+			console.error(`[AgentWeave:debug] toolCalls=${JSON.stringify(toolCallsTho ?? [])}`);
+			console.error(`[AgentWeave:debug] finishReason=${finishReason}`);
+			console.error(`[AgentWeave:debug] usage=${JSON.stringify(usage)}`);
+		}
+
+		const toolCalls = (toolCallsTho ?? []).map((tc) => ({
 			toolUseId: tc.toolCallId,
 			toolName: tc.toolName,
 			toolInput: tc.args as Record<string, unknown>,
 		}));
 
 		return {
-			text: result.text ?? "",
+			text,
 			toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-			stopReason: result.finishReason ?? "end_turn",
-			usage: result.usage ? {
-				inputTokens: result.usage.promptTokens,
-				outputTokens: result.usage.completionTokens,
-			} : undefined,
+			stopReason: finishReason ?? "end_turn",
+			// Provider có thể trả null (Ollama khi thiếu stream_options). Lọc ở đây
+			// để số không hữu hạn không lan xuống bộ đếm rồi thành NaN.
+			usage: soHopLe(usage?.promptTokens) || soHopLe(usage?.completionTokens)
+				? {
+						inputTokens: soHopLe(usage?.promptTokens) ? usage!.promptTokens : 0,
+						outputTokens: soHopLe(usage?.completionTokens) ? usage!.completionTokens : 0,
+					}
+				: undefined,
 		};
 	}
 
@@ -704,6 +746,11 @@ export class AgentLoop implements InnerHarnessProvider {
 			}
 		});
 	}
+}
+
+/** Số dùng được: có thật, hữu hạn, không âm. */
+function soHopLe(x: unknown): x is number {
+	return typeof x === "number" && Number.isFinite(x) && x >= 0;
 }
 
 export interface LLMCallResult {

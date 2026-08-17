@@ -14,7 +14,18 @@ import { BUILT_IN_TOOLS, installSkills } from "@agentweave/inner-harness";
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import type { CreateHarnessOptions, HarnessInstance } from "@agentweave/sdk";
 import type { InnerEvent, Message } from "@agentweave/types";
+import type { CauHinhAgent, LuatQuyen } from "../lib/agent-config.js";
 import { redactSecrets, terminalAskPrompt } from "../lib/terminal-ask.js";
+import { chenFile } from "../lib/at-file.js";
+import { docCauHinhAgent } from "../lib/agent-config.js";
+import {
+	docPhien,
+	lietKePhien,
+	luuPhien,
+	phienGanNhat,
+	taoIdPhien,
+	type PhienLuu,
+} from "../lib/session-store.js";
 
 export interface ChatCommandArgs {
 	model: string;
@@ -23,6 +34,26 @@ export interface ChatCommandArgs {
 	permissionMode?: "default" | "strict" | "permissive" | "plan";
 	/** Câu hỏi đầu tiên, tuỳ chọn — không có thì vào thẳng dấu nhắc. */
 	prompt?: string;
+	/** Tiếp tục phiên cũ: true = phiên gần nhất, chuỗi = id cụ thể. */
+	resume?: boolean | string;
+	/** Chỉ liệt kê phiên đã lưu rồi thoát. */
+	listSessions?: boolean;
+}
+
+/** In danh sách phiên đã lưu. */
+export async function lietKePhienCommand(): Promise<void> {
+	const ds = await lietKePhien(process.cwd());
+	if (ds.length === 0) {
+		console.log(`\n  ${C.dim}Chưa có phiên nào được lưu trong .agentweave/sessions/${C.reset}\n`);
+		return;
+	}
+	console.log(`\n  ${C.cyan}${C.bold}Phiên đã lưu${C.reset} ${C.dim}(mới nhất trước)${C.reset}\n`);
+	for (const p of ds) {
+		const luc = p.capNhat.slice(0, 16).replace("T", " ");
+		console.log(`  ${C.bold}${p.id}${C.reset}  ${C.dim}${luc} · ${p.soLuot} lượt · ${p.model}${C.reset}`);
+		console.log(`    ${C.gray}${p.tomTat}${C.reset}`);
+	}
+	console.log(`\n  ${C.dim}Tiếp tục: agentweave chat --resume <id>${C.reset}\n`);
 }
 
 const C = {
@@ -38,12 +69,52 @@ const C = {
 };
 
 export async function chatCommand(args: ChatCommandArgs): Promise<void> {
+	const goc = process.cwd();
+
+	// Cấu hình dự án: cờ dòng lệnh luôn thắng.
+	const { config: cauHinh, nguon, loi: loiCauHinh } = await docCauHinhAgent(goc);
+	if (loiCauHinh) {
+		// KHÔNG lặng lẽ rơi về mặc định — người dùng sẽ tưởng cấu hình đã có hiệu lực.
+		console.log(`  ${C.red}✗ ${nguon} không dùng được: ${loiCauHinh}${C.reset}`);
+		console.log(`  ${C.dim}đang chạy bằng cấu hình mặc định${C.reset}`);
+	}
+	const hieuLuc: ChatCommandArgs = {
+		...args,
+		model: args.model || cauHinh.model || "qwen3-coder:30b",
+		maxTurns: args.maxTurns ?? cauHinh.maxTurns,
+		budget: args.budget ?? cauHinh.budget,
+		permissionMode: args.permissionMode ?? cauHinh.permissionMode,
+	};
+
 	let lichSu: ReadonlyArray<Message> = [];
 	let tongVao = 0;
 	let tongRa = 0;
 	let soLuot = 0;
+	let idPhien = taoIdPhien(new Date());
+	let tomTat = "";
 
-	inHeader(args);
+	// ── Khôi phục phiên cũ ──
+	if (args.resume) {
+		const cu =
+			typeof args.resume === "string"
+				? await docPhien(goc, args.resume)
+				: await phienGanNhat(goc);
+
+		if (cu) {
+			lichSu = cu.messages;
+			tongVao = cu.tokenVao;
+			tongRa = cu.tokenRa;
+			soLuot = cu.soLuot;
+			idPhien = cu.id;
+			tomTat = cu.tomTat;
+			console.log(`  ${C.green}↻ tiếp tục phiên ${cu.id}${C.reset} ${C.dim}— ${cu.tomTat}${C.reset}`);
+			console.log(`  ${C.dim}${cu.messages.length} tin nhắn · ${cu.soLuot} lượt${C.reset}`);
+		} else {
+			console.log(`  ${C.yellow}⚠ không tìm thấy phiên để tiếp tục, bắt đầu phiên mới${C.reset}`);
+		}
+	}
+
+	inHeader(hieuLuc, nguon);
 
 	// terminal: chỉ bật khi có TTY thật. Bật nhầm với stdin dạng ống làm readline
 	// đóng sớm rồi ném ERR_USE_AFTER_CLOSE ở lượt thứ hai.
@@ -107,17 +178,33 @@ export async function chatCommand(args: ChatCommandArgs): Promise<void> {
 		}
 
 		soLuot++;
+		if (!tomTat) tomTat = cau.slice(0, 80);
 
-		const harness = createHarness(taoCauHinh(args));
+		// @đường-dẫn → nội dung file được gắn thẳng vào câu hỏi, khỏi tốn một
+		// lượt LLM chỉ để bảo model tự đọc.
+		const { prompt: cauDayDu, daChen, loi: loiChen } = await chenFile(cau, goc);
+		for (const f of daChen) {
+			console.log(
+				`  ${C.gray}📎 ${f.duong} (${f.byte} byte${f.bicat ? ", đã cắt" : ""})${C.reset}`,
+			);
+		}
+		for (const f of loiChen) {
+			console.log(`  ${C.yellow}⚠ @${f.duong}: ${f.lyDo}${C.reset}`);
+		}
+
+		const harness = createHarness(taoCauHinh(hieuLuc, cauHinh));
 		// Skill: chỉ mục vào system prompt + tool LoadSkill, nạp lại mỗi lượt để
 		// skill thêm giữa chừng có hiệu lực ngay.
-		await installSkills(harness.inner, { quiet: true }).catch(() => undefined);
+		await installSkills(harness.inner, {
+			quiet: true,
+			orgSkillsDir: cauHinh.orgSkillsDir,
+		}).catch(() => undefined);
 		dangChay = harness;
 
 		try {
-			const gen = harness.stream(cau, {
-				maxTurns: args.maxTurns,
-				maxBudgetUsd: args.budget,
+			const gen = harness.stream(cauDayDu, {
+				maxTurns: hieuLuc.maxTurns,
+				maxBudgetUsd: hieuLuc.budget,
 				initialMessages: lichSu,
 			});
 
@@ -143,9 +230,26 @@ export async function chatCommand(args: ChatCommandArgs): Promise<void> {
 		tongVao += dung.inputTokens;
 		tongRa += dung.outputTokens;
 
+		// Ghi phiên sau MỖI lượt, không đợi lúc thoát: máy sập hay đóng terminal
+		// giữa chừng thì vẫn còn nguyên tới lượt cuối cùng.
+		const phien: PhienLuu = {
+			id: idPhien,
+			capNhat: new Date().toISOString(),
+			model: hieuLuc.model,
+			cwd: goc,
+			tomTat,
+			soLuot,
+			tokenVao: tongVao,
+			tokenRa: tongRa,
+			messages: [...lichSu],
+		};
+		await luuPhien(goc, phien).catch((e) =>
+			console.log(`  ${C.yellow}⚠ không lưu được phiên: ${(e as Error).message}${C.reset}`),
+		);
+
 		console.log(
 			`  ${C.gray}${lichSu.length} tin nhắn · ${tongVao.toLocaleString()} vào / ` +
-				`${tongRa.toLocaleString()} ra${C.reset}`,
+				`${tongRa.toLocaleString()} ra · phiên ${idPhien}${C.reset}`,
 		);
 		console.log("");
 		rl.prompt();
@@ -158,7 +262,7 @@ export async function chatCommand(args: ChatCommandArgs): Promise<void> {
 
 // ─── Cấu hình ───────────────────────────────────────────────────
 
-function taoCauHinh(args: ChatCommandArgs): CreateHarnessOptions {
+function taoCauHinh(args: ChatCommandArgs, duAn: CauHinhAgent = {}): CreateHarnessOptions {
 	return {
 		model: args.model,
 		tools: BUILT_IN_TOOLS,
@@ -177,6 +281,15 @@ function taoCauHinh(args: ChatCommandArgs): CreateHarnessOptions {
 				{ pattern: "Bash(cat *)", behavior: "allow", source: "project", priority: 50 },
 				{ pattern: "Bash(git status*)", behavior: "allow", source: "project", priority: 50 },
 				{ pattern: "Bash(git diff*)", behavior: "allow", source: "project", priority: 50 },
+				// Luật của dự án: ưu tiên 40 — thấp hơn luật chặn cứng ở trên, nên
+				// .agentweave/agent.json KHÔNG mở được rm -rf hay sudo.
+				...(duAn.rules ?? []).map((r: LuatQuyen) => ({
+					pattern: r.pattern,
+					behavior: r.behavior,
+					source: "project" as const,
+					priority: 40,
+					message: r.message,
+				})),
 			],
 			failMode: "closed",
 		},
@@ -225,27 +338,46 @@ function xuLyLenh(cau: string, nc: NguCanhLenh): "thoat" | "tiep" {
 			console.log(`  thư mục:   ${process.cwd()}\n`);
 			return "tiep";
 
+		case "phien":
+		case "sessions":
+			// In đồng bộ ở đây không được (hàm này không async), nên chỉ nhắc lệnh.
+			console.log(`  ${C.dim}Xem danh sách: agentweave chat --list-sessions${C.reset}`);
+			console.log(`  ${C.dim}Tiếp tục:      agentweave chat --resume [id]${C.reset}\n`);
+			return "tiep";
+
 		default:
-			console.log(`  ${C.dim}Lệnh: /moi (xoá hội thoại) · /trangthai · /thoat${C.reset}\n`);
+			console.log(
+				`  ${C.dim}Lệnh: /moi · /trangthai · /phien · /thoat · @đường-dẫn để chèn file${C.reset}\n`,
+			);
 			return "tiep";
 	}
 }
 
 // ─── Hiển thị ───────────────────────────────────────────────────
 
-function inHeader(args: ChatCommandArgs): void {
+function inHeader(args: ChatCommandArgs, nguonCauHinh?: string | null): void {
 	console.log("");
 	console.log(`  ${C.cyan}${C.bold}AgentWeave chat${C.reset} ${C.dim}v${AGENTWEAVE_VERSION}${C.reset}`);
 	console.log(
 		`  ${C.dim}${args.model} · quyền: ${args.permissionMode ?? "default"} · ${process.cwd()}${C.reset}`,
 	);
-	console.log(`  ${C.dim}/moi xoá hội thoại · /trangthai · /thoat · Ctrl-C dừng lượt${C.reset}`);
+	if (nguonCauHinh) console.log(`  ${C.dim}cấu hình: ${nguonCauHinh}${C.reset}`);
+	console.log(
+		`  ${C.dim}/moi · /trangthai · /phien · /thoat · @file để chèn · Ctrl-C dừng lượt${C.reset}`,
+	);
 	console.log("");
 }
+
+/** Đang ở giữa một đoạn chữ đang chảy — để biết khi nào cần xuống dòng. */
+let dangChay_chu = false;
 
 function inSuKien(e: InnerEvent): void {
 	switch (e.type) {
 		case "tool:requested":
+			if (dangChay_chu) {
+				process.stdout.write("\n");
+				dangChay_chu = false;
+			}
 			console.log(
 				`  ${C.yellow}⚡${C.reset} ${C.bold}${e.toolName}${C.reset} ` +
 					`${C.dim}${redactSecrets(JSON.stringify(e.toolInput)).slice(0, 90)}${C.reset}`,
@@ -276,13 +408,20 @@ function inSuKien(e: InnerEvent): void {
 			console.log(`  ${C.gray}  ↻ ${e.reason}${C.reset}`);
 			break;
 
+		case "llm:stream_delta":
+			// In thẳng, không xuống dòng: chữ chảy ra đúng nhịp model sinh.
+			if (!dangChay_chu) {
+				process.stdout.write("\n");
+				dangChay_chu = true;
+			}
+			process.stdout.write(e.delta);
+			break;
+
 		case "message:assistant":
-			for (const block of e.content) {
-				if (block.type === "text" && block.text.trim()) {
-					console.log("");
-					console.log(`${block.text.trim()}`);
-					console.log("");
-				}
+			// Nội dung đã chảy ra ở llm:stream_delta rồi, chỉ cần đóng đoạn.
+			if (dangChay_chu) {
+				process.stdout.write("\n\n");
+				dangChay_chu = false;
 			}
 			break;
 
