@@ -185,6 +185,7 @@ export async function serveCommand(args: ServeArgs): Promise<void> {
 					dangCho,
 					luonChoPhep,
 					cauDan,
+					dongHoChoNguoi: { ms: 0 },
 					layId: () => `q${++demXinQuyen}`,
 					datDangChay: (h) => {
 						chay.hien = h;
@@ -220,6 +221,8 @@ interface ThamSoLuot {
 	/** Tool người dùng đã bấm "Luôn cho phép" ở các lượt trước. */
 	luonChoPhep: Set<string>;
 	cauDan: string;
+	/** Cộng dồn thời gian người dùng ngồi quyết định, ms. */
+	dongHoChoNguoi: { ms: number };
 	layId: () => string;
 	datDangChay: (h: HarnessInstance | null) => void;
 }
@@ -280,7 +283,14 @@ async function chayMotLuot(t: ThamSoLuot): Promise<ReadonlyArray<Message>> {
 				diff: diff?.text ? { text: diff.text, added: diff.them, removed: diff.bot, isNew: diff.taoMoi } : null,
 			});
 
-			return new Promise((resolve) => t.dangCho.set(id, resolve));
+			// Bấm giờ đúng khoảng người dùng suy nghĩ, để trừ ra khỏi "tổng".
+			const batDauCho = Date.now();
+			return new Promise((resolve) =>
+				t.dangCho.set(id, (kq) => {
+					t.dongHoChoNguoi.ms += Date.now() - batDauCho;
+					resolve(kq);
+				}),
+			);
 		},
 	});
 
@@ -298,8 +308,16 @@ async function chayMotLuot(t: ThamSoLuot): Promise<ReadonlyArray<Message>> {
 	// Đo hiệu năng thật: với model cục bộ, tok/s và thời gian chờ token đầu là
 	// hai con số quyết định "dùng được hay không", và chúng đổi theo ngữ cảnh.
 	const batDau = Date.now();
-	let lucTokenDau: number | null = null;
 	let soToolGoi = 0;
+
+	// Đo tách bạch, vì gộp lại thì con số vô nghĩa:
+	//   · msSinh — model thật sự sinh chữ (mẫu số của tok/s)
+	//   · dongHoChoNguoi — người dùng ngồi quyết định, KHÔNG phải lỗi của agent
+	// Bản trước lấy "từ token văn xuôi đầu tiên tới hết" làm mẫu số, mà token đó
+	// chỉ xuất hiện sau 6 lượt gọi tool → ra 350 tok/s cho model đo được ~50.
+	let msSinh = 0;
+	let dauDeltaLuotNay: number | null = null;
+	let ttft: number | null = null;
 
 	try {
 		const gen = harness.stream(prompt, { maxTurns: t.maxTurns, initialMessages: t.lichSu });
@@ -307,10 +325,8 @@ async function chayMotLuot(t: ThamSoLuot): Promise<ReadonlyArray<Message>> {
 			const { value, done } = await gen.next();
 			if (done) {
 				const dung = harness.getUsage();
-				// tok/s tính trên khoảng SINH (từ token đầu tới hết) — gộp cả thời
-				// gian nạp model và xử lý prompt vào thì số tụt hẳn, không so sánh
-				// được giữa các lượt.
-				const msSinh = lucTokenDau ? Date.now() - lucTokenDau : 0;
+				const tongDongHo = Date.now() - batDau;
+				const choNguoi = t.dongHoChoNguoi.ms;
 				phat({
 					type: "turn_end",
 					reason: value.reason,
@@ -319,8 +335,12 @@ async function chayMotLuot(t: ThamSoLuot): Promise<ReadonlyArray<Message>> {
 					edited: [...daSua],
 					ranCheck: daChayKiemTra,
 					perf: {
-						totalMs: Date.now() - batDau,
-						ttftMs: lucTokenDau ? lucTokenDau - batDau : null,
+						// "tổng" là thời gian AGENT làm việc — trừ hẳn khoảng người
+						// dùng ngồi quyết định, vì tính vào thì con số nói về tốc độ
+						// đọc của người chứ không phải của máy.
+						totalMs: tongDongHo - choNguoi,
+						waitUserMs: choNguoi,
+						ttftMs: ttft,
 						genMs: msSinh,
 						tokPerSec: msSinh > 500 ? (dung.outputTokens / msSinh) * 1000 : null,
 						toolCalls: soToolGoi,
@@ -328,9 +348,20 @@ async function chayMotLuot(t: ThamSoLuot): Promise<ReadonlyArray<Message>> {
 				});
 				break;
 			}
-			if (value.type === "llm:stream_delta" && lucTokenDau === null) {
-				lucTokenDau = Date.now();
-				phat({ type: "first_token", afterMs: lucTokenDau - batDau });
+			if (value.type === "llm:request_start") {
+				dauDeltaLuotNay = null;
+			}
+			if (value.type === "llm:stream_delta" && dauDeltaLuotNay === null) {
+				dauDeltaLuotNay = Date.now();
+				if (ttft === null) {
+					ttft = dauDeltaLuotNay - batDau;
+					phat({ type: "first_token", afterMs: ttft });
+				}
+			}
+			if (value.type === "llm:stream_end" && dauDeltaLuotNay !== null) {
+				// Chỉ cộng khoảng SINH của từng lượt gọi, bỏ phần xử lý prompt.
+				msSinh += Date.now() - dauDeltaLuotNay;
+				dauDeltaLuotNay = null;
 			}
 			if (value.type === "tool:requested") {
 				soToolGoi++;

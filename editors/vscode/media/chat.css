@@ -133,6 +133,20 @@ code.trong-dong {
 		transform: scale(1.15);
 	}
 }
+/* Trạng thái CHỜ NGƯỜI: khác hẳn trạng thái đang bận. Chấm ngừng nhấp nháy và
+   chuyển hổ phách, đồng hồ biến mất — không bấm giờ người dùng. */
+#dang-chay.cho-nguoi {
+	background: var(--vscode-inputValidation-warningBackground, var(--vscode-editorWidget-background));
+}
+#dang-chay.cho-nguoi .cham-nhay {
+	animation: none;
+	background: var(--vscode-editorWarning-foreground);
+	opacity: 1;
+}
+#dang-chay.cho-nguoi .viec {
+	color: var(--vscode-editorWarning-foreground);
+}
+
 #dang-chay .viec {
 	color: var(--vscode-foreground);
 	font-weight: 500;

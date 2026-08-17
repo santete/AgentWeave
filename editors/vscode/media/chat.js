@@ -12,6 +12,7 @@ let chuDangChay = ""; // chữ thô, để dựng lại markdown khi đoạn k�
 let dangBan = false;
 let dongHo = null;
 let lucBatDau = 0;
+let daChayMs = 0; // thời gian AGENT chạy, không tính lúc chờ người dùng
 
 const oDangChay = document.getElementById("dang-chay");
 const oViec = document.getElementById("viec-hien-tai");
@@ -20,20 +21,53 @@ const oDongHo = document.getElementById("dong-ho");
 /** Thanh "đang chạy" kèm đồng hồ — dấu hiệu agent còn sống chứ chưa dừng. */
 function batDauChay(viec) {
   lucBatDau = Date.now();
+  daChayMs = 0;
   oViec.textContent = viec;
   oDangChay.classList.add("hien");
+  oDangChay.classList.remove("cho-nguoi");
   clearInterval(dongHo);
   dongHo = setInterval(() => {
-    oDongHo.textContent = `${((Date.now() - lucBatDau) / 1000).toFixed(1)}s`;
+    daChayMs = Date.now() - lucBatDau;
+    oDongHo.textContent = `${(daChayMs / 1000).toFixed(1)}s`;
   }, 100);
 }
 function datViec(viec) {
   if (oDangChay.classList.contains("hien")) oViec.textContent = viec;
 }
+
+/**
+ * Chờ người dùng quyết định thì DỪNG đồng hồ.
+ *
+ * Để nó chạy tiếp là đang bấm giờ người dùng — tạo cảm giác bị hối, mà con số
+ * đó cũng không nói gì về agent. Đổi luôn sang tông chờ đợi: chấm ngừng nhấp
+ * nháy, màu hổ phách, chữ nói rõ là đang chờ QUYẾT ĐỊNH chứ không phải đang bận.
+ */
+function tamDung(viec) {
+  clearInterval(dongHo);
+  dongHo = null;
+  oDangChay.classList.add("cho-nguoi");
+  oViec.textContent = viec;
+  oDongHo.textContent = "";
+}
+
+/** Người dùng đã quyết xong — chạy tiếp, đồng hồ nối từ chỗ đã dừng. */
+function chayTiep(viec) {
+  oDangChay.classList.remove("cho-nguoi");
+  oViec.textContent = viec;
+  if (!dongHo) {
+    // Cộng bù để đồng hồ không nhảy lùi, nhưng KHÔNG tính khoảng vừa chờ.
+    lucBatDau = Date.now() - daChayMs;
+    dongHo = setInterval(() => {
+      daChayMs = Date.now() - lucBatDau;
+      oDongHo.textContent = `${(daChayMs / 1000).toFixed(1)}s`;
+    }, 100);
+  }
+}
+
 function ngungChay() {
   clearInterval(dongHo);
   dongHo = null;
-  oDangChay.classList.remove("hien");
+  oDangChay.classList.remove("hien", "cho-nguoi");
 }
 
 /**
@@ -164,19 +198,19 @@ window.addEventListener("message", (ev) => {
       }
       chuDangChay += e.text;
       khoiDangChay.textContent = chuDangChay;
-      datViec("đang trả lời");
+      datViec("Đang soạn câu trả lời");
       oTinNhan.scrollTop = oTinNhan.scrollHeight;
       break;
 
     case "first_token":
-      datViec("đang trả lời");
+      datViec("Đang soạn câu trả lời");
       break;
 
     case "tool": {
       if (khoiDangChay && chuDangChay) veChu(khoiDangChay, chuDangChay);
       khoiDangChay = null;
       chuDangChay = "";
-      datViec(`đang chạy ${e.name}`);
+      datViec(`Đang chạy ${e.name}`);
       const d = themKhoi("tool");
       // KHÔNG innerHTML: e.name tới từ model.
       const nhan = document.createElement("span");
@@ -207,7 +241,7 @@ window.addEventListener("message", (ev) => {
       if (khoiDangChay && chuDangChay) veChu(khoiDangChay, chuDangChay);
       khoiDangChay = null;
       chuDangChay = "";
-      datViec(`đang chờ bạn duyệt ${e.tool}`);
+      tamDung(`Chờ bạn duyệt ${e.tool}`);
       oQuyen.innerHTML = "";
       const the = document.createElement("div");
       the.className = "the-quyen";
@@ -251,6 +285,7 @@ window.addEventListener("message", (ev) => {
         // Gửi kèm tên tool: phía agent cần nó để nhớ "luôn cho phép" qua các lượt.
         vscode.postMessage({ type: "quyen", id: e.id, allow, alwaysAllow, tool: e.tool });
         oQuyen.innerHTML = "";
+        chayTiep(allow ? `Đang chạy ${e.tool}` : "Đang tiếp tục");
       };
       const themNut = (nhan, lop, fn) => {
         const b = document.createElement("button");
@@ -304,7 +339,11 @@ window.addEventListener("message", (ev) => {
         if (p.ttftMs != null) {
           bang.appendChild(oSo("⏱ chờ", `${(p.ttftMs / 1000).toFixed(1)}s`, p.ttftMs > 5000 ? "cham" : ""));
         }
-        bang.appendChild(oSo("⌛ tổng", `${(p.totalMs / 1000).toFixed(1)}s`));
+        bang.appendChild(oSo("⌛ agent", `${(p.totalMs / 1000).toFixed(1)}s`));
+        if (p.waitUserMs > 1000) {
+          // Tách hẳn ra: thời gian bạn ngồi quyết định không phải tốc độ của máy.
+          bang.appendChild(oSo("👤 bạn duyệt", `${(p.waitUserMs / 1000).toFixed(0)}s`));
+        }
         if (p.toolCalls) bang.appendChild(oSo("🔧", `${p.toolCalls} tool`));
         bang.appendChild(oSo("↕", `${e.usage.inputTokens.toLocaleString()}/${e.usage.outputTokens.toLocaleString()} tok`));
         if (e.context && e.context.maxTokens) {
@@ -363,7 +402,7 @@ function gui() {
   khoiDangChay = null;
   chuDangChay = "";
   datBan(true);
-  batDauChay("đang nghĩ…");
+  batDauChay("Đang đọc yêu cầu");
   vscode.postMessage({ type: "hoi", text: t });
 }
 

@@ -30,7 +30,27 @@ export type SuKienAgent =
 	| { type: "context"; used: number; max: number }
 	| { type: "compacted"; freedTokens: number; strategy: string | null }
 	| { type: "recovered"; reason: string }
-	| { type: "turn_end"; reason: string; usage: { inputTokens: number; outputTokens: number }; context: unknown }
+	| {
+			type: "turn_end";
+			reason: string;
+			usage: { inputTokens: number; outputTokens: number };
+			context: { usedTokens: number; maxTokens: number } | null;
+			/** File agent đã sửa trong lượt này. */
+			edited: string[];
+			/** Agent có THẬT SỰ chạy lệnh kiểm tra không — không phải lời nó tự nhận. */
+			ranCheck: boolean;
+			perf?: {
+				/** Thời gian AGENT làm việc, ĐÃ trừ khoảng người dùng ngồi duyệt. */
+				totalMs: number;
+				/** Người dùng ngồi quyết định — tách riêng, không phải tốc độ của máy. */
+				waitUserMs: number;
+				ttftMs: number | null;
+				genMs: number;
+				tokPerSec: number | null;
+				toolCalls: number;
+			};
+	  }
+	| { type: "first_token"; afterMs: number }
 	| { type: "reset_ok" }
 	| { type: "models"; models: Array<{ name: string; size: number }>; current: string }
 	| { type: "model_changed"; model: string }
