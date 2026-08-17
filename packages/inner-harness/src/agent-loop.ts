@@ -32,15 +32,19 @@ import type {
 	InjectableMessage,
 	Message,
 	ToolDecision,
+	ProcessSandboxBinding,
 } from "@agentweave/types";
 import { createEmptyTokenUsage, createEmptyContextUsage } from "@agentweave/types";
 import type { ContextUsage, TokenUsage } from "@agentweave/types";
 import { ToolRegistry } from "./tool-registry";
+import { createDefaultRegistry, type ModelProvider, type ProviderRegistry } from "./provider-registry";
 import { ToolExecutor } from "./tool-executor";
 import type { ToolCall } from "./tool-executor";
 import { MessageStore } from "./message-store";
 import { TokenCounter } from "./token-counter";
 import { createNoopControlPlane } from "./noop-control-plane";
+import { cuuToolCall } from "./tool-call-recovery";
+import { canNen, capNhatDoDay, mucNen, nenManhTay, suyRaCuaSo } from "./context-manager";
 
 export interface AgentLoopConfig {
 	/** Control plane for governance integration. If omitted, runs standalone (all tools allowed, no output filtering). */
@@ -51,6 +55,20 @@ export interface AgentLoopConfig {
 	systemPrompt?: string;
 	maxTurns?: number;
 	thinkingEnabled?: boolean;
+	/**
+	 * Cửa sổ ngữ cảnh của model, tính bằng token. Không khai thì suy ra: model
+	 * cục bộ lấy theo OLLAMA_CONTEXT_LENGTH (mặc định 65.536), model đám mây
+	 * 200.000. Khai sai làm cơ chế nén kích hoạt nhầm lúc.
+	 */
+	contextWindow?: number;
+	/** Tự nén khi ngữ cảnh đầy tới ngưỡng. Mặc định bật. */
+	autoCompact?: boolean;
+	/**
+	 * Cô lập tool chạy tiến trình bằng sandbox tầng nhân (bubblewrap/seatbelt).
+	 * Không khai thì KHÔNG cô lập — giữ nguyên hành vi cũ để không phá bản dùng
+	 * sẵn có; nơi nào cần thì bật tường minh.
+	 */
+	processSandbox?: ProcessSandboxBinding;
 }
 
 export class AgentLoop implements InnerHarnessProvider {
@@ -58,15 +76,24 @@ export class AgentLoop implements InnerHarnessProvider {
 	private model: string;
 	private fallbackModel?: string;
 	private systemPrompt: string;
+	/** Các mục prompt đặt qua setSystemPromptSection(), giữ theo tên để không lặp. */
+	private promptSections = new Map<string, string>();
 	private maxTurns: number;
 	private thinkingEnabled: boolean;
 
 	private registry = new ToolRegistry();
+	private providers: ProviderRegistry = createDefaultRegistry();
 	private messages = new MessageStore();
 	private tokenCounter = new TokenCounter();
 	private abortController: AbortController | null = null;
 	private sessionId = "";
 	private agentId: string;
+	private autoCompact = true;
+	private processSandbox?: ProcessSandboxBinding;
+	/** Đặt bởi lệnh force_compact — nén ở đầu lượt kế tiếp. */
+	private yeuCauNen = false;
+	/** Mức nén hiện tại. Tăng khi nén xong vẫn chưa đủ chỗ. */
+	private mucNenHienTai = 0;
 
 	private state: InnerState = {
 		status: "idle",
@@ -86,8 +113,15 @@ export class AgentLoop implements InnerHarnessProvider {
 		this.systemPrompt = config.systemPrompt ?? "";
 		this.maxTurns = config.maxTurns ?? 100;
 		this.thinkingEnabled = config.thinkingEnabled ?? true;
+		this.autoCompact = config.autoCompact ?? true;
+		this.processSandbox = config.processSandbox;
 		this.agentId = `agent_${nanoid(8)}`;
 		this.state.model = this.model;
+		// Cửa sổ ngữ cảnh THẬT của model. Mặc định cũ là 200.000 — cửa sổ của
+		// Claude — nên với model cục bộ 64K thì số đo sai gấp ba lần.
+		this.state.contextUsage = createEmptyContextUsage(
+			suyRaCuaSo(this.model, config.contextWindow),
+		);
 
 		if (config.tools) {
 			for (const tool of config.tools) {
@@ -163,9 +197,40 @@ export class AgentLoop implements InnerHarnessProvider {
 
 			yield this.makeEvent({ type: "turn:start", turnIndex: this.state.turnIndex });
 
-			// ── LLM Call (simulated — real Vercel AI SDK integration later) ──
-			// For now, yield request_start event. Actual streamText() call
-			// will be wired when providers are configured.
+			// ── Nén ngữ cảnh TRƯỚC khi gọi LLM ──
+			// Phải nén trước chứ không phải sau: gọi khi đã tràn thì Ollama lặng
+			// lẽ cắt phần đầu hội thoại, agent quên đề bài mà không báo gì.
+			if (this.yeuCauNen || (this.autoCompact && canNen(this.state.contextUsage))) {
+				const truoc = this.messages.getMessageCount();
+				// Leo thang: nén ở mức hiện tại. Nếu lượt trước đã nén mà vẫn chật
+				// thì mức tăng lên, giữ ít lượt hơn và cắt tool result ngắn hơn.
+				const muc = mucNen(this.mucNenHienTai);
+				const kq = nenManhTay(this.messages.getMessages(), muc.giuGanNhat, muc.tranToolResult);
+				this.yeuCauNen = false;
+				this.mucNenHienTai++;
+
+				if (kq.daNen) {
+					this.messages.setMessages(kq.messages);
+					this.state.contextUsage = {
+						...this.state.contextUsage,
+						compactionCount: this.state.contextUsage.compactionCount + 1,
+					};
+					this.state.messageCount = this.messages.getMessageCount();
+
+					yield this.makeEvent({
+						type: "context:compacted",
+						// ~4 ký tự một token — ước lượng thô, đủ để người vận hành
+						// thấy quy mô. Số chính xác sẽ có ở lượt gọi LLM kế tiếp.
+						freedTokens: Math.round(kq.kyTuBoDi / 4),
+						strategy: kq.cach,
+						messagesRemoved: truoc - kq.messages.length,
+					});
+				}
+			}
+
+			// ── LLM Call ──
+			// Provider được phân giải qua ProviderRegistry (xem provider-registry.ts).
+			// Có thể tiêm llmCaller để test tất định mà không gọi mạng.
 			yield this.makeEvent({
 				type: "llm:request_start",
 				model: this.model,
@@ -174,7 +239,21 @@ export class AgentLoop implements InnerHarnessProvider {
 
 			// The LLM response will be injected via the adapter pattern.
 			// For the MVP, we use a pluggable LLM caller interface.
-			const llmResult = await this.callLLM();
+			//
+			// Lỗi gọi LLM PHẢI kết thúc bằng reason "error". Bản trước nuốt lỗi và
+			// trả về kết quả rỗng, nên endpoint sai vẫn báo "completed" với 0 token —
+			// nhìn y hệt một câu trả lời rỗng hợp lệ.
+			let llmResult: LLMCallResult;
+			try {
+				llmResult = await this.callLLM();
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				this.state.status = "completed";
+				const usage = this.tokenCounter.getUsage();
+				yield this.makeEvent({ type: "error", error: msg, recoverable: false });
+				yield this.makeEvent({ type: "terminal", reason: "error", usage });
+				return { reason: "error", usage };
+			}
 
 			// Track usage
 			if (llmResult.usage) {
@@ -185,6 +264,22 @@ export class AgentLoop implements InnerHarnessProvider {
 			this.state.usage = this.tokenCounter.getUsage();
 			this.state.messageCount = this.messages.getMessageCount();
 
+			// Độ đầy ngữ cảnh THẬT: số token đầu vào provider vừa báo chính là
+			// lượng ngữ cảnh đang dùng. Trước đây trường này luôn bằng 0, nên
+			// không có tín hiệu nào để biết khi nào cần nén.
+			this.state.contextUsage = capNhatDoDay(
+				this.state.contextUsage,
+				llmResult.usage?.inputTokens,
+			);
+			// Đã xuống dưới ngưỡng thì hạ mức nén về mặc định, để lượt sau không
+			// bị cắt gắt hơn mức cần thiết.
+			if (!canNen(this.state.contextUsage)) this.mucNenHienTai = 0;
+			yield this.makeEvent({
+				type: "context:usage",
+				usedTokens: this.state.contextUsage.usedTokens,
+				maxTokens: this.state.contextUsage.maxTokens,
+			});
+
 			yield this.makeEvent({
 				type: "llm:stream_end",
 				usage: this.tokenCounter.getUsage(),
@@ -192,7 +287,24 @@ export class AgentLoop implements InnerHarnessProvider {
 			});
 
 			// ── Check for tool calls ──
-			const toolCalls = llmResult.toolCalls;
+			let toolCalls = llmResult.toolCalls;
+
+			// Model cục bộ đôi khi nhả tool-call ra dạng CHỮ (khuôn Hermes XML
+			// hoặc JSON) thay vì tool call thật. Không cứu thì vòng lặp tưởng
+			// model đã trả lời xong và kết thúc "completed" mà chưa làm gì.
+			if ((!toolCalls || toolCalls.length === 0) && llmResult.text) {
+				const cuu = cuuToolCall(llmResult.text, this.registry.names());
+				if (cuu.toolCalls.length > 0) {
+					toolCalls = cuu.toolCalls;
+					llmResult.text = cuu.conLai;
+					// Phát sự kiện để việc cứu nằm trong nhật ký kiểm toán.
+					yield this.makeEvent({
+						type: "recovery:retry",
+						reason: `tool-call dang chu (khuon ${cuu.khuon}) — da cuu ${cuu.toolCalls.length} loi goi`,
+						attempt: this.state.turnIndex,
+					});
+				}
+			}
 
 			if (!toolCalls || toolCalls.length === 0) {
 				// Terminal: LLM did not request any tools
@@ -243,6 +355,7 @@ export class AgentLoop implements InnerHarnessProvider {
 				agentId: this.agentId,
 				cwd: process.cwd(),
 				signal: this.abortController.signal,
+				processSandbox: this.processSandbox,
 			});
 
 			const permittedCalls: ToolCall[] = [];
@@ -376,15 +489,12 @@ export class AgentLoop implements InnerHarnessProvider {
 			return this.llmCaller(this.messages.getMessages(), this.model);
 		}
 
-		// Default: try real Vercel AI SDK
-		try {
-			console.log("  [debug] Calling real LLM with model:", this.model);
-			return await this.callRealLLM();
-		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			console.error(`[AgentWeave] LLM call failed: ${msg}`);
-			return { text: "", toolCalls: [], stopReason: "end_turn", usage: undefined };
+		// Default: try real Vercel AI SDK. KHÔNG bắt lỗi ở đây — vòng lặp chính
+		// phải thấy được lỗi để kết thúc với reason "error".
+		if (process.env.AGENTWEAVE_DEBUG) {
+			console.error(`[AgentWeave:debug] goi LLM that voi model: ${this.model}`);
 		}
+		return await this.callRealLLM();
 	}
 
 	private async callRealLLM(): Promise<LLMCallResult> {
@@ -402,8 +512,14 @@ export class AgentLoop implements InnerHarnessProvider {
 			});
 		}
 
+		const system = this.getSystemPrompt();
+
 		const result = await generateText({
 			model: llmModel,
+			// Trước đây systemPrompt được lưu nhưng không bao giờ gửi đi: mọi thứ
+			// đặt qua setSystemPromptSection() (kể cả chỉ mục skill) đều vô hình
+			// với model mà không có dấu hiệu nào báo sai.
+			system: system.trim() === "" ? undefined : system,
 			messages: this.messages.getMessages().map((m) => ({
 				role: m.role as "user" | "assistant",
 				content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
@@ -443,33 +559,19 @@ export class AgentLoop implements InnerHarnessProvider {
 	 * Supports: gemini-* → @ai-sdk/google, gpt-* → @ai-sdk/openai, default → @ai-sdk/anthropic
 	 */
 	private async resolveModel(): Promise<Parameters<typeof import("ai").generateText>[0]["model"]> {
-		const m = this.model;
+		return (await this.providers.resolve(this.model)) as Parameters<
+			typeof import("ai").generateText
+		>[0]["model"];
+	}
 
-		// OpenRouter: use if OPENROUTER_API_KEY is set (any model name)
-		if (process.env.OPENROUTER_API_KEY) {
-			const { createOpenAI } = await import("@ai-sdk/openai");
-			const openrouter = createOpenAI({
-				baseURL: "https://openrouter.ai/api/v1",
-				apiKey: process.env.OPENROUTER_API_KEY,
-				headers: {
-					"HTTP-Referer": "https://github.com/santete/AgentWeave",
-					"X-Title": "AgentWeave",
-				},
-			});
-			return openrouter(m);
-		}
+	/** Đăng ký provider tuỳ chỉnh (vd: endpoint nội bộ của công ty). */
+	registerProvider(provider: ModelProvider): void {
+		this.providers.register(provider);
+	}
 
-		if (m.startsWith("gemini")) {
-			const { google } = await import("@ai-sdk/google");
-			return google(m);
-		}
-		if (m.startsWith("gpt") || m.startsWith("o1") || m.startsWith("o3") || m.startsWith("o4")) {
-			const { openai } = await import("@ai-sdk/openai");
-			return openai(m);
-		}
-		// Default: Anthropic (claude-*)
-		const { anthropic } = await import("@ai-sdk/anthropic");
-		return anthropic(m);
+	/** Provider nào sẽ xử lý model hiện tại — dùng để chẩn đoán. */
+	whichProvider(): string | null {
+		return this.providers.whichProvider(this.model);
 	}
 
 	// ─── InnerHarnessProvider interface ──────────────────────────
@@ -514,16 +616,32 @@ export class AgentLoop implements InnerHarnessProvider {
 		});
 	}
 
+	/**
+	 * Đặt/xoá một mục có tên trong system prompt.
+	 *
+	 * Giữ theo Map thay vì nối chuỗi rồi cắt bằng regex, vì bản cũ có hai lỗi:
+	 * đặt lại cùng một tên thì mục bị lặp, và nội dung chứa "[" làm regex xoá
+	 * cắt nhầm chỗ. Chỉ mục skill dính cả hai.
+	 */
 	setSystemPromptSection(name: string, content: string | null): void {
-		const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 		if (content === null) {
-			this.systemPrompt = this.systemPrompt.replace(
-				new RegExp(`\\[${escaped}\\][\\s\\S]*?(?=\\[|$)`),
-				"",
-			);
+			this.promptSections.delete(name);
 		} else {
-			this.systemPrompt += `\n[${name}]\n${content}\n`;
+			this.promptSections.set(name, content);
 		}
+	}
+
+	/**
+	 * System prompt thật sự gửi tới model — prompt gốc cộng các mục đã đặt.
+	 * Công khai để bộ tự kiểm tra xác nhận được chỉ mục skill đã vào prompt,
+	 * thay vì tin là đã vào.
+	 */
+	getSystemPrompt(): string {
+		let out = this.systemPrompt;
+		for (const [name, content] of this.promptSections) {
+			out += `\n[${name}]\n${content}\n`;
+		}
+		return out;
 	}
 
 	setModel(model: string): void {
@@ -573,6 +691,13 @@ export class AgentLoop implements InnerHarnessProvider {
 					return { accepted: true };
 				case "inject":
 					this.injectMessage(cmd.message);
+					return { accepted: true };
+				case "force_compact":
+					// Lệnh này đã có trong kiểu dữ liệu từ lâu nhưng KHÔNG có nhánh
+					// xử lý, nên gọi vào chỉ nhận "Unknown command". Nén ngay giữa
+					// lượt sẽ đụng danh sách tin nhắn đang dùng, nên đặt cờ và nén
+					// ở đầu lượt kế tiếp.
+					this.yeuCauNen = true;
 					return { accepted: true };
 				default:
 					return { accepted: false, reason: `Unknown command: ${cmd.type}` };

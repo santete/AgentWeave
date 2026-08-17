@@ -45,6 +45,25 @@ describe("AgentLoop", () => {
 		expect(loop.getState().status).toBe("completed");
 	});
 
+	it("gọi LLM hỏng phải kết thúc bằng reason 'error', KHÔNG phải 'completed'", async () => {
+		// Bản trước nuốt lỗi và trả kết quả rỗng, nên endpoint sai vẫn báo
+		// "completed" với 0 token — nhìn y hệt một câu trả lời rỗng hợp lệ.
+		// Trong air-gap thì đây là kiểu lỗi tốn cả ngày mới truy ra.
+		const loop = new AgentLoop({ model: "mock" });
+		loop.setLLMCaller(async () => {
+			throw new Error("Failed to parse URL from 127.0.0.1:11434/v1/chat/completions");
+		});
+
+		const events = await collectEvents(loop.run("Hello"));
+
+		const terminal = events.find((e) => e.type === "terminal");
+		expect(terminal!.type === "terminal" && terminal!.reason).toBe("error");
+
+		const err = events.find((e) => e.type === "error");
+		expect(err).toBeDefined();
+		expect(err!.type === "error" && err!.error).toContain("Failed to parse URL");
+	});
+
 	it("should execute tool calls and loop back to LLM", async () => {
 		const cp = createControlPlane({ failMode: "open" });
 		const loop = new AgentLoop({

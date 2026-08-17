@@ -8,47 +8,65 @@
  *
  * Glob — Find files matching a glob pattern.
  *
- * SECURITY: Uses execFile (no shell) to prevent injection via pattern/path.
+ * Dùng `fs.glob` của Node 22 thay vì gọi `find`. Bản trước chạy
+ * `find <path> -path <pattern> -type f`, sai ngữ nghĩa ở hai chỗ:
+ *   ① `find -path` so khớp CẢ đường dẫn, mà đường dẫn bắt đầu bằng "./" nên
+ *      mẫu chuẩn "test/**\/*.js" không bao giờ khớp
+ *   ② `**` không có nghĩa đặc biệt với `find`; `*` vốn đã vượt qua "/"
+ * Hậu quả đo được: mẫu mọi agent đều sinh ra trả về "No files found" trong khi
+ * tệp tồn tại — model kết luận "không có tệp test" rồi đi tiếp.
+ *
+ * Thêm nữa, bản cũ `catch { return "No files found" }` nuốt cả lỗi thật.
  */
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { glob } from "node:fs/promises";
+import { resolve } from "node:path";
 import { z } from "zod";
 import type { ToolDefinition } from "@agentweave/types";
 
-const execFileAsync = promisify(execFile);
+const TRAN_KET_QUA = 500;
+
+/** Thư mục luôn bỏ qua — nếu không, trần 500 kết quả đầy ắp node_modules. */
+const BO_QUA = ["node_modules", ".git", "dist", ".turbo"];
 
 export const GlobTool: ToolDefinition<{ pattern: string; path?: string }, string> = {
 	name: "Glob",
-	description: "Find files matching a glob pattern (e.g. 'src/**/*.ts').",
+	description:
+		"Find files matching a glob pattern (e.g. 'src/**/*.ts'). " +
+		"Skips node_modules, .git, dist and .turbo.",
 	parameters: z.object({
 		pattern: z.string().describe("Glob pattern to match files"),
 		path: z.string().optional().describe("Base directory (default: cwd)"),
 	}),
 	execute: async ({ pattern, path }, context) => {
-		const searchPath = path ?? ".";
+		const goc = path ? resolve(context.cwd, path) : context.cwd;
 
-		try {
-			if (process.platform === "win32") {
-				const { stdout } = await execFileAsync(
-					"cmd.exe",
-					["/c", "dir", "/S", "/B", `${searchPath}\\${pattern}`],
-					{ cwd: context.cwd, timeout: 15_000, signal: context.signal },
-				);
-				const files = stdout.trim().split("\n").filter(Boolean).slice(0, 500);
-				return files.length > 0 ? files.join("\n") : "No files found";
+		const ketQua: string[] = [];
+		let bicat = false;
+
+		// Lỗi thật (thư mục gốc không tồn tại…) được ném lên để model thấy,
+		// KHÔNG biến thành "No files found".
+		for await (const muc of glob(pattern, {
+			cwd: goc,
+			withFileTypes: true,
+			exclude: (d) => BO_QUA.includes(typeof d === "string" ? d : d.name),
+		})) {
+			if (!muc.isFile()) continue;
+			if (ketQua.length >= TRAN_KET_QUA) {
+				bicat = true;
+				break;
 			}
-
-			const { stdout } = await execFileAsync(
-				"find",
-				[searchPath, "-path", pattern, "-type", "f"],
-				{ cwd: context.cwd, timeout: 15_000, signal: context.signal },
-			);
-			const files = stdout.trim().split("\n").filter(Boolean).slice(0, 500);
-			return files.length > 0 ? files.join("\n") : "No files found";
-		} catch {
-			return "No files found";
+			// parentPath + name → đường dẫn tương đối so với goc
+			const day = resolve(muc.parentPath ?? goc, muc.name);
+			ketQua.push(day.startsWith(`${goc}/`) ? day.slice(goc.length + 1) : day);
 		}
+
+		if (ketQua.length === 0) return "No files found";
+
+		ketQua.sort();
+		return bicat
+			? `${ketQua.join("\n")}\n… [chỉ hiện ${TRAN_KET_QUA} kết quả đầu, còn nữa]`
+			: ketQua.join("\n");
 	},
 	metadata: {
 		isReadOnly: true,

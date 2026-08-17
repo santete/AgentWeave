@@ -1,0 +1,7 @@
+{
+	"name": "quy-uoc-dotnet",
+	"description": "KHUNG MAU: quy uoc viet code .NET cua cong ty, can dien noi dung that",
+	"whenToUse": "Khi viet hoac sua code C#/.NET trong du an nay",
+	"version": "0.1.0",
+	"tags": ["mau", "dotnet"]
+}

@@ -91,14 +91,29 @@ function printSnapshot(m: SDLCMetricsSnapshot, title: string): void {
 	const regIcon = m.m7_regressionDetected ? `${C.red}✗` : `${C.green}✓`;
 	console.log(`  ${regIcon} M7  Regression detected    ${m.m7_regressionDetected ? "YES" : "NO"}${C.reset}`);
 
-	// Delta
-	const qualColor = m.m10_codeQualityDelta >= 0 ? C.green : C.red;
-	console.log(`  ${qualColor}  M10 Code quality delta     ${m.m10_codeQualityDelta > 0 ? "+" : ""}${m.m10_codeQualityDelta}${C.reset}`);
+	// Delta — m10 vốn đã là number|null từ đầu nhưng chỗ này chưa xử lý null.
+	if (m.m10_codeQualityDelta === null) {
+		console.log(`  ${C.gray}  M10 Code quality delta     chưa đo${C.reset}`);
+	} else {
+		const qualColor = m.m10_codeQualityDelta >= 0 ? C.green : C.red;
+		console.log(`  ${qualColor}  M10 Code quality delta     ${m.m10_codeQualityDelta > 0 ? "+" : ""}${m.m10_codeQualityDelta}${C.reset}`);
+	}
 
 	console.log();
 }
 
-function printBar(id: string, label: string, value: number): void {
+/**
+ * `null` = KHÔNG đo được. Phải hiện rõ là "chưa đo" chứ không vẽ thanh —
+ * thanh 0% đọc thành "hỏng hoàn toàn", thanh 100% đọc thành "hoàn hảo",
+ * cả hai đều là kết luận bịa từ chỗ không có dữ liệu.
+ */
+function printBar(id: string, label: string, value: number | null): void {
+	const paddedLabelNull = (label + " ".repeat(22)).slice(0, 22);
+	if (value === null) {
+		console.log(`  ${C.gray}  ${id}  ${paddedLabelNull}${"·".repeat(20)} chưa đo${C.reset}`);
+		return;
+	}
+
 	const pct = Math.round(value * 100);
 	const barWidth = 20;
 	const filled = Math.round(value * barWidth);
@@ -132,7 +147,7 @@ function printHistory(dir: string): void {
 
 			console.log(
 				`  ${pass}${C.reset} ${C.dim}${date}${C.reset}  ` +
-				`test:${(m.m2_testPassRate * 100).toFixed(0)}%  ` +
+				`test:${m.m2_testPassRate === null ? "—" : `${(m.m2_testPassRate * 100).toFixed(0)}%`}  ` +
 				`retry:${m.m4_retryCount}  ` +
 				`cost:$${m.m5_costUsd.toFixed(3)}  ` +
 				`${C.dim}${file}${C.reset}`,

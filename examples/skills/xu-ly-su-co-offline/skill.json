@@ -1,0 +1,7 @@
+{
+	"name": "xu-ly-su-co-offline",
+	"description": "Chan doan su co agent cuc bo khi khong co mang de tra cuu",
+	"whenToUse": "Khi agent bao loi, tra loi sai, hoac cham bat thuong",
+	"version": "1.0.0",
+	"tags": ["van-hanh", "air-gap"]
+}

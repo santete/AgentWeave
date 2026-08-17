@@ -248,8 +248,6 @@ async function setupApiDirect(rl: ReturnType<typeof createInterface>): Promise<v
 	// Same provider selection as agent-loop
 	await setupAgentLoop(rl);
 
-	// Override mode to api-direct
-	const { pipelineConfigCommand } = await import("./pipeline-config.js");
 	// The config was set to agent-loop by setupAgentLoop — override
 	console.log(`  ${C.dim}Note: api-direct mode uses same API key as agent-loop.${C.reset}`);
 	console.log(`  ${C.dim}When running pipeline, meta-steps use api-direct automatically.${C.reset}\n`);

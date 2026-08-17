@@ -118,13 +118,16 @@ export interface SDLCMetricsSnapshot {
 	taskId: string;
 	timestamp: number;
 	m1_firstPassSuccess: boolean;
-	m2_testPassRate: number; // 0.0 - 1.0
-	m3_scopeAccuracy: number; // 0.0 - 1.0
+	// null = KHÔNG đo được. Trước đây mặc định về 1 (100%) khi không có dữ liệu,
+	// nên một lượt chạy không làm gì hiện ba thanh xanh 100% — đúng loại "báo
+	// xanh mà sai" mà một sản phẩm bán bằng số đo không được phép mắc.
+	m2_testPassRate: number | null; // 0.0 - 1.0, null = không chạy check nào
+	m3_scopeAccuracy: number | null; // 0.0 - 1.0, null = không có kế hoạch/thay đổi để đối chiếu
 	m4_retryCount: number;
 	m5_costUsd: number;
 	m6_timeToCompletionMs: number;
 	m7_regressionDetected: boolean;
-	m8_planAccuracy: number; // 0.0 - 1.0
+	m8_planAccuracy: number | null; // 0.0 - 1.0, null = không có kế hoạch nào
 	m9_contextUtilization: number | null; // 0.0 - 1.0, null = not measured
 	m10_codeQualityDelta: number | null;  // positive = improved, null = not measured
 }

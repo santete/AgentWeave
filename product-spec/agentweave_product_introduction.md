@@ -207,13 +207,14 @@ AgentWeave's Inner Harness supports any LLM through the Vercel AI SDK:
 
 | Provider | Models | Status |
 |---|---|---|
-| **Anthropic** | Claude Opus, Sonnet, Haiku (4.x) | Full support |
-| **OpenAI** | GPT-4o, GPT-4-turbo, o1/o3 | Full support |
-| **Google** | Gemini 2.5 Pro/Flash | Full support |
-| **AWS Bedrock** | Claude, Titan, Llama | Full support |
-| **Google Vertex** | Claude, Gemini | Full support |
-| **Azure** | OpenAI models, Claude (Foundry) | Full support |
-| **Ollama / Local** | Llama, Mistral, Qwen, DeepSeek | Full support |
+| **Anthropic** | Claude Opus, Sonnet, Haiku (4.x) | Built-in |
+| **OpenAI** | GPT-4o, GPT-4-turbo, o1/o3/o4 | Built-in |
+| **Google** | Gemini 2.x Pro/Flash | Built-in |
+| **Ollama / Local** | Llama, Mistral, Qwen, DeepSeek | Built-in |
+| **OpenRouter** | Aggregated catalog | Built-in |
+| **AWS Bedrock** | Claude, Titan, Llama | Via `registerProvider()` |
+| **Google Vertex** | Claude, Gemini | Via `registerProvider()` |
+| **Azure** | OpenAI models, Claude (Foundry) | Via `registerProvider()` |
 
 Switch models mid-session. Use Opus for complex reasoning, Haiku for simple tasks, local models for privacy-sensitive work — all governed by the same rules.
 
@@ -404,7 +405,7 @@ Do not build new features against the internal agent loop. New execution work go
 
 - **Policy enforcement.** Enterprise policies are immutable — developers cannot override them. Period.
 - **Cost control.** Per-user, per-team, per-project budgets. Daily and monthly caps. Automatic pause when exceeded.
-- **Vendor flexibility.** Not locked into one LLM provider. Switch between Anthropic, OpenAI, Google, Azure, or local models — governance stays the same.
+- **Vendor flexibility.** Not locked into one LLM provider. Switch between Anthropic, OpenAI, Google, OpenRouter, or local models (Ollama) out of the box — and register any other provider through `ProviderRegistry` without touching the core. Governance stays the same.
 - **Risk reduction.** Output validation, permission gates, and audit trails reduce the risk of AI-generated code introducing vulnerabilities or leaking data.
 - **ROI visibility.** Dashboard shows: how many hours saved, how many bugs caught, how much spent — per team, per project, per quarter.
 

@@ -52,7 +52,6 @@ export async function taskCommand(args: TaskCommandArgs): Promise<void> {
 
 	// Determine execution mode
 	const hasAgent = !!args.agent;
-	const mode = hasAgent ? "process-adapter" as const : "agent-loop" as const;
 	const model = args.model ?? "claude-sonnet-4-6";
 
 	if (hasAgent) {
@@ -62,7 +61,7 @@ export async function taskCommand(args: TaskCommandArgs): Promise<void> {
 	}
 
 	// Build QA checks
-	const checks = (args.checks ?? []).map((cmd, i) => ({
+	const checks = (args.checks ?? []).map((cmd) => ({
 		type: "custom" as const,
 		command: cmd,
 		required: true,
@@ -99,7 +98,6 @@ export async function taskCommand(args: TaskCommandArgs): Promise<void> {
 
 	// Run pipeline with live output
 	let currentPhase = "";
-	let lastEventType = "";
 
 	try {
 		const gen = pipeline.run(args.prompt);
@@ -141,7 +139,6 @@ export async function taskCommand(args: TaskCommandArgs): Promise<void> {
 				console.log(`${C.red}  ERROR: ${e.error}${C.reset}`);
 			}
 
-			lastEventType = event.type;
 		}
 	} catch (err) {
 		console.log(`\n${C.red}  Pipeline error: ${err instanceof Error ? err.message : String(err)}${C.reset}`);
@@ -194,13 +191,18 @@ function getPhaseIcon(phase: string): string {
 	return "▸";
 }
 
+/** `null` = chưa đo. Không được in "0%" hay "100%" từ chỗ không có dữ liệu. */
+function phanTram(v: number | null): string {
+	return v === null ? `${C.dim}chưa đo${C.reset}` : `${(v * 100).toFixed(0)}%`;
+}
+
 function printMetrics(m: SDLCMetricsSnapshot, elapsed: string): void {
 	const pass = m.m1_firstPassSuccess;
 	const passIcon = pass ? `${C.green}✓` : `${C.red}✗`;
 
 	console.log(`  ${passIcon} First-pass success: ${pass ? "YES" : "NO"}${C.reset}`);
-	console.log(`  ${C.white}  Test pass rate:    ${C.reset}${(m.m2_testPassRate * 100).toFixed(0)}%`);
-	console.log(`  ${C.white}  Scope accuracy:    ${C.reset}${(m.m3_scopeAccuracy * 100).toFixed(0)}%`);
+	console.log(`  ${C.white}  Test pass rate:    ${C.reset}${phanTram(m.m2_testPassRate)}`);
+	console.log(`  ${C.white}  Scope accuracy:    ${C.reset}${phanTram(m.m3_scopeAccuracy)}`);
 	console.log(`  ${C.white}  Retry count:       ${C.reset}${m.m4_retryCount}`);
 	console.log(`  ${C.white}  Cost:              ${C.reset}$${m.m5_costUsd.toFixed(4)}`);
 	console.log(`  ${C.white}  Time:              ${C.reset}${elapsed}s`);
@@ -208,7 +210,7 @@ function printMetrics(m: SDLCMetricsSnapshot, elapsed: string): void {
 	if (m.m7_regressionDetected) {
 		console.log(`  ${C.red}  ⚠ Regression detected${C.reset}`);
 	}
-	console.log(`  ${C.white}  Plan accuracy:     ${C.reset}${(m.m8_planAccuracy * 100).toFixed(0)}%`);
+	console.log(`  ${C.white}  Plan accuracy:     ${C.reset}${phanTram(m.m8_planAccuracy)}`);
 }
 
 function printComparison(deltas: Record<string, number>): void {

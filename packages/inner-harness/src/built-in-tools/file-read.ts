@@ -11,6 +11,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
 import type { ToolDefinition } from "@agentweave/types";
+import { ghiNhanDaDoc } from "../file-access-tracker";
 
 export const FileReadTool: ToolDefinition<{ path: string; offset?: number; limit?: number }, string> = {
 	name: "FileRead",
@@ -23,6 +24,8 @@ export const FileReadTool: ToolDefinition<{ path: string; offset?: number; limit
 	execute: async ({ path, offset, limit }, context) => {
 		const absPath = resolve(context.cwd, path);
 		const content = await readFile(absPath, "utf-8");
+		// Ghi dấu để FileEdit/FileWrite biết agent đã thật sự nhìn thấy file này.
+		await ghiNhanDaDoc(context.sessionId, absPath);
 
 		if (offset !== undefined || limit !== undefined) {
 			const lines = content.split("\n");

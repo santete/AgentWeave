@@ -1,0 +1,7 @@
+{
+	"name": "chon-model",
+	"description": "Chon model Ollama theo so lieu do tren Jetson AGX Thor",
+	"whenToUse": "Khi can chon hoac doi model cho mot cong viec",
+	"version": "1.0.0",
+	"tags": ["van-hanh", "hieu-nang"]
+}

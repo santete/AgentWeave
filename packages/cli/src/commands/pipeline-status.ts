@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import { loadConfig } from "../config-loader.js";
 import { listCredentials, hasCredentials } from "../credential-store.js";
-import { resolveAgent, AGENT_PRESETS } from "../agent-presets.js";
+import { AGENT_PRESETS } from "../agent-presets.js";
 
 const C = {
 	reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",

@@ -121,14 +121,33 @@ describe("MetricsCollector", () => {
 		expect(snapshot.m8_planAccuracy).toBeCloseTo(2 / 3);
 	});
 
-	it("should handle null inputs gracefully", () => {
+	it("không đo được thì trả null, KHÔNG phải 100%", () => {
+		// Bản trước mặc định về 1 khi thiếu dữ liệu, nên một lượt chạy không làm
+		// gì hiện ba thanh xanh 100%. Quan sát thật: pipeline chạy 3 lần thất bại,
+		// git diff trống, mà bảng kết quả vẫn in "Test pass rate 100%".
+		// Với sản phẩm bán bằng số đo thì đây là chỗ sai nguy hiểm nhất.
 		const mc = new MetricsCollector("task_1");
 		const snapshot = mc.finalize(null, null, null, null);
 
-		expect(snapshot.m1_firstPassSuccess).toBe(false); // no QA = not success
-		expect(snapshot.m2_testPassRate).toBe(1); // no test checks = default 1
-		expect(snapshot.m3_scopeAccuracy).toBe(1); // no files = default 1
+		expect(snapshot.m1_firstPassSuccess).toBe(false);
+		expect(snapshot.m2_testPassRate).toBeNull();
+		expect(snapshot.m3_scopeAccuracy).toBeNull();
+		expect(snapshot.m8_planAccuracy).toBeNull();
 		expect(snapshot.m5_costUsd).toBe(0);
+	});
+
+	it("chỉ tính chênh lệch khi cả hai phía có số thật", () => {
+		const mc = new MetricsCollector("task_1");
+		const khongDo = mc.finalize(null, null, null, null);
+
+		const so = MetricsCollector.compare(khongDo, khongDo);
+
+		// So một "không biết" với một "không biết" không được sinh ra con số nào.
+		expect(so.deltas.m2_testPassRate).toBeUndefined();
+		expect(so.deltas.m3_scopeAccuracy).toBeUndefined();
+		expect(so.deltas.m8_planAccuracy).toBeUndefined();
+		// Số đo luôn có thật thì vẫn tính bình thường.
+		expect(so.deltas.m4_retryCount).toBe(0);
 	});
 
 	it("should record custom metrics from handle", () => {

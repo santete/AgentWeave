@@ -155,6 +155,14 @@ export interface RunInstanceOptions {
 	maxTurns?: number;
 	maxBudgetUsd?: number;
 	signal?: AbortSignal;
+	/**
+	 * Lịch sử hội thoại nạp sẵn trước khi chạy.
+	 *
+	 * Cần cho REPL: `AgentLoop.run()` chỉ gọi được MỘT LẦN mỗi thể hiện, nên mỗi
+	 * lượt người dùng phải dựng harness mới và mang hội thoại cũ sang. Không có
+	 * trường này thì mỗi lượt là một phiên mất trí nhớ.
+	 */
+	initialMessages?: ReadonlyArray<Message>;
 }
 
 export interface RunResult {
@@ -257,6 +265,8 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 				maxTurns: runOpts?.maxTurns,
 				maxBudgetUsd: runOpts?.maxBudgetUsd,
 				signal: runOpts?.signal,
+				// RunOptions muốn mảng ghi được; sao chép để không lộ tham chiếu ra ngoài.
+				initialMessages: runOpts?.initialMessages ? [...runOpts.initialMessages] : undefined,
 			});
 
 			for (;;) {
@@ -277,6 +287,8 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 				maxTurns: runOpts?.maxTurns,
 				maxBudgetUsd: runOpts?.maxBudgetUsd,
 				signal: runOpts?.signal,
+				// RunOptions muốn mảng ghi được; sao chép để không lộ tham chiếu ra ngoài.
+				initialMessages: runOpts?.initialMessages ? [...runOpts.initialMessages] : undefined,
 			});
 			for (;;) {
 				const { value, done } = await gen.next();
