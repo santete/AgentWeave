@@ -129,8 +129,24 @@ window.addEventListener("message", (ev) => {
       if (e.diff) {
         const tt = document.createElement("div");
         tt.className = "tom-tat";
-        tt.textContent = `+${e.diff.added} −${e.diff.removed}${e.diff.isNew ? " (tạo mới)" : ""}`;
+        tt.textContent = `${e.diff.path} · +${e.diff.added} −${e.diff.removed}${e.diff.isNew ? " (tạo mới)" : ""}`;
         the.appendChild(tt);
+
+        // Có nội dung đầy đủ thì mời mở bằng trình diff của chính editor —
+        // dễ đọc hơn hẳn khi thay đổi lớn. Diff nhỏ dưới đây vẫn giữ để liếc.
+        if (e.diff.after !== null && e.diff.after !== undefined) {
+          const b = document.createElement("button");
+          b.textContent = "Mở trong trình diff";
+          b.className = "phu";
+          b.onclick = () =>
+            vscode.postMessage({
+              type: "xemDiff",
+              path: e.diff.path,
+              after: e.diff.after,
+              isNew: e.diff.isNew,
+            });
+          the.appendChild(b);
+        }
         the.appendChild(veDiff(e.diff.text));
       } else {
         const c = document.createElement("code");
@@ -141,7 +157,8 @@ window.addEventListener("message", (ev) => {
       const nut = document.createElement("div");
       nut.className = "nut-quyen";
       const traLoi = (allow, alwaysAllow) => {
-        vscode.postMessage({ type: "quyen", id: e.id, allow, alwaysAllow });
+        // Gửi kèm tên tool: phía agent cần nó để nhớ "luôn cho phép" qua các lượt.
+        vscode.postMessage({ type: "quyen", id: e.id, allow, alwaysAllow, tool: e.tool });
         oQuyen.innerHTML = "";
       };
       const themNut = (nhan, lop, fn) => {
@@ -152,7 +169,7 @@ window.addEventListener("message", (ev) => {
         nut.appendChild(b);
       };
       themNut("Cho phép", "dong-y", () => traLoi(true, false));
-      themNut("Luôn cho phép", "phu", () => traLoi(true, true));
+      themNut(`Luôn cho phép ${e.tool}`, "phu", () => traLoi(true, true));
       themNut("Từ chối", "tu-choi", () => traLoi(false, false));
       the.appendChild(nut);
 
@@ -172,14 +189,44 @@ window.addEventListener("message", (ev) => {
       themKhoi("he-thong-mo", `↻ ${e.reason}`);
       break;
 
-    case "turn_end":
+    case "always_allowed":
+      themKhoi("he-thong-mo", `✓ từ giờ tự cho phép ${e.tool} (vẫn chặn rm -rf, sudo, ghi .env)`);
+      break;
+
+    case "turn_end": {
       khoiDangChay = null;
       datBan(false);
+
+      // Cảnh báo dựa trên QUAN SÁT, không dựa vào lời model tự nhận. Model 30B
+      // hay tuyên bố "các test đều pass" mà chưa chạy lệnh nào.
+      if (e.edited && e.edited.length > 0 && !e.ranCheck) {
+        const c = themKhoi("chua-kiem-chung");
+        c.textContent =
+          `⚠ Đã sửa ${e.edited.length} file nhưng CHƯA chạy kiểm tra nào: ${e.edited.join(", ")}. ` +
+          `Mọi khẳng định "chạy ổn" ở trên đều chưa được kiểm chứng.`;
+        const b = document.createElement("button");
+        b.textContent = "Bảo agent chạy kiểm tra";
+        b.className = "phu";
+        b.onclick = () => {
+          themKhoi("cau-hoi", "Chạy lệnh kiểm tra của dự án rồi báo kết quả thật.");
+          datBan(true);
+          vscode.postMessage({
+            type: "hoi",
+            text: "Chay lenh kiem tra cua du an bang Bash roi bao ket qua that, ke ca khi that bai.",
+          });
+        };
+        c.appendChild(document.createElement("br"));
+        c.appendChild(b);
+      } else if (e.edited && e.edited.length > 0 && e.ranCheck) {
+        themKhoi("he-thong-mo", `✓ đã sửa ${e.edited.length} file và có chạy kiểm tra`);
+      }
+
       themKhoi(
         "he-thong-mo",
         `${e.usage.inputTokens.toLocaleString()} vào / ${e.usage.outputTokens.toLocaleString()} ra`,
       );
       break;
+    }
 
     case "reset_ok":
       oTinNhan.innerHTML = "";

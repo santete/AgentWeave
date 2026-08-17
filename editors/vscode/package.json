@@ -2,7 +2,7 @@
   "name": "agentweave-vscode",
   "displayName": "AgentWeave",
   "description": "Agent lập trình chạy hoàn toàn cục bộ, có quản trị quyền và kiểm toán",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "agentweave",
   "license": "MIT",
   "engines": { "vscode": "^1.90.0" },

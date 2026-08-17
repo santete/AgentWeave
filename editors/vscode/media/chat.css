@@ -83,6 +83,20 @@ body {
 	color: var(--vscode-errorForeground);
 }
 
+/* Cảnh báo "đã sửa file mà chưa kiểm chứng" — phải nổi bật, vì nó là thứ
+   người dùng dễ lướt qua nhất mà lại quan trọng nhất. */
+.chua-kiem-chung {
+	margin: 8px 0;
+	padding: 8px 10px;
+	border-left: 3px solid var(--vscode-editorWarning-foreground);
+	background: var(--vscode-editorWidget-background);
+	color: var(--vscode-editorWarning-foreground);
+	font-size: 0.9em;
+}
+.chua-kiem-chung button {
+	margin-top: 6px;
+}
+
 /* ── Thẻ xin quyền ── */
 #dang-cho-quyen:empty {
 	display: none;
