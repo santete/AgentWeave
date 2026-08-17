@@ -47,6 +47,8 @@ export interface ControlPlane {
 	intercept<T extends InterceptType>(
 		type: T,
 		request: InterceptRequest[T],
+		/** `timeoutMs: 0` = chờ vô hạn — dùng khi quyết định thuộc về con người. */
+		options?: { timeoutMs?: number },
 	): Promise<InterceptResponse[T]>;
 	registerInterceptor<T extends InterceptType>(
 		type: T,

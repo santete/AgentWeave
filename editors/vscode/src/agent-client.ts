@@ -32,6 +32,9 @@ export type SuKienAgent =
 	| { type: "recovered"; reason: string }
 	| { type: "turn_end"; reason: string; usage: { inputTokens: number; outputTokens: number }; context: unknown }
 	| { type: "reset_ok" }
+	| { type: "models"; models: Array<{ name: string; size: number }>; current: string }
+	| { type: "model_changed"; model: string }
+	| { type: "text_corrected"; text: string }
 	| { type: "error"; message: string };
 
 export interface TuyChonAgent {
@@ -120,6 +123,14 @@ export class AgentClient extends EventEmitter {
 
 	xoaHoiThoai(): void {
 		this.gui({ type: "reset" });
+	}
+
+	lietKeModel(): void {
+		this.gui({ type: "list_models" });
+	}
+
+	doiModel(model: string): void {
+		this.gui({ type: "set_model", model });
 	}
 
 	dungLai(): void {

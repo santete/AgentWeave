@@ -69,6 +69,16 @@ export interface AgentLoopConfig {
 	 * sẵn có; nơi nào cần thì bật tường minh.
 	 */
 	processSandbox?: ProcessSandboxBinding;
+	/**
+	 * Hạn chờ quyết định quyền, ms. `0` = chờ vô hạn (mặc định).
+	 *
+	 * Mặc định của ControlPlane là 30 giây — hợp cho interceptor tự động, nhưng
+	 * SAI khi quyết định thuộc về con người: người dùng đọc diff lâu hơn 30 giây
+	 * là bị từ chối, mà thông báo lại nói "Interceptor timeout" nên trông như
+	 * lỗi hệ thống chứ không phải như chính mình chưa bấm.
+	 * Pipeline SDLC không dùng vòng lặp này nên không bị ảnh hưởng.
+	 */
+	toolRequestTimeoutMs?: number;
 }
 
 export class AgentLoop implements InnerHarnessProvider {
@@ -89,6 +99,7 @@ export class AgentLoop implements InnerHarnessProvider {
 	private sessionId = "";
 	private agentId: string;
 	private autoCompact = true;
+	private toolRequestTimeoutMs = 0;
 	private processSandbox?: ProcessSandboxBinding;
 	/** Đặt bởi lệnh force_compact — nén ở đầu lượt kế tiếp. */
 	private yeuCauNen = false;
@@ -114,6 +125,7 @@ export class AgentLoop implements InnerHarnessProvider {
 		this.maxTurns = config.maxTurns ?? 100;
 		this.thinkingEnabled = config.thinkingEnabled ?? true;
 		this.autoCompact = config.autoCompact ?? true;
+		this.toolRequestTimeoutMs = config.toolRequestTimeoutMs ?? 0;
 		this.processSandbox = config.processSandbox;
 		this.agentId = `agent_${nanoid(8)}`;
 		this.state.model = this.model;
@@ -311,6 +323,13 @@ export class AgentLoop implements InnerHarnessProvider {
 					toolCalls = cuu.toolCalls;
 					llmResult.text = cuu.conLai;
 					// Phát sự kiện để việc cứu nằm trong nhật ký kiểm toán.
+					// Chữ thô ĐÃ chảy lên giao diện qua llm:stream_delta trước khi ta
+					// kịp nhận ra đó là tool-call. Phát lại phần đã làm sạch để giao
+					// diện thay thế — nếu không, người dùng thấy nguyên khối JSON.
+					yield this.makeEvent({
+						type: "llm:text_corrected",
+						text: cuu.conLai,
+					});
 					yield this.makeEvent({
 						type: "recovery:retry",
 						reason: `tool-call dang chu (khuon ${cuu.khuon}) — da cuu ${cuu.toolCalls.length} loi goi`,
@@ -393,6 +412,7 @@ export class AgentLoop implements InnerHarnessProvider {
 						isReadOnly: tool?.metadata.isReadOnly ?? false,
 						isDestructive: tool?.metadata.isDestructive ?? false,
 					},
+					{ timeoutMs: this.toolRequestTimeoutMs },
 				);
 
 				if (decision.behavior === "deny") {

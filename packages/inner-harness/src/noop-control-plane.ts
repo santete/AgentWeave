@@ -54,6 +54,7 @@ export function createNoopControlPlane(): ControlPlane {
 		async intercept<T extends InterceptType>(
 			type: T,
 			_request: InterceptRequest[T],
+			_options?: { timeoutMs?: number },
 		): Promise<InterceptResponse[T]> {
 			return PASSTHROUGH_RESPONSES[type] as InterceptResponse[T];
 		},

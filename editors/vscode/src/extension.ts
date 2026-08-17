@@ -135,6 +135,12 @@ function moKhungChat(ctx: vscode.ExtensionContext): void {
 			case "xoa":
 				client?.xoaHoiThoai();
 				break;
+			case "listModels":
+				client?.lietKeModel();
+				break;
+			case "doiModel":
+				client?.doiModel(String(m.model));
+				break;
 			case "moFile": {
 				const goc = vscode.workspace.workspaceFolders?.[0]?.uri;
 				if (goc) void vscode.window.showTextDocument(vscode.Uri.joinPath(goc, String(m.path)));
@@ -165,6 +171,7 @@ function dungHtml(webview: vscode.Webview, goc: vscode.Uri): string {
   <div id="thanh-nhap">
     <textarea id="o-nhap" rows="3" placeholder="Hỏi gì đó… dùng @đường-dẫn để chèn file"></textarea>
     <div id="nut">
+      <select id="chon-model" disabled title="Model đang dùng"></select>
       <button id="gui">Gửi</button>
       <button id="huy" class="phu">Dừng</button>
       <button id="xoa" class="phu">Xoá hội thoại</button>

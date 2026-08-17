@@ -58,7 +58,7 @@ export async function serveCommand(args: ServeArgs): Promise<void> {
 	const { config: cauHinh, nguon, loi: loiCauHinh } = await docCauHinhAgent(goc);
 	if (loiCauHinh) nhatKy(`cau hinh ${nguon} khong dung duoc: ${loiCauHinh}`);
 
-	const model = args.model || cauHinh.model || "qwen3-coder:30b";
+	let model = args.model || cauHinh.model || "qwen3-coder:30b";
 	const cheDoQuyen = args.permissionMode ?? cauHinh.permissionMode ?? "default";
 	const maxTurns = args.maxTurns ?? cauHinh.maxTurns ?? 50;
 
@@ -113,6 +113,37 @@ export async function serveCommand(args: ServeArgs): Promise<void> {
 				lichSu = [];
 				phat({ type: "reset_ok" });
 				break;
+
+			case "set_model": {
+				const m = String(msg.model ?? "").trim();
+				if (!m) break;
+				if (chay.hien) {
+					phat({ type: "error", message: "dang chay mot luot, hay abort truoc khi doi model" });
+					break;
+				}
+				model = m;
+				phat({ type: "model_changed", model });
+				break;
+			}
+
+			case "list_models": {
+				// Hỏi thẳng Ollama — danh sách phải là thứ máy ĐANG có, không phải
+				// một danh sách cứng trong mã rồi lệch dần theo thời gian.
+				try {
+					const host = process.env.OLLAMA_HOST ?? "127.0.0.1:11434";
+					const url = host.startsWith("http") ? host : `http://${host}`;
+					const r = await fetch(`${url}/api/tags`);
+					const j = (await r.json()) as { models?: Array<{ name: string; size: number }> };
+					phat({
+						type: "models",
+						models: (j.models ?? []).map((x) => ({ name: x.name, size: x.size })),
+						current: model,
+					});
+				} catch (e) {
+					phat({ type: "error", message: `khong lay duoc danh sach model: ${String(e)}` });
+				}
+				break;
+			}
 
 			case "prompt": {
 				if (chay.hien) {
@@ -254,6 +285,10 @@ function chuyenSuKien(e: InnerEvent): void {
 	switch (e.type) {
 		case "llm:stream_delta":
 			phat({ type: "delta", text: e.delta });
+			break;
+		case "llm:text_corrected":
+			// Chữ vừa in hoá ra là tool-call dạng văn bản — bảo giao diện thay thế.
+			phat({ type: "text_corrected", text: e.text });
 			break;
 		case "tool:requested":
 			phat({ type: "tool", id: e.toolUseId, name: e.toolName, input: e.toolInput });

@@ -47,11 +47,40 @@ window.addEventListener("message", (ev) => {
     case "ready":
       themKhoi("he-thong", `Sẵn sàng · ${e.model} · quyền: ${e.permissionMode}`);
       if (e.configSource) themKhoi("he-thong-mo", `cấu hình: ${e.configSource}`);
+      vscode.postMessage({ type: "listModels" });
       break;
 
     case "chenVaoO":
       oNhap.value += e.text;
       oNhap.focus();
+      break;
+
+    case "text_corrected":
+      // Chữ vừa hiện hoá ra là tool-call viết dạng văn bản. Thay hẳn khối đó —
+      // để nguyên thì người dùng thấy một đống JSON thô giữa câu trả lời.
+      if (khoiDangChay) {
+        if (e.text.trim()) khoiDangChay.textContent = e.text;
+        else khoiDangChay.remove();
+        khoiDangChay = null;
+      }
+      break;
+
+    case "models": {
+      const sel = document.getElementById("chon-model");
+      sel.innerHTML = "";
+      for (const m of e.models) {
+        const o = document.createElement("option");
+        o.value = m.name;
+        o.textContent = `${m.name} (${(m.size / 1e9).toFixed(1)} GB)`;
+        if (m.name === e.current) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.disabled = false;
+      break;
+    }
+
+    case "model_changed":
+      themKhoi("he-thong", `Đã đổi model sang ${e.model}`);
       break;
 
     case "delta":
@@ -181,6 +210,8 @@ document.getElementById("huy").onclick = () => {
   datBan(false);
 };
 document.getElementById("xoa").onclick = () => vscode.postMessage({ type: "xoa" });
+document.getElementById("chon-model").onchange = (ev) =>
+  vscode.postMessage({ type: "doiModel", model: ev.target.value });
 
 // Enter gửi, Shift+Enter xuống dòng — quy ước quen thuộc.
 oNhap.addEventListener("keydown", (ev) => {

@@ -75,6 +75,23 @@ export class InterceptorRegistry {
 		}
 
 		const timeout = options?.timeoutMs ?? DEFAULT_TIMEOUTS[type];
+
+		// timeoutMs = 0 → CHỜ VÔ HẠN. Cần cho trường hợp quyết định thuộc về con
+		// người: hỏi "cho phép sửa file này không?" rồi tự từ chối sau 30 giây vì
+		// người dùng còn đang đọc diff là sai về khái niệm — đó là hạn của máy áp
+		// lên việc của người. Lối thoát vẫn có: abort.
+		if (timeout === 0) {
+			try {
+				return await handler(request);
+			} catch (err) {
+				const lyDo = err instanceof Error ? err.message : String(err);
+				return withReason(
+					getDefaultDecision(type, this.failMode),
+					`Interceptor loi: ${lyDo}`,
+				) as InterceptResponse[T];
+			}
+		}
+
 		let timer: ReturnType<typeof setTimeout> | undefined;
 
 		try {

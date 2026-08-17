@@ -417,6 +417,17 @@ function inSuKien(e: InnerEvent): void {
 			process.stdout.write(e.delta);
 			break;
 
+		case "llm:text_corrected":
+			// Terminal không xoá lại được chữ đã in, nên chỉ nói rõ phần vừa hiện
+			// là tool-call chứ không phải câu trả lời — thà thừa một dòng còn hơn
+			// để người đọc tưởng model nói năng lộn xộn.
+			if (dangChay_chu) {
+				process.stdout.write(`\n  ${C.gray}↑ phần trên là tool-call model viết dạng chữ, không phải câu trả lời${C.reset}\n`);
+				dangChay_chu = false;
+			}
+			if (e.text.trim()) console.log(e.text.trim());
+			break;
+
 		case "message:assistant":
 			// Nội dung đã chảy ra ở llm:stream_delta rồi, chỉ cần đóng đoạn.
 			if (dangChay_chu) {

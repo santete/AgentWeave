@@ -33,6 +33,12 @@ export type InnerEventPayload =
 			blockType: "text" | "thinking" | "tool_use";
 	  }
 	| { type: "llm:stream_end"; usage: TokenUsage; stopReason: string }
+	/**
+	 * Chữ vừa chảy ra hoá ra là tool-call viết dạng văn bản. Giao diện phải
+	 * THAY THẾ phần đã hiện bằng `text` — nếu không người dùng thấy nguyên
+	 * khối JSON thô lẫn giữa câu trả lời.
+	 */
+	| { type: "llm:text_corrected"; text: string }
 	// Tool lifecycle
 	| {
 			type: "tool:requested";
