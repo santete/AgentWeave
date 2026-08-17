@@ -15,7 +15,7 @@
 
 import {
 	readFileSync, writeFileSync, mkdirSync, existsSync,
-	chmodSync, statSync, appendFileSync,
+	chmodSync, appendFileSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import {

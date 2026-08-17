@@ -91,9 +91,13 @@ function printSnapshot(m: SDLCMetricsSnapshot, title: string): void {
 	const regIcon = m.m7_regressionDetected ? `${C.red}✗` : `${C.green}✓`;
 	console.log(`  ${regIcon} M7  Regression detected    ${m.m7_regressionDetected ? "YES" : "NO"}${C.reset}`);
 
-	// Delta
-	const qualColor = m.m10_codeQualityDelta >= 0 ? C.green : C.red;
-	console.log(`  ${qualColor}  M10 Code quality delta     ${m.m10_codeQualityDelta > 0 ? "+" : ""}${m.m10_codeQualityDelta}${C.reset}`);
+	// Delta — m10 vốn đã là number|null từ đầu nhưng chỗ này chưa xử lý null.
+	if (m.m10_codeQualityDelta === null) {
+		console.log(`  ${C.gray}  M10 Code quality delta     chưa đo${C.reset}`);
+	} else {
+		const qualColor = m.m10_codeQualityDelta >= 0 ? C.green : C.red;
+		console.log(`  ${qualColor}  M10 Code quality delta     ${m.m10_codeQualityDelta > 0 ? "+" : ""}${m.m10_codeQualityDelta}${C.reset}`);
+	}
 
 	console.log();
 }

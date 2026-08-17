@@ -10,10 +10,10 @@
 import { execSync } from "node:child_process";
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import { createSDLCPipeline } from "@agentweave/inner-harness";
-import type { SDLCMetricsSnapshot, SDLCConfig } from "@agentweave/types";
+import type { SDLCMetricsSnapshot, SDLCConfig, QualityGateCheck } from "@agentweave/types";
 import type { PolicyPaths } from "@agentweave/outer-harness";
 import { loadConfig } from "../config-loader.js";
-import { resolveAgent, AGENT_PRESETS, listPresets } from "../agent-presets.js";
+import { resolveAgent, AGENT_PRESETS } from "../agent-presets.js";
 import { getAgentEnv, hasCredentials, scrubCredentials, buildChildEnv, ensureGitignore } from "../credential-store.js";
 import { createAdapterGovernance, type AdapterGovernance } from "../lib/adapter-governance.js";
 import { createSdlcGovernance, type SdlcGovernanceBundle } from "../lib/sdlc-governance.js";
@@ -56,10 +56,16 @@ const LINE = "─".repeat(62);
 const VALID_CHECK_TYPES = new Set(["test", "lint", "compile", "typecheck", "custom"]);
 
 /** Parse "type:command" or plain "command" into a QualityGateCheck shape. */
-function parseCheck(raw: string): { type: string; command: string; required: true } {
+function parseCheck(raw: string): QualityGateCheck {
 	const colonIdx = raw.indexOf(":");
 	if (colonIdx > 0 && VALID_CHECK_TYPES.has(raw.slice(0, colonIdx))) {
-		return { type: raw.slice(0, colonIdx), command: raw.slice(colonIdx + 1), required: true };
+		// VALID_CHECK_TYPES đã bảo đảm giá trị nằm trong union, nhưng Set<string>
+		// không truyền được điều đó cho trình kiểm kiểu.
+		return {
+			type: raw.slice(0, colonIdx) as QualityGateCheck["type"],
+			command: raw.slice(colonIdx + 1),
+			required: true,
+		};
 	}
 	return { type: "custom", command: raw, required: true };
 }
@@ -94,7 +100,7 @@ export function pipelineShowCommand(cliOverrides?: { checks?: string[]; retries?
 	}
 	if (cliOverrides?.checks && cliOverrides.checks.length > 0) {
 		config.modules.qualityGate.enabled = true;
-		(config.modules.qualityGate as Record<string, unknown>).checks = cliOverrides.checks.map(parseCheck);
+		config.modules.qualityGate.checks = cliOverrides.checks.map(parseCheck);
 	}
 	if (cliOverrides?.retries !== undefined) {
 		config.modules.retryEngine.maxRetries = cliOverrides.retries;
@@ -146,7 +152,7 @@ export function pipelineShowCommand(cliOverrides?: { checks?: string[]; retries?
 		const isMetrics = step.key === "executionBridge"; // bridge is always needed
 
 		// Build detail string from config
-		const detail = getModuleDetail(step.key, modConf, config);
+		const detail = getModuleDetail(step.key, modConf as unknown as Record<string, unknown>, config);
 
 		console.log();
 		if (isWrapMode && !enabled && !isUniqueValue && !isMetrics) {
@@ -177,7 +183,7 @@ export function pipelineShowCommand(cliOverrides?: { checks?: string[]; retries?
 }
 
 /** Extract meaningful detail from module config. */
-function getModuleDetail(key: string, modConf: Record<string, unknown>, config: SDLCConfig): string {
+function getModuleDetail(key: string, modConf: Record<string, unknown>, _config: SDLCConfig): string {
 	if (!modConf?.enabled) return "";
 	const c = modConf as Record<string, unknown>;
 
@@ -573,15 +579,19 @@ function matchPhaseToStep(phase: string): number {
 
 // ─── Metrics Box ─────────────────────────────────────────────────
 
+function phanTramHoacTrong(v: number | null): string {
+	return v === null ? "—" : `${(v * 100).toFixed(0)}%`;
+}
+
 function printMetricsBox(m: SDLCMetricsSnapshot, elapsed: string): void {
 	const pass = m.m1_firstPassSuccess;
 	const icon = pass ? `${C.green}✓ PASS` : `${C.red}✗ FAIL`;
 
 	console.log(`  ${BOX_L}  ${icon}${C.reset}  First-pass success${" ".repeat(36)}${BOX_L}`);
 	console.log(`  ${BOX_L}${" ".repeat(62)}${BOX_L}`);
-	printMetricLine("Test pass rate", `${(m.m2_testPassRate * 100).toFixed(0)}%`, m.m2_testPassRate);
-	printMetricLine("Scope accuracy", `${(m.m3_scopeAccuracy * 100).toFixed(0)}%`, m.m3_scopeAccuracy);
-	printMetricLine("Plan accuracy", `${(m.m8_planAccuracy * 100).toFixed(0)}%`, m.m8_planAccuracy);
+	printMetricLine("Test pass rate", phanTramHoacTrong(m.m2_testPassRate), m.m2_testPassRate);
+	printMetricLine("Scope accuracy", phanTramHoacTrong(m.m3_scopeAccuracy), m.m3_scopeAccuracy);
+	printMetricLine("Plan accuracy", phanTramHoacTrong(m.m8_planAccuracy), m.m8_planAccuracy);
 	console.log(`  ${BOX_L}  Retry count:      ${m.m4_retryCount}${" ".repeat(Math.max(0, 41 - String(m.m4_retryCount).length))}${BOX_L}`);
 	console.log(`  ${BOX_L}  Cost:             $${m.m5_costUsd.toFixed(4)}${" ".repeat(Math.max(0, 40 - m.m5_costUsd.toFixed(4).length))}${BOX_L}`);
 	console.log(`  ${BOX_L}  Time:             ${elapsed}s${" ".repeat(Math.max(0, 41 - elapsed.length - 1))}${BOX_L}`);
@@ -591,8 +601,16 @@ function printMetricsBox(m: SDLCMetricsSnapshot, elapsed: string): void {
 	}
 }
 
-function printMetricLine(label: string, valueStr: string, ratio: number): void {
+/** `ratio` null = CHƯA ĐO. Không vẽ thanh, vì thanh 0% đọc thành "hỏng hoàn
+ * toàn" và thanh 100% đọc thành "hoàn hảo" — cả hai đều bịa từ chỗ không có
+ * dữ liệu. */
+function printMetricLine(label: string, valueStr: string, ratio: number | null): void {
 	const barW = 15;
+	if (ratio === null) {
+		const padL = (label + " ".repeat(17)).slice(0, 17);
+		console.log(`  ${BOX_L}  ${padL}${C.dim}${"·".repeat(barW)}${C.reset} chưa đo${" ".repeat(17)}${BOX_L}`);
+		return;
+	}
 	const filled = Math.round(ratio * barW);
 	const bar = "█".repeat(filled) + "░".repeat(barW - filled);
 	const color = ratio >= 0.8 ? C.green : ratio >= 0.5 ? C.yellow : C.red;

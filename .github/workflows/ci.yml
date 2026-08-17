@@ -16,9 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # KHÔNG khai `version` ở đây. `packageManager: pnpm@9.15.0` trong
+      # package.json đã là nguồn sự thật duy nhất, và pnpm/action-setup@v4
+      # báo lỗi khi thấy hai chỗ cùng khai:
+      #   "Multiple versions of pnpm specified ... ERR_PNPM_BAD_PM_VERSION"
+      # Bỏ dòng version còn chính xác hơn: package.json ghim tới tận bản vá.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - uses: actions/setup-node@v4
         with:

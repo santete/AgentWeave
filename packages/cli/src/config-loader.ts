@@ -33,7 +33,7 @@ export function loadConfig(cwd?: string): LoadedConfig {
 			try {
 				const raw = readFileSync(path, "utf-8");
 				const parsed = parseYamlSimple(raw);
-				const inner = parsed.inner ?? parsed;
+				const inner = (parsed.inner ?? parsed) as Record<string, unknown>;
 				const merged = mergeConfig(defaults, inner);
 				return { config: merged, source: path };
 			} catch {
@@ -87,7 +87,7 @@ function mergeConfig(defaults: SDLCConfig, overrides: Record<string, unknown>): 
 		for (const [key, val] of Object.entries(mods)) {
 			if (key in modules && typeof val === "object" && val !== null) {
 				(modules as Record<string, unknown>)[key] = {
-					...(modules as Record<string, Record<string, unknown>>)[key],
+					...(modules as unknown as Record<string, Record<string, unknown>>)[key],
 					...val,
 				};
 			}

@@ -18,7 +18,6 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { getDefaultSDLCConfig } from "@agentweave/inner-harness";
-import type { SDLCConfig } from "@agentweave/types";
 import { loadConfig } from "../config-loader.js";
 
 const CONFIG_PATH = "agentweave.yaml";

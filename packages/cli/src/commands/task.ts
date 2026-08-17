@@ -52,7 +52,6 @@ export async function taskCommand(args: TaskCommandArgs): Promise<void> {
 
 	// Determine execution mode
 	const hasAgent = !!args.agent;
-	const mode = hasAgent ? "process-adapter" as const : "agent-loop" as const;
 	const model = args.model ?? "claude-sonnet-4-6";
 
 	if (hasAgent) {
@@ -62,7 +61,7 @@ export async function taskCommand(args: TaskCommandArgs): Promise<void> {
 	}
 
 	// Build QA checks
-	const checks = (args.checks ?? []).map((cmd, i) => ({
+	const checks = (args.checks ?? []).map((cmd) => ({
 		type: "custom" as const,
 		command: cmd,
 		required: true,
@@ -99,7 +98,6 @@ export async function taskCommand(args: TaskCommandArgs): Promise<void> {
 
 	// Run pipeline with live output
 	let currentPhase = "";
-	let lastEventType = "";
 
 	try {
 		const gen = pipeline.run(args.prompt);
@@ -141,7 +139,6 @@ export async function taskCommand(args: TaskCommandArgs): Promise<void> {
 				console.log(`${C.red}  ERROR: ${e.error}${C.reset}`);
 			}
 
-			lastEventType = event.type;
 		}
 	} catch (err) {
 		console.log(`\n${C.red}  Pipeline error: ${err instanceof Error ? err.message : String(err)}${C.reset}`);
