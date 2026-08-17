@@ -48,14 +48,22 @@ npm install
 npm run build
 ```
 
-Chạy thử: mở thư mục `editors/vscode` trong VS Code rồi bấm **F5** — một cửa sổ
-Extension Development Host mở ra với extension đã nạp.
-
-Đóng gói thành `.vsix` để cài trên máy khác:
+**Cách 1 — cài hẳn (khuyên dùng).** Dùng được ở mọi cửa sổ VS Code, không phải F5:
 
 ```bash
-npx vsce package --no-dependencies
+npx --yes @vscode/vsce package --no-dependencies --allow-missing-repository
+code --install-extension agentweave-vscode-0.1.0.vsix
 ```
+
+**Cách 2 — chạy thử khi đang phát triển.** Mở thư mục `editors/vscode` rồi bấm
+**F5**; một cửa sổ `[Extension Development Host]` mở ra với extension đã nạp.
+Lưu ý: trong cửa sổ đó, các extension cài toàn cục VẪN có mặt — panel chat mày
+thấy chưa chắc là của AgentWeave. Mở đúng panel bằng Command Palette
+(`Ctrl+Shift+P` → **AgentWeave: Mở khung chat**).
+
+⚠️ **`agentweave` phải có trong PATH** — extension gọi đúng tên đó. Không có thì
+nó báo `Không tìm thấy "agentweave"`; sửa bằng cách đặt `agentweave.cliPath`
+trong Settings, hoặc tạo wrapper trong `~/.local/bin`.
 
 ---
 

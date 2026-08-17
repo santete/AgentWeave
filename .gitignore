@@ -35,3 +35,6 @@ pnpm-debug.log*
 
 # AgentWeave credentials (auto-added)
 .agentweave/
+
+# Goi extension da dong (dung vsce sinh lai duoc)
+editors/vscode/*.vsix
