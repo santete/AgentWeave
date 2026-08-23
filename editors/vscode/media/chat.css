@@ -25,11 +25,35 @@ body {
 	padding: 16px 18px;
 }
 
+/* ── TRẦN BỀ NGANG CHO CỘT ĐỌC ──
+   Thiếu nó là nguyên nhân số một của "tường chữ": trong một pane rộng, dòng
+   chạy hết bề ngang và mắt mất dấu khi nhảy về đầu dòng sau. Đo trên vết tích
+   thật: model hay nhả một khối 400–850 ký tự KHÔNG có lấy một dấu xuống dòng
+   (11 trên 42 câu trả lời dài). Trần này không tạo ra cấu trúc mà model không
+   viết, nhưng nó biến một dòng 850 ký tự thành mấy dòng đọc được.
+
+   Đơn vị `ch` chứ không phải `px`: nó co giãn theo cỡ chữ người dùng chọn
+   trong Settings, nên trần luôn đúng bằng ~76 ký tự bất kể họ để 12px hay 18px.
+   Không căn giữa — pane hẹp thì căn giữa làm lề trái nhảy loạn khi kéo rộng. */
+#tin-nhan > * {
+	max-width: 76ch;
+}
+
+/* Khối tự cuộn ngang thì cho tràn trần: cắt chúng theo 76ch chỉ tạo thêm
+   thanh cuộn chứ không giúp đọc. */
+#tin-nhan > .khoi pre.ma,
+#tin-nhan > .diff {
+	max-width: none;
+}
+
 .khoi {
-	margin: 6px 0;
+	margin: 12px 0;
 	white-space: pre-wrap;
 	word-break: break-word;
-	line-height: 1.5;
+	/* 1.7 chứ không 1.5. Đây là chỗ để ĐỌC, mà nó lại đang chật hơn cả `body`
+	   (1.65) — ngược đời. Với đoạn văn dài không xuống dòng, giãn dòng là thứ
+	   duy nhất còn giúp mắt lần được. */
+	line-height: 1.7;
 }
 
 /* ── Markdown trong câu trả lời ────────────────────────────────
@@ -44,13 +68,24 @@ body {
 .md-h {
 	font-weight: 600;
 	line-height: 1.35;
-	margin: 14px 0 6px;
+	/* Lề TRÊN gấp ba lề dưới: tiêu đề phải dính vào phần nó mở ra, và tách hẳn
+	   khỏi phần vừa kết thúc. Bản cũ 14/6 chưa đủ để mắt thấy ranh giới mục. */
+	margin: 22px 0 7px;
 	color: var(--vscode-foreground);
 }
-.md-h1 { font-size: 1.25em; }
-.md-h2 { font-size: 1.12em; }
-.md-h3 { font-size: 1.02em; }
-.md-h4 { font-size: 1em; opacity: 0.85; }
+.md-h1 {
+	font-size: 1.25em;
+}
+.md-h2 {
+	font-size: 1.12em;
+}
+.md-h3 {
+	font-size: 1.02em;
+}
+.md-h4 {
+	font-size: 1em;
+	opacity: 0.85;
+}
 
 /* Mục đầu tiên của khối không cần lề trên — nó đã có lề của `.khoi`. */
 .khoi > .md-h:first-child {
@@ -58,13 +93,16 @@ body {
 }
 
 .md-ds {
-	margin: 6px 0;
-	padding-left: 22px;
+	margin: 10px 0;
+	padding-left: 24px;
 }
 
 .md-ds li {
-	margin: 3px 0;
-	line-height: 1.5;
+	margin: 6px 0;
+	line-height: 1.6;
+	/* Mục dài xuống dòng thì phần tiếp phải thụt vào cho thẳng chữ, không thụt
+	   về sát dấu đầu dòng — nếu không, danh sách dài trông y hệt văn xuôi. */
+	padding-left: 2px;
 }
 
 .cau-hoi {
@@ -76,8 +114,9 @@ body {
 	font-weight: 500;
 }
 
+/* Câu trả lời là khối cần đọc kỹ nhất, nên cho nó nhiều chỗ thở nhất. */
 .tra-loi {
-	padding: 2px 0;
+	padding: 2px 0 6px;
 }
 /* Model xuất markdown — dựng lại cho dễ đọc thay vì để nguyên dấu ``` */
 pre.ma {
