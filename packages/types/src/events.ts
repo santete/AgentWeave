@@ -17,6 +17,7 @@ export type TerminalReason =
 	| "budget_exceeded" // Cost limit reached
 	| "timeout" // Time limit reached
 	| "error" // Unrecoverable error
+	| "loop" // Model kẹt lặp cùng một lệnh — harness cắt để khỏi đốt lượt
 	| "input_rejected"; // Input gate rejected
 
 // ─── Inner Events ────────────────────────────────────────────────
@@ -105,6 +106,14 @@ export type InnerEventPayload =
 			messagesRemoved?: number;
 	  }
 	| { type: "context:usage"; usedTokens: number; maxTokens: number }
+	/**
+	 * Đã bơm một khối `<system-reminder>` vào giữa hội thoại.
+	 *
+	 * Chữ bơm ngầm mà không có dấu vết là thứ khó gỡ rối nhất: model đột nhiên
+	 * đổi hành vi và không ai truy được vì sao. Sự kiện này để mọi lần bơm đều
+	 * nằm trong nhật ký kiểm toán.
+	 */
+	| { type: "context:reminder"; loai: string[]; bytes: number }
 	// Recovery
 	| { type: "recovery:retry"; reason: string; attempt: number }
 	| { type: "recovery:fallback"; fromModel: string; toModel: string }

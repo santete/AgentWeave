@@ -52,9 +52,7 @@ const DEFAULT_OUTER_CONFIG: OuterHarnessConfig = {
  * responsible for calling `outer.onSessionEnd(...)` on pipeline completion
  * (the SDLCOrchestrator does this via the `GovernanceHandle` interface).
  */
-export function createSdlcGovernance(
-	options: CreateSdlcGovernanceOptions,
-): SdlcGovernanceBundle {
+export function createSdlcGovernance(options: CreateSdlcGovernanceOptions): SdlcGovernanceBundle {
 	const merged: OuterHarnessConfig = {
 		...DEFAULT_OUTER_CONFIG,
 		...options.config,

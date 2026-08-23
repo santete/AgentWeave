@@ -15,6 +15,13 @@
 import { resolve, normalize } from "node:path";
 import type { ToolContext, ToolResult, SandboxConfig } from "@agentweave/types";
 import { ToolRegistry } from "./tool-registry";
+import { catKetQua, chuanHoaThamSo, dienGiaiLoiZod, loiToolKhongCo } from "./tool-contract";
+import {
+	TRAN_MOI_TOOL,
+	apTranTongLuot,
+	ghiKetQuaRaDia,
+	thongBaoDaGhi,
+} from "./tool-result-store";
 
 export interface ToolCall {
 	toolUseId: string;
@@ -81,7 +88,42 @@ export class ToolExecutor {
 			}
 		}
 
+		// Trần TỔNG cả lượt. Trần mỗi tool không đủ: mười tool song song, mỗi cái
+		// 15 KB đều dưới trần, cộng lại vẫn 150 KB vào cửa sổ 64K.
+		await this.apTranTong(results);
 		return results;
+	}
+
+	/** Ghi ra đĩa từ kết quả to nhất xuống, cho tới khi tổng cả lượt vừa trần. */
+	private async apTranTong(results: ToolCallResult[]): Promise<void> {
+		const chu = results
+			.filter((r) => typeof r.result === "string")
+			.map((r) => ({ toolUseId: r.toolUseId, noiDung: r.result as string }));
+		if (chu.length === 0) return;
+
+		const thay = await apTranTongLuot(chu, this.context.cwd, this.context.sessionId);
+		if (thay.size === 0) return;
+
+		for (const r of results) {
+			const moi = thay.get(r.toolUseId);
+			if (moi !== undefined) r.result = moi;
+		}
+	}
+
+	/**
+	 * Kết quả vượt trần thì ghi ra đĩa và trả về bản xem trước.
+	 *
+	 * Ghi hỏng (đĩa đầy, chỉ đọc) thì lùi về cắt như cũ — mất phần đuôi vẫn hơn
+	 * là để nguyên khối 300 KB tràn cửa sổ, và bản cắt vẫn nói rõ là đã cắt.
+	 */
+	private async thuGon(noi: string, toolUseId: string, tranTool?: number): Promise<string> {
+		// Trần hệ thống LUÔN thắng: một tool khai 200.000 vẫn không được phép đẩy
+		// từng đó vào cửa sổ 64K. Khai báo của tool chỉ dùng để siết CHẶT hơn.
+		const tran = Math.min(tranTool ?? TRAN_MOI_TOOL, TRAN_MOI_TOOL);
+		if (noi.length <= tran) return noi;
+
+		const ghi = await ghiKetQuaRaDia(noi, toolUseId, this.context.cwd, this.context.sessionId);
+		return ghi ? thongBaoDaGhi(ghi) : catKetQua(noi, tran);
 	}
 
 	private async executeSingle(call: ToolCall): Promise<ToolCallResult> {
@@ -89,10 +131,13 @@ export class ToolExecutor {
 		const start = performance.now();
 
 		if (!tool) {
+			// Nêu tên gần nhất + danh sách tool có thật. Bản trước chỉ nói "not
+			// found", nên model cục bộ gõ sai một chữ sẽ thử lại đúng cái tên sai
+			// đó ở lượt sau — không có gì trong câu trả lời gợi cho nó tên đúng.
 			return {
 				toolUseId: call.toolUseId,
 				toolName: call.toolName,
-				result: `Error: Tool "${call.toolName}" not found`,
+				result: loiToolKhongCo(call.toolName, this.registry.names()),
 				isError: true,
 				durationMs: performance.now() - start,
 			};
@@ -113,14 +158,44 @@ export class ToolExecutor {
 				}
 			}
 
-			const parsed = tool.parameters.parse(call.toolInput);
-			const result = await tool.execute(parsed, this.context);
+			// Sửa các kiểu lệch vô hại TRƯỚC khi kiểm tra: model cục bộ hay gửi
+			// "10" thay vì 10, hoặc bọc thêm một lớp {"input": {...}}. Từ chối vì
+			// những thứ đó là bắt cả hai bên trả giá cho một lỗi ai cũng thấy.
+			const { thamSo, daSua } = chuanHoaThamSo(call.toolInput, tool.parameters);
+
+			const kiemTra = tool.parameters.safeParse(thamSo);
+			if (!kiemTra.success) {
+				return {
+					toolUseId: call.toolUseId,
+					toolName: call.toolName,
+					// `err.message` của zod là một mảng JSON — model 30B không suy ra
+					// được "thiếu tham số path" từ đó, nó thử lại y hệt rồi bỏ cuộc.
+					result: dienGiaiLoiZod(call.toolName, kiemTra.error),
+					isError: true,
+					durationMs: performance.now() - start,
+				};
+			}
+
+			const result = await tool.execute(kiemTra.data, this.context);
+			const tho =
+				typeof result === "object" && result !== null && "data" in result
+					? (result as ToolResult).data
+					: result;
+
+			// Kết quả quá lớn thì GHI RA ĐĨA, không cắt: cắt là mất hẳn phần đuôi,
+			// còn ghi đĩa chỉ dời chỗ — model lấy lại bằng FileRead/Grep. Trần lấy
+			// theo `maxOutputSize` của tool nhưng không bao giờ vượt trần hệ thống.
+			const dulieu =
+				typeof tho === "string"
+					? await this.thuGon(tho, call.toolUseId, tool.metadata.maxOutputSize)
+					: tho;
+
+			// Có sửa thì NÓI RA. Sửa ngầm thì model không bao giờ học được khuôn
+			// đúng và lượt sau lại sai y nguyên — trả tiền sửa mãi thay vì một lần.
 			return {
 				toolUseId: call.toolUseId,
 				toolName: call.toolName,
-				result: typeof result === "object" && result !== null && "data" in result
-					? (result as ToolResult).data
-					: result,
+				result: daSua.length > 0 ? themGhiChuSua(dulieu, daSua) : dulieu,
 				isError: false,
 				durationMs: performance.now() - start,
 			};
@@ -128,7 +203,13 @@ export class ToolExecutor {
 			return {
 				toolUseId: call.toolUseId,
 				toolName: call.toolName,
-				result: err instanceof Error ? err.message : "Unknown tool error",
+				// Lỗi thì CẮT chứ không ghi đĩa: phần cần nhất của một lỗi nằm ở hai
+				// đầu (lệnh đã chạy, và dòng lỗi cuối), mà `catKetQua` giữ đúng cả
+				// hai. Ghi ra tệp mỗi lần lỗi chỉ tổ rác đĩa cho thứ hiếm khi đọc lại.
+				result: catKetQua(
+					err instanceof Error ? err.message : "Unknown tool error",
+					Math.min(tool.metadata.maxOutputSize ?? TRAN_MOI_TOOL, TRAN_MOI_TOOL),
+				),
 				isError: true,
 				durationMs: performance.now() - start,
 			};
@@ -203,4 +284,17 @@ function checkSandbox(
 	}
 
 	return null;
+}
+
+/**
+ * Gắn ghi chú "đã tự sửa gì" lên đầu kết quả.
+ *
+ * Đặt TRƯỚC nội dung chứ không phải sau: kết quả tool có thể dài và bị nén ở
+ * lượt sau, phần đuôi mất trước. Lời dạy khuôn đúng phải nằm ở chỗ sống lâu nhất.
+ */
+function themGhiChuSua(dulieu: unknown, daSua: ReadonlyArray<string>): unknown {
+	const ghi =
+		`[arguments auto-corrected — send them correctly next time]\n` +
+		daSua.map((d) => `- ${d}`).join("\n");
+	return typeof dulieu === "string" ? `${ghi}\n\n${dulieu}` : `${ghi}\n\n${JSON.stringify(dulieu)}`;
 }

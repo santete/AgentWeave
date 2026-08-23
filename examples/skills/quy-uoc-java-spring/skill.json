@@ -1,0 +1,12 @@
+{
+	"name": "quy-uoc-java-spring",
+	"description": "Quy uoc viet code Java/Spring Boot: phan tang, tiem phu thuoc, giao dich, dat ten, cam ky",
+	"whenToUse": "Khi viet hoac sua code Java/Spring Boot trong du an nay",
+	"paths": "**/*.java, **/pom.xml, **/build.gradle, **/build.gradle.kts",
+	"version": "1.0.0",
+	"tags": [
+		"java",
+		"spring",
+		"quy-uoc"
+	]
+}

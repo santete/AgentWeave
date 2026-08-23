@@ -30,7 +30,7 @@
   },
   "files": ["dist"],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean --external @agentweave/adapters --external @agentweave/control-plane",
+    "build": "tsup src/index.ts --format esm --dts --clean --external @agentweave/adapters --external @agentweave/control-plane --external typescript",
     "test:unit": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",

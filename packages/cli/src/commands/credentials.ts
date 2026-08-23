@@ -19,9 +19,15 @@ import {
 } from "../credential-store.js";
 
 const C = {
-	reset: "\x1b[0m", dim: "\x1b[2m", bold: "\x1b[1m",
-	green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m",
-	cyan: "\x1b[36m", gray: "\x1b[90m", white: "\x1b[37m",
+	reset: "\x1b[0m",
+	dim: "\x1b[2m",
+	bold: "\x1b[1m",
+	green: "\x1b[32m",
+	red: "\x1b[31m",
+	yellow: "\x1b[33m",
+	cyan: "\x1b[36m",
+	gray: "\x1b[90m",
+	white: "\x1b[37m",
 };
 
 export interface CredentialsArgs {
@@ -50,8 +56,12 @@ export async function credentialsCommand(args: CredentialsArgs): Promise<void> {
 
 async function cmdSet(args: CredentialsArgs): Promise<void> {
 	if (!args.agent || !args.envVar) {
-		console.log(`\n  ${C.yellow}Usage: agentweave credentials set <agent> <ENV_VAR> [value]${C.reset}`);
-		console.log(`  ${C.dim}If value is omitted, you'll be prompted securely (recommended).${C.reset}`);
+		console.log(
+			`\n  ${C.yellow}Usage: agentweave credentials set <agent> <ENV_VAR> [value]${C.reset}`,
+		);
+		console.log(
+			`  ${C.dim}If value is omitted, you'll be prompted securely (recommended).${C.reset}`,
+		);
 		console.log(`  ${C.dim}Examples:${C.reset}`);
 		console.log(`    ${C.dim}credentials set claude ANTHROPIC_API_KEY${C.reset}`);
 		console.log(`    ${C.dim}credentials set aider OPENAI_API_KEY${C.reset}`);
@@ -70,8 +80,12 @@ async function cmdSet(args: CredentialsArgs): Promise<void> {
 		}
 	} else {
 		// Warn if value was passed as CLI arg (visible in process list)
-		console.log(`  ${C.yellow}WARNING:${C.reset} ${C.dim}Value passed as CLI argument — visible in process listing.${C.reset}`);
-		console.log(`  ${C.dim}For security, omit the value to be prompted: credentials set ${args.agent} ${args.envVar}${C.reset}`);
+		console.log(
+			`  ${C.yellow}WARNING:${C.reset} ${C.dim}Value passed as CLI argument — visible in process listing.${C.reset}`,
+		);
+		console.log(
+			`  ${C.dim}For security, omit the value to be prompted: credentials set ${args.agent} ${args.envVar}${C.reset}`,
+		);
 	}
 
 	ensureGitignore();
@@ -85,7 +99,9 @@ async function cmdSet(args: CredentialsArgs): Promise<void> {
 	const scope = args.agent === "*" ? "all agents" : args.agent;
 	console.log(`\n  ${C.green}Saved${C.reset} ${args.envVar} for ${C.bold}${scope}${C.reset}`);
 	console.log(`  ${C.dim}Encrypted in .agentweave/credentials.json${C.reset}`);
-	console.log(`  ${C.dim}Auto-injected when running: agentweave pipeline run --agent ${args.agent === "*" ? "<any>" : args.agent}${C.reset}\n`);
+	console.log(
+		`  ${C.dim}Auto-injected when running: agentweave pipeline run --agent ${args.agent === "*" ? "<any>" : args.agent}${C.reset}\n`,
+	);
 }
 
 function readSecretFromStdin(prompt: string): Promise<string> {
@@ -107,7 +123,9 @@ function cmdList(): void {
 
 	if (creds.length === 0) {
 		console.log(`\n  ${C.yellow}No credentials stored.${C.reset}`);
-		console.log(`  ${C.dim}Add with: agentweave credentials set <agent> <ENV_VAR> <value>${C.reset}\n`);
+		console.log(
+			`  ${C.dim}Add with: agentweave credentials set <agent> <ENV_VAR> <value>${C.reset}\n`,
+		);
 		return;
 	}
 
@@ -116,16 +134,22 @@ function cmdList(): void {
 
 	for (const cred of creds) {
 		const scope = cred.agent === "*" ? `${C.yellow}global${C.reset}` : cred.agent;
-		console.log(`  ${C.white}${cred.envVar.padEnd(30)}${C.reset} ${scope.padEnd(20)} ${C.dim}${cred.masked}${C.reset}`);
+		console.log(
+			`  ${C.white}${cred.envVar.padEnd(30)}${C.reset} ${scope.padEnd(20)} ${C.dim}${cred.masked}${C.reset}`,
+		);
 	}
 
 	console.log(`  ${C.gray}${"─".repeat(60)}${C.reset}`);
-	console.log(`  ${C.dim}${creds.length} credential(s). Keys auto-injected into agent process.${C.reset}\n`);
+	console.log(
+		`  ${C.dim}${creds.length} credential(s). Keys auto-injected into agent process.${C.reset}\n`,
+	);
 }
 
 function cmdRemove(args: CredentialsArgs): void {
 	if (!args.agent || !args.envVar) {
-		console.log(`\n  ${C.yellow}Usage: agentweave credentials remove <agent> <ENV_VAR>${C.reset}\n`);
+		console.log(
+			`\n  ${C.yellow}Usage: agentweave credentials remove <agent> <ENV_VAR>${C.reset}\n`,
+		);
 		return;
 	}
 
@@ -145,10 +169,16 @@ function cmdCheck(args: CredentialsArgs): void {
 
 	const has = hasCredentials(args.agent);
 	if (has) {
-		console.log(`\n  ${C.green}✓${C.reset} Credentials configured for ${C.bold}${args.agent}${C.reset}`);
-		console.log(`  ${C.dim}Keys will be injected when running: agentweave pipeline run --agent ${args.agent}${C.reset}\n`);
+		console.log(
+			`\n  ${C.green}✓${C.reset} Credentials configured for ${C.bold}${args.agent}${C.reset}`,
+		);
+		console.log(
+			`  ${C.dim}Keys will be injected when running: agentweave pipeline run --agent ${args.agent}${C.reset}\n`,
+		);
 	} else {
 		console.log(`\n  ${C.red}✗${C.reset} No credentials for ${C.bold}${args.agent}${C.reset}`);
-		console.log(`  ${C.dim}Add with: agentweave credentials set ${args.agent} <ENV_VAR> <value>${C.reset}\n`);
+		console.log(
+			`  ${C.dim}Add with: agentweave credentials set ${args.agent} <ENV_VAR> <value>${C.reset}\n`,
+		);
 	}
 }

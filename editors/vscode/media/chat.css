@@ -32,6 +32,41 @@ body {
 	line-height: 1.5;
 }
 
+/* ── Markdown trong câu trả lời ────────────────────────────────
+   `.khoi` dùng `white-space: pre-wrap` để giữ xuống dòng của model. Các thẻ
+   khối bên dưới tự quản lề riêng, nên đặt lại `white-space: normal` — nếu
+   không, dấu xuống dòng giữa các thẻ sẽ cộng thêm một dòng trắng thừa. */
+.md-h,
+.md-ds {
+	white-space: normal;
+}
+
+.md-h {
+	font-weight: 600;
+	line-height: 1.35;
+	margin: 14px 0 6px;
+	color: var(--vscode-foreground);
+}
+.md-h1 { font-size: 1.25em; }
+.md-h2 { font-size: 1.12em; }
+.md-h3 { font-size: 1.02em; }
+.md-h4 { font-size: 1em; opacity: 0.85; }
+
+/* Mục đầu tiên của khối không cần lề trên — nó đã có lề của `.khoi`. */
+.khoi > .md-h:first-child {
+	margin-top: 0;
+}
+
+.md-ds {
+	margin: 6px 0;
+	padding-left: 22px;
+}
+
+.md-ds li {
+	margin: 3px 0;
+	line-height: 1.5;
+}
+
 .cau-hoi {
 	padding: 10px 14px;
 	margin: 18px 0 10px;
@@ -335,4 +370,156 @@ button.phu {
 button.tu-choi {
 	background: var(--vscode-inputValidation-errorBorder, #a1260d);
 	color: #fff;
+}
+
+/* ── Tiện ích ẩn ── */
+.an {
+	display: none !important;
+}
+
+/* ── Danh sách bước sửa lỗi (vd Ollama chưa chạy) ──
+   Lỗi hạ tầng thường có cách sửa rõ ràng theo thứ tự; hiện thành các bước đánh
+   số dễ làm theo hơn một dòng lỗi thô. */
+.buoc-sua {
+	margin: 6px 0 2px;
+	padding-left: 22px;
+	font-size: 0.92em;
+	color: var(--vscode-foreground);
+}
+.buoc-sua li {
+	margin: 3px 0;
+	line-height: 1.5;
+}
+
+/* ── Bảng phiên đã lưu ── */
+#bang-phien {
+	border-top: 1px solid var(--vscode-panel-border);
+	background: var(--vscode-editorWidget-background);
+	max-height: 40vh;
+	overflow-y: auto;
+	padding: 6px 0;
+}
+.tieu-de-phien {
+	padding: 4px 14px 8px;
+	font-size: 0.82em;
+	color: var(--vscode-descriptionForeground);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+.hang-phien {
+	padding: 7px 14px;
+	cursor: pointer;
+	border-left: 3px solid transparent;
+}
+.hang-phien:hover {
+	background: var(--vscode-list-hoverBackground);
+	border-left-color: var(--vscode-focusBorder);
+}
+.hang-phien.hien-tai {
+	border-left-color: var(--vscode-charts-green);
+	cursor: default;
+	opacity: 0.75;
+}
+.phien-tom-tat {
+	font-weight: 500;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.phien-meta {
+	font-size: 0.8em;
+	color: var(--vscode-descriptionForeground);
+	margin-top: 2px;
+}
+
+/* ── Gợi ý @đường-dẫn ──
+   Neo ngay trên ô nhập, nổi lên trên nội dung. Danh sách gõ nhanh nên gọn. */
+#o-nhap-boc {
+	position: relative;
+}
+#goi-y-file {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 100%;
+	margin-bottom: 4px;
+	max-height: 240px;
+	overflow-y: auto;
+	background: var(--vscode-dropdown-background, var(--vscode-editorWidget-background));
+	border: 1px solid var(--vscode-focusBorder);
+	border-radius: 4px;
+	z-index: 20;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.goi-y-hang {
+	padding: 5px 10px;
+	font-family: var(--vscode-editor-font-family);
+	font-size: 0.88em;
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.goi-y-hang.chon,
+.goi-y-hang:hover {
+	background: var(--vscode-list-activeSelectionBackground);
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
+/* ── Ảnh đính kèm chờ gửi ── */
+#anh-cho {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: 8px 12px 0;
+}
+.anh-thumb {
+	position: relative;
+	width: 64px;
+	height: 64px;
+	border: 1px solid var(--vscode-panel-border);
+	border-radius: 4px;
+	overflow: hidden;
+	background: var(--vscode-editorWidget-background);
+}
+.anh-thumb img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+}
+.bo-anh {
+	position: absolute;
+	top: 1px;
+	right: 1px;
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	line-height: 1;
+	border-radius: 50%;
+	font-size: 11px;
+	background: rgba(0, 0, 0, 0.6);
+	color: #fff;
+}
+.bo-anh:hover:not(:disabled) {
+	background: var(--vscode-inputValidation-errorBorder, #a1260d);
+}
+
+/* ── Ảnh trong tin nhắn đã gửi ── */
+.cau-hoi-anh {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 8px;
+}
+.cau-hoi-anh img {
+	width: 72px;
+	height: 72px;
+	object-fit: cover;
+	border-radius: 4px;
+	border: 1px solid var(--vscode-panel-border);
+}
+/* Dấu ảnh trong hội thoại dựng lại (không giữ base64 gốc) */
+.anh-tag {
+	opacity: 0.85;
 }

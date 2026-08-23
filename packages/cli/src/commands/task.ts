@@ -13,13 +13,13 @@ import type { SDLCMetricsSnapshot } from "@agentweave/types";
 
 export interface TaskCommandArgs {
 	prompt: string;
-	agent?: string;        // CLI agent command (default: none — uses agent-loop)
-	agentArgs?: string[];  // Extra args for agent
-	model?: string;        // LLM model for agent-loop mode
-	checks?: string[];     // QA check commands
-	retries?: number;      // Max retries (default: 3)
-	plan?: boolean;        // Show plan before executing
-	metricsDir?: string;   // Metrics storage dir
+	agent?: string; // CLI agent command (default: none — uses agent-loop)
+	agentArgs?: string[]; // Extra args for agent
+	model?: string; // LLM model for agent-loop mode
+	checks?: string[]; // QA check commands
+	retries?: number; // Max retries (default: 3)
+	plan?: boolean; // Show plan before executing
+	metricsDir?: string; // Metrics storage dir
 }
 
 // ─── ANSI ────────────────────────────────────────────────────────
@@ -107,7 +107,10 @@ export async function taskCommand(args: TaskCommandArgs): Promise<void> {
 
 			// Render SDLC phase transitions
 			if (event.type === "message:assistant") {
-				const content = (event as unknown as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+				const content = (event as unknown as Record<string, unknown>).content as Array<{
+					type: string;
+					text: string;
+				}>;
 				const text = content?.[0]?.text ?? "";
 
 				if (text.startsWith("[SDLC]")) {
@@ -126,7 +129,9 @@ export async function taskCommand(args: TaskCommandArgs): Promise<void> {
 			// Tool events
 			if (event.type === "tool:completed") {
 				const e = event as unknown as Record<string, unknown>;
-				console.log(`${C.green}  ✓ ${e.toolName}${C.reset} ${C.dim}(${((e.durationMs as number) ?? 0).toFixed(0)}ms)${C.reset}`);
+				console.log(
+					`${C.green}  ✓ ${e.toolName}${C.reset} ${C.dim}(${((e.durationMs as number) ?? 0).toFixed(0)}ms)${C.reset}`,
+				);
 			}
 			if (event.type === "tool:failed") {
 				const e = event as unknown as Record<string, unknown>;
@@ -138,10 +143,11 @@ export async function taskCommand(args: TaskCommandArgs): Promise<void> {
 				const e = event as unknown as Record<string, unknown>;
 				console.log(`${C.red}  ERROR: ${e.error}${C.reset}`);
 			}
-
 		}
 	} catch (err) {
-		console.log(`\n${C.red}  Pipeline error: ${err instanceof Error ? err.message : String(err)}${C.reset}`);
+		console.log(
+			`\n${C.red}  Pipeline error: ${err instanceof Error ? err.message : String(err)}${C.reset}`,
+		);
 	}
 
 	const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -220,13 +226,14 @@ function printComparison(deltas: Record<string, number>): void {
 		const isGood = isPositiveMetric(key) ? delta > 0 : delta < 0;
 		const icon = isGood ? `${C.green}▲` : `${C.red}▼`;
 		const sign = delta > 0 ? "+" : "";
-		const formatted = key.includes("cost") || key.includes("Cost")
-			? `${sign}$${delta.toFixed(4)}`
-			: key.includes("time") || key.includes("Time")
-				? `${sign}${(delta / 1000).toFixed(1)}s`
-				: key.includes("retry") || key.includes("Retry")
-					? `${sign}${delta}`
-					: `${sign}${(delta * 100).toFixed(1)}%`;
+		const formatted =
+			key.includes("cost") || key.includes("Cost")
+				? `${sign}$${delta.toFixed(4)}`
+				: key.includes("time") || key.includes("Time")
+					? `${sign}${(delta / 1000).toFixed(1)}s`
+					: key.includes("retry") || key.includes("Retry")
+						? `${sign}${delta}`
+						: `${sign}${(delta * 100).toFixed(1)}%`;
 
 		console.log(`  ${icon} ${label}: ${formatted}${C.reset}`);
 	}
@@ -245,5 +252,11 @@ const METRIC_LABELS: Record<string, string> = {
 
 /** For these metrics, higher is better */
 function isPositiveMetric(key: string): boolean {
-	return ["m2_testPassRate", "m3_scopeAccuracy", "m8_planAccuracy", "m9_contextUtilization", "m10_codeQualityDelta"].includes(key);
+	return [
+		"m2_testPassRate",
+		"m3_scopeAccuracy",
+		"m8_planAccuracy",
+		"m9_contextUtilization",
+		"m10_codeQualityDelta",
+	].includes(key);
 }

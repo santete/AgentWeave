@@ -20,27 +20,55 @@ function createMockProvider(): InnerHarnessProvider {
 	const usage = { ...createEmptyTokenUsage(), totalCost: 0.01 };
 	const messages: Message[] = [];
 	return {
-		run(_p: string | ContentBlock[], _o?: RunOptions): AsyncGenerator<InnerEvent, TerminalResult, void> {
+		run(
+			_p: string | ContentBlock[],
+			_o?: RunOptions,
+		): AsyncGenerator<InnerEvent, TerminalResult, void> {
 			return (async function* () {
 				yield {
-					id: "e1", timestamp: Date.now(), sessionId: "ses_mock", agentId: "agent_mock",
-					type: "message:assistant", content: [{ type: "text", text: "done" }],
+					id: "e1",
+					timestamp: Date.now(),
+					sessionId: "ses_mock",
+					agentId: "agent_mock",
+					type: "message:assistant",
+					content: [{ type: "text", text: "done" }],
 				} as InnerEvent;
 				return { reason: "completed", usage } satisfies TerminalResult;
 			})();
 		},
 		abort() {},
-		getState() { return { status: "completed" as const, turnIndex: 1, model: "mock", usage, contextUsage: { usedTokens: 0, maxTokens: 200000, pct: 0, compactionCount: 0 }, activeTool: null, messageCount: 0, recoveryAttempts: 0 }; },
-		getMessages() { return messages; },
-		getContextUsage() { return { usedTokens: 0, maxTokens: 200000, pct: 0, compactionCount: 0 }; },
-		getUsage() { return usage; },
-		getTools() { return []; },
+		getState() {
+			return {
+				status: "completed" as const,
+				turnIndex: 1,
+				model: "mock",
+				usage,
+				contextUsage: { usedTokens: 0, maxTokens: 200000, pct: 0, compactionCount: 0 },
+				activeTool: null,
+				messageCount: 0,
+				recoveryAttempts: 0,
+			};
+		},
+		getMessages() {
+			return messages;
+		},
+		getContextUsage() {
+			return { usedTokens: 0, maxTokens: 200000, pct: 0, compactionCount: 0 };
+		},
+		getUsage() {
+			return usage;
+		},
+		getTools() {
+			return [];
+		},
 		registerTool() {},
 		unregisterTool() {},
 		injectMessage() {},
 		setSystemPromptSection() {},
 		setModel() {},
-		getConfig() { return { model: "mock", maxTurns: 1, thinkingEnabled: false, tools: [] }; },
+		getConfig() {
+			return { model: "mock", maxTurns: 1, thinkingEnabled: false, tools: [] };
+		},
 	};
 }
 
@@ -55,7 +83,10 @@ const SAFE_MODULES = {
 	outputStandardizer: { enabled: true },
 } as const;
 
-async function drain(orch: ReturnType<typeof createSDLCPipeline>, prompt = "Fix login bug"): Promise<TerminalResult> {
+async function drain(
+	orch: ReturnType<typeof createSDLCPipeline>,
+	prompt = "Fix login bug",
+): Promise<TerminalResult> {
 	const gen = orch.run(prompt);
 	for (;;) {
 		const { value, done } = await gen.next();
@@ -78,16 +109,17 @@ describe("createSdlcGovernance — helper wiring", () => {
 		let askCalls = 0;
 		const { controlPlane } = createSdlcGovernance({
 			sessionId: "s_ask",
-			onAsk: async () => { askCalls++; return { allow: true }; },
+			onAsk: async () => {
+				askCalls++;
+				return { allow: true };
+			},
 			config: {
 				permissions: {
 					mode: "default",
 					failMode: "closed",
 					timeoutMs: 5_000,
 					askTimeoutMs: 60_000,
-					rules: [
-						{ pattern: "Bash(*)", behavior: "ask", source: "policy", priority: 100 },
-					],
+					rules: [{ pattern: "Bash(*)", behavior: "ask", source: "policy", priority: 100 }],
 				},
 			},
 		});
@@ -128,9 +160,7 @@ describe("createSdlcGovernance — helper wiring", () => {
 					failMode: "closed",
 					timeoutMs: 5_000,
 					askTimeoutMs: 60_000,
-					rules: [
-						{ pattern: "Bash(*)", behavior: "deny", source: "policy", priority: 100 },
-					],
+					rules: [{ pattern: "Bash(*)", behavior: "deny", source: "policy", priority: 100 }],
 				},
 			},
 		});
@@ -156,9 +186,7 @@ describe("createSdlcGovernance — helper wiring", () => {
 					failMode: "closed",
 					timeoutMs: 5_000,
 					askTimeoutMs: 60_000,
-					rules: [
-						{ pattern: "Bash(*)", behavior: "deny", source: "policy", priority: 100 },
-					],
+					rules: [{ pattern: "Bash(*)", behavior: "deny", source: "policy", priority: 100 }],
 				},
 			},
 		});
@@ -253,9 +281,7 @@ describe("createSdlcGovernance — Prometheus scrape (P1.1 end-to-end)", () => {
 		expect(text).toContain("# TYPE agentweave_turns_total counter");
 		expect(text).toContain('instance="ci-scrape"');
 
-		const dataLines = text
-			.split("\n")
-			.filter((l) => l.length > 0 && !l.startsWith("#"));
+		const dataLines = text.split("\n").filter((l) => l.length > 0 && !l.startsWith("#"));
 		expect(dataLines.length).toBeGreaterThanOrEqual(5);
 	});
 
@@ -275,18 +301,14 @@ describe("createSdlcGovernance — policy cascade wiring (P3.1 step 8)", () => {
 				orgPath,
 				JSON.stringify({
 					version: 1,
-					rules: [
-						{ pattern: "Bash(rm *)", behavior: "deny", priority: 100, immutable: true },
-					],
+					rules: [{ pattern: "Bash(rm *)", behavior: "deny", priority: 100, immutable: true }],
 				}),
 			);
 			writeFileSync(
 				userPath,
 				JSON.stringify({
 					version: 1,
-					rules: [
-						{ pattern: "Bash(rm *)", behavior: "allow", priority: 200 },
-					],
+					rules: [{ pattern: "Bash(rm *)", behavior: "allow", priority: 200 }],
 				}),
 			);
 

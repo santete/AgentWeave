@@ -69,7 +69,8 @@ export async function dungDiff(
 		if (!cu.includes(canTim)) {
 			// Không khớp thì tool sẽ hỏng; báo trước còn hơn để người dùng duyệt mù.
 			return {
-				text: `  ${C.red}✗ không tìm thấy đoạn cần thay trong ${duong}${C.reset}\n` +
+				text:
+					`  ${C.red}✗ không tìm thấy đoạn cần thay trong ${duong}${C.reset}\n` +
 					`  ${C.dim}lời gọi này sẽ thất bại${C.reset}`,
 				them: 0,
 				bot: 0,
@@ -186,7 +187,8 @@ function lcsLoi(a: string[], b: string[]): Buoc[] {
 
 	for (let i = n - 1; i >= 0; i--) {
 		for (let j = m - 1; j >= 0; j--) {
-			bang[i]![j] = a[i] === b[j] ? bang[i + 1]![j + 1]! + 1 : Math.max(bang[i + 1]![j]!, bang[i]![j + 1]!);
+			bang[i]![j] =
+				a[i] === b[j] ? bang[i + 1]![j + 1]! + 1 : Math.max(bang[i + 1]![j]!, bang[i]![j + 1]!);
 		}
 	}
 

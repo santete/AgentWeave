@@ -58,7 +58,9 @@ export async function metricsCommand(args: MetricsCommandArgs): Promise<void> {
 		const snapshot: SDLCMetricsSnapshot = JSON.parse(raw);
 		printSnapshot(snapshot, "Latest Run");
 	} catch (err) {
-		console.log(`\n${C.red}  Failed to read metrics: ${err instanceof Error ? err.message : String(err)}${C.reset}\n`);
+		console.log(
+			`\n${C.red}  Failed to read metrics: ${err instanceof Error ? err.message : String(err)}${C.reset}\n`,
+		);
 	}
 }
 
@@ -74,7 +76,9 @@ function printSnapshot(m: SDLCMetricsSnapshot, title: string): void {
 
 	// Success indicator
 	const pass = m.m1_firstPassSuccess;
-	console.log(`  ${pass ? `${C.green}✓` : `${C.red}✗`} M1  First-pass success    ${pass ? "YES" : "NO"}${C.reset}`);
+	console.log(
+		`  ${pass ? `${C.green}✓` : `${C.red}✗`} M1  First-pass success    ${pass ? "YES" : "NO"}${C.reset}`,
+	);
 
 	// Rate metrics (0-100%)
 	printBar("M2", "Test pass rate", m.m2_testPassRate);
@@ -85,18 +89,24 @@ function printSnapshot(m: SDLCMetricsSnapshot, title: string): void {
 	// Count metrics
 	console.log(`  ${C.white}  M4  Retry count           ${C.reset}${m.m4_retryCount}`);
 	console.log(`  ${C.white}  M5  Cost                  ${C.reset}$${m.m5_costUsd.toFixed(4)}`);
-	console.log(`  ${C.white}  M6  Time                  ${C.reset}${(m.m6_timeToCompletionMs / 1000).toFixed(1)}s`);
+	console.log(
+		`  ${C.white}  M6  Time                  ${C.reset}${(m.m6_timeToCompletionMs / 1000).toFixed(1)}s`,
+	);
 
 	// Boolean
 	const regIcon = m.m7_regressionDetected ? `${C.red}✗` : `${C.green}✓`;
-	console.log(`  ${regIcon} M7  Regression detected    ${m.m7_regressionDetected ? "YES" : "NO"}${C.reset}`);
+	console.log(
+		`  ${regIcon} M7  Regression detected    ${m.m7_regressionDetected ? "YES" : "NO"}${C.reset}`,
+	);
 
 	// Delta — m10 vốn đã là number|null từ đầu nhưng chỗ này chưa xử lý null.
 	if (m.m10_codeQualityDelta === null) {
 		console.log(`  ${C.gray}  M10 Code quality delta     chưa đo${C.reset}`);
 	} else {
 		const qualColor = m.m10_codeQualityDelta >= 0 ? C.green : C.red;
-		console.log(`  ${qualColor}  M10 Code quality delta     ${m.m10_codeQualityDelta > 0 ? "+" : ""}${m.m10_codeQualityDelta}${C.reset}`);
+		console.log(
+			`  ${qualColor}  M10 Code quality delta     ${m.m10_codeQualityDelta > 0 ? "+" : ""}${m.m10_codeQualityDelta}${C.reset}`,
+		);
 	}
 
 	console.log();
@@ -147,10 +157,10 @@ function printHistory(dir: string): void {
 
 			console.log(
 				`  ${pass}${C.reset} ${C.dim}${date}${C.reset}  ` +
-				`test:${m.m2_testPassRate === null ? "—" : `${(m.m2_testPassRate * 100).toFixed(0)}%`}  ` +
-				`retry:${m.m4_retryCount}  ` +
-				`cost:$${m.m5_costUsd.toFixed(3)}  ` +
-				`${C.dim}${file}${C.reset}`,
+					`test:${m.m2_testPassRate === null ? "—" : `${(m.m2_testPassRate * 100).toFixed(0)}%`}  ` +
+					`retry:${m.m4_retryCount}  ` +
+					`cost:$${m.m5_costUsd.toFixed(3)}  ` +
+					`${C.dim}${file}${C.reset}`,
 			);
 		} catch {
 			console.log(`  ${C.red}✗ ${file} (corrupted)${C.reset}`);

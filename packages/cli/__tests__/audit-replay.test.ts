@@ -79,7 +79,13 @@ describe("auditReplayCommand — format", () => {
 	it("renders timeline table with OFFSET column when default format", async () => {
 		writeLog([
 			fixture({ session_id: "ses_a", ts: "2026-04-22T10:00:00.000Z" }),
-			fixture({ session_id: "ses_a", ts: "2026-04-22T10:00:00.250Z", tool: "Write", decision: "block", reason: "deny" }),
+			fixture({
+				session_id: "ses_a",
+				ts: "2026-04-22T10:00:00.250Z",
+				tool: "Write",
+				decision: "block",
+				reason: "deny",
+			}),
 		]);
 		await auditReplayCommand({ sessionId: "ses_a", cwd: workDir });
 		const stripped = stdoutBuf.replace(/\x1b\[[0-9;]*m/g, "");
@@ -136,7 +142,9 @@ describe("auditReplayCommand — resilience", () => {
 				JSON.stringify(fixture({ session_id: "ses_a", ts: "2026-04-22T10:00:00.000Z" })),
 				"not json",
 				"",
-				JSON.stringify(fixture({ session_id: "ses_a", ts: "2026-04-22T10:00:01.000Z", tool: "Write" })),
+				JSON.stringify(
+					fixture({ session_id: "ses_a", ts: "2026-04-22T10:00:01.000Z", tool: "Write" }),
+				),
 			].join("\n"),
 			"utf-8",
 		);

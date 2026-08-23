@@ -1,7 +1,12 @@
 {
 	"name": "quy-uoc-dotnet",
-	"description": "KHUNG MAU: quy uoc viet code .NET cua cong ty, can dien noi dung that",
+	"description": "Quy uoc viet code C#/.NET: bo cuc, dat ten, bat buoc, cam, cach xu ly async va loi",
 	"whenToUse": "Khi viet hoac sua code C#/.NET trong du an nay",
-	"version": "0.1.0",
-	"tags": ["mau", "dotnet"]
+	"paths": "**/*.cs, **/*.csproj, **/*.sln",
+	"version": "1.0.0",
+	"tags": [
+		"dotnet",
+		"csharp",
+		"quy-uoc"
+	]
 }

@@ -8,15 +8,16 @@
  */
 
 import type { ToolDefinition } from "@agentweave/types";
+import type { NguonNhac, Nhac } from "../attachments/index";
 import { createLoadSkillTool } from "../built-in-tools/load-skill";
 import {
 	LOAD_SKILL_TOOL_NAME,
 	SKILL_INDEX_SECTION,
 	SkillRegistry,
+	type SkillRegistryOptions,
 	UnknownSkillError,
 	projectSkillsDir,
 	renderSkillIndex,
-	type SkillRegistryOptions,
 } from "./skill-registry";
 import type { SkillDiscoveryReport } from "./types";
 
@@ -30,6 +31,7 @@ export {
 };
 export type { SkillRegistryOptions };
 export { createLoadSkillTool };
+export { quetDuAn, MAX_TEP_QUET as MAX_TEP_QUET_DU_AN, MAX_SAU_QUET, THU_MUC_BO_QUA } from "./quet-du-an";
 export {
 	SkillManifestSchema,
 	SKILL_NAME_PATTERN,
@@ -38,6 +40,11 @@ export {
 	DEFAULT_MAX_SKILLS_PER_SCOPE,
 	DEFAULT_MAX_CONTENT_BYTES,
 	WHEN_TO_USE_SOFT_LIMIT,
+	SKILL_BUDGET_CONTEXT_PERCENT,
+	CHARS_PER_TOKEN,
+	MAX_LISTING_DESC_CHARS,
+	MIN_DESC_LENGTH,
+	nganSachChiMuc,
 } from "./types";
 export type {
 	Skill,
@@ -106,12 +113,53 @@ export async function installSkills(
 	return { registry, report };
 }
 
+/**
+ * Nguồn nhắc giới thiệu skill CÓ ĐIỀU KIỆN khi model chạm file khớp `paths:`.
+ *
+ * Chỉ giới thiệu MỘT DÒNG (tên + whenToUse), không nạp nội dung: quyết định
+ * nạp hay không vẫn thuộc về model, và lệnh gọi `LoadSkill` nằm trong dòng sự
+ * kiện nên kiểm toán được. Tự động nhồi cả SKILL.md vì "đoán là model sẽ cần"
+ * đúng là thứ thiết kế ban đầu đã cố tránh.
+ */
+export function nguonSkillTheoDuongDan(registry: SkillRegistry): NguonNhac {
+	return {
+		ten: "skill-theo-duong-dan",
+		async thu(ctx): Promise<Nhac[]> {
+			const gap = new Map<string, { ten: string; whenToUse: string; file: string }>();
+			for (const f of ctx.fileVuaCham) {
+				for (const sk of registry.khopFile(f)) {
+					if (!gap.has(sk.manifest.name)) {
+						gap.set(sk.manifest.name, {
+							ten: sk.manifest.name,
+							whenToUse: sk.manifest.whenToUse,
+							file: f,
+						});
+					}
+				}
+			}
+			if (gap.size === 0) return [];
+
+			// Gộp thành MỘT nhắc nhưng khoá theo từng tên: lần sau chạm thêm file
+			// khác chỉ giới thiệu skill CHƯA từng giới thiệu.
+			return [...gap.values()].map((g) => ({
+				loai: "skill-theo-duong-dan",
+				noiDung:
+					`This file matches a skill your team wrote for it: you just worked on ${g.file}.\n` +
+					`- ${g.ten}: ${g.whenToUse}\n` +
+					`If it applies, call ${LOAD_SKILL_TOOL_NAME} with that name before continuing.`,
+				khoa: `skill:${g.ten}`,
+			}));
+		},
+	};
+}
+
 /** Tóm tắt một dòng cho bộ tự kiểm tra lúc bàn giao. */
 export function summarizeSkillReport(report: SkillDiscoveryReport): string {
 	const fatal = report.problems.filter((p) => p.fatal).length;
 	const warn = report.problems.length - fatal;
 	return (
-		`${report.skills.length} skill · chi muc ${report.indexBytes} byte · ` +
+		`${report.skills.length} skill (${report.soCoDieuKien} co dieu kien) · ` +
+		`chi muc ${report.indexBytes}/${report.nganSach} byte · ` +
 		`${fatal} loi nghiem trong · ${warn} canh bao · ${report.shadowed.length} bi che`
 	);
 }

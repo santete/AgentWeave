@@ -14,13 +14,21 @@
  */
 
 import {
-	readFileSync, writeFileSync, mkdirSync, existsSync,
-	chmodSync, appendFileSync,
+	readFileSync,
+	writeFileSync,
+	mkdirSync,
+	existsSync,
+	chmodSync,
+	appendFileSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import {
-	createHash, randomBytes, createCipheriv, createDecipheriv,
-	createHmac, pbkdf2Sync,
+	createHash,
+	randomBytes,
+	createCipheriv,
+	createDecipheriv,
+	createHmac,
+	pbkdf2Sync,
 } from "node:crypto";
 
 const STORE_DIR = ".agentweave";
@@ -94,10 +102,20 @@ function decrypt(data: string): string {
 
 const VALID_ENV_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
 const DANGEROUS_ENV_NAMES = new Set([
-	"LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
-	"NODE_OPTIONS", "PYTHONPATH", "PYTHONSTARTUP",
-	"PATH", "HOME", "SHELL", "USER", "USERNAME",
-	"TERM", "DISPLAY", "EDITOR",
+	"LD_PRELOAD",
+	"LD_LIBRARY_PATH",
+	"DYLD_INSERT_LIBRARIES",
+	"NODE_OPTIONS",
+	"PYTHONPATH",
+	"PYTHONSTARTUP",
+	"PATH",
+	"HOME",
+	"SHELL",
+	"USER",
+	"USERNAME",
+	"TERM",
+	"DISPLAY",
+	"EDITOR",
 ]);
 
 function validateEnvVar(name: string): string | null {
@@ -179,8 +197,16 @@ function saveStore(data: StoreData, cwd?: string): void {
 	writeFileSync(path, JSON.stringify(data, null, 2), { encoding: "utf-8", mode: 0o600 });
 
 	// Enforce permissions (in case mode flag isn't honored)
-	try { chmodSync(path, 0o600); } catch { /* Windows may not support */ }
-	try { chmodSync(dir, 0o700); } catch { /* Windows may not support */ }
+	try {
+		chmodSync(path, 0o600);
+	} catch {
+		/* Windows may not support */
+	}
+	try {
+		chmodSync(dir, 0o700);
+	} catch {
+		/* Windows may not support */
+	}
 }
 
 // ─── Audit Log ───────────────────────────────────────────────────
@@ -198,7 +224,11 @@ function auditLog(action: string, agent: string, envVar: string): void {
 
 // ─── Public API ──────────────────────────────────────────────────
 
-export function setCredential(agent: string, envVar: string, value: string): { ok: boolean; error?: string } {
+export function setCredential(
+	agent: string,
+	envVar: string,
+	value: string,
+): { ok: boolean; error?: string } {
 	const agentErr = validateAgentName(agent);
 	if (agentErr) return { ok: false, error: agentErr };
 
@@ -208,9 +238,7 @@ export function setCredential(agent: string, envVar: string, value: string): { o
 	const store = loadStore();
 	const encrypted = encrypt(value);
 
-	const existing = store.credentials.findIndex(
-		(c) => c.agent === agent && c.envVar === envVar,
-	);
+	const existing = store.credentials.findIndex((c) => c.agent === agent && c.envVar === envVar);
 	if (existing >= 0) {
 		store.credentials[existing]!.value = encrypted;
 	} else {
@@ -225,9 +253,7 @@ export function setCredential(agent: string, envVar: string, value: string): { o
 export function removeCredential(agent: string, envVar: string): boolean {
 	const store = loadStore();
 	const before = store.credentials.length;
-	store.credentials = store.credentials.filter(
-		(c) => !(c.agent === agent && c.envVar === envVar),
-	);
+	store.credentials = store.credentials.filter((c) => !(c.agent === agent && c.envVar === envVar));
 	if (store.credentials.length < before) {
 		saveStore(store);
 		auditLog("REMOVE", agent, envVar);
@@ -264,9 +290,23 @@ export function getAgentEnv(agent: string): Record<string, string> {
  */
 export function buildChildEnv(agentCredentials: Record<string, string>): Record<string, string> {
 	const SAFE_INHERIT = [
-		"PATH", "HOME", "USER", "USERNAME", "SHELL", "LANG", "TERM",
-		"TMPDIR", "TMP", "TEMP", "PWD", "HOSTNAME", "LOGNAME",
-		"NODE_ENV", "CI", "COLORTERM", "FORCE_COLOR",
+		"PATH",
+		"HOME",
+		"USER",
+		"USERNAME",
+		"SHELL",
+		"LANG",
+		"TERM",
+		"TMPDIR",
+		"TMP",
+		"TEMP",
+		"PWD",
+		"HOSTNAME",
+		"LOGNAME",
+		"NODE_ENV",
+		"CI",
+		"COLORTERM",
+		"FORCE_COLOR",
 	];
 
 	const env: Record<string, string> = {};

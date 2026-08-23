@@ -21,8 +21,9 @@
 
 import { glob } from "node:fs/promises";
 import { resolve } from "node:path";
-import { z } from "zod";
 import type { ToolDefinition } from "@agentweave/types";
+import { z } from "zod";
+import { chuanHoaDuongDan } from "./duong-dan";
 
 const TRAN_KET_QUA = 500;
 
@@ -39,7 +40,7 @@ export const GlobTool: ToolDefinition<{ pattern: string; path?: string }, string
 		path: z.string().optional().describe("Base directory (default: cwd)"),
 	}),
 	execute: async ({ pattern, path }, context) => {
-		const goc = path ? resolve(context.cwd, path) : context.cwd;
+		const goc = path ? resolve(context.cwd, chuanHoaDuongDan(path)) : context.cwd;
 
 		const ketQua: string[] = [];
 		let bicat = false;

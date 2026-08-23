@@ -35,7 +35,9 @@ export async function monitorCommand(args: MonitorArgs): Promise<void> {
 		try {
 			const health = await fetchJson(`${args.gateway}/api/health`);
 			const timestamp = new Date().toLocaleTimeString();
-			console.log(`  [${timestamp}] Clients: ${health.clients ?? "?"} | Status: ${health.status ?? "unknown"}`);
+			console.log(
+				`  [${timestamp}] Clients: ${health.clients ?? "?"} | Status: ${health.status ?? "unknown"}`,
+			);
 		} catch {
 			console.log(`  [${new Date().toLocaleTimeString()}] Gateway unreachable`);
 		}
@@ -56,15 +58,19 @@ export async function monitorCommand(args: MonitorArgs): Promise<void> {
 function fetchJson(url: string): Promise<Record<string, unknown>> {
 	return new Promise((resolve, reject) => {
 		const parsed = new URL(url);
-		http.get({ hostname: parsed.hostname, port: parsed.port, path: parsed.pathname }, (res) => {
-			const chunks: Buffer[] = [];
-			res.on("data", (c: Buffer) => chunks.push(c));
-			res.on("end", () => {
-				try {
-					resolve(JSON.parse(Buffer.concat(chunks).toString("utf-8")) as Record<string, unknown>);
-				} catch { reject(new Error("Invalid JSON")); }
-			});
-		}).on("error", reject);
+		http
+			.get({ hostname: parsed.hostname, port: parsed.port, path: parsed.pathname }, (res) => {
+				const chunks: Buffer[] = [];
+				res.on("data", (c: Buffer) => chunks.push(c));
+				res.on("end", () => {
+					try {
+						resolve(JSON.parse(Buffer.concat(chunks).toString("utf-8")) as Record<string, unknown>);
+					} catch {
+						reject(new Error("Invalid JSON"));
+					}
+				});
+			})
+			.on("error", reject);
 	});
 }
 

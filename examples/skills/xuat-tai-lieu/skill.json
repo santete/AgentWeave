@@ -1,0 +1,7 @@
+{
+	"name": "xuat-tai-lieu",
+	"description": "Xuat file Word/Excel/PDF tu Markdown/HTML/CSV bang LibreOffice o che do khong giao dien",
+	"whenToUse": "Khi can tao file .docx .xlsx .pdf cho nguoi dung",
+	"version": "1.0.0",
+	"tags": ["xuat", "docx", "xlsx", "pdf", "libreoffice"]
+}

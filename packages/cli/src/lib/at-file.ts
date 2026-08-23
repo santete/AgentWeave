@@ -79,7 +79,14 @@ export async function chenFile(prompt: string, cwd: string): Promise<KetQuaChen>
 			? `${noi.slice(0, TRAN_MOI_FILE)}\n[đã cắt: file dài ${noi.length} ký tự]`
 			: noi;
 
-		khoiNoiDung.push(`--- ${duong} ---\n${dung}`);
+		// Nói RÕ cho model: nội dung đã có sẵn, ĐỪNG đọc lại. Đo thật: khi tag @,
+		// model vẫn đi FileRead/Grep chính file đó rồi quẩn — vì header cũ không
+		// bảo nó rằng đây là bản đầy đủ. (Đo đối chứng: cùng model, đưa thẳng nội
+		// dung + bảo viết → ra report trong 7s; đi qua tool thì churn 24 lượt.)
+		const ghiChu = bicat
+			? `[Noi dung file "${duong}" (phan dau, da cat vi dai) — dung truc tiep; chi FileRead them neu can phan sau]`
+			: `[Noi dung DAY DU cua file "${duong}" da co san ngay duoi — DUNG TRUC TIEP de tra loi/viet. KHONG can FileRead hay Grep lai file nay.]`;
+		khoiNoiDung.push(`${ghiChu}\n--- ${duong} ---\n${dung}`);
 		daChen.push({ duong, byte: Buffer.byteLength(noi, "utf-8"), bicat });
 	}
 

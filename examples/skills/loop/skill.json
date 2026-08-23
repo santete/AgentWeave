@@ -1,0 +1,7 @@
+{
+  "name": "loop",
+  "description": "Lap lai mot viec theo chu ky trong phien hien tai: doc y dinh cua nguoi dung, quy ra khoang thoi gian, dat hen, roi lam ngay lan dau.",
+  "whenToUse": "khi nguoi dung muon lam di lam lai mot viec theo nhip (moi 5 phut, moi tieng, dinh ky kiem tra)",
+  "version": "1.0",
+  "tags": ["quy-trinh", "hen-gio"]
+}

@@ -14,7 +14,7 @@ describe("parseArgs", () => {
 		const result = parseArgs(["run", "Fix the bug"]);
 		expect(result.command).toBe("run");
 		expect(result.prompt).toBe("Fix the bug");
-		expect(result.model).toBe("claude-sonnet-4-6"); // default
+		expect(result.model).toBe(""); // default nằm ở từng lệnh (cục bộ), không ở parseArgs // default
 	});
 
 	it("should parse --model flag", () => {
@@ -41,11 +41,16 @@ describe("parseArgs", () => {
 
 	it("should parse multiple flags together", () => {
 		const result = parseArgs([
-			"run", "Refactor auth",
-			"--model", "claude-opus-4-6",
-			"--budget", "5",
-			"--max-turns", "30",
-			"--mode", "strict",
+			"run",
+			"Refactor auth",
+			"--model",
+			"claude-opus-4-6",
+			"--budget",
+			"5",
+			"--max-turns",
+			"30",
+			"--mode",
+			"strict",
 		]);
 		expect(result.command).toBe("run");
 		expect(result.prompt).toBe("Refactor auth");
@@ -55,9 +60,9 @@ describe("parseArgs", () => {
 		expect(result.permissionMode).toBe("strict");
 	});
 
-	it("should default model to claude-sonnet-4-6", () => {
+	it("parseArgs không đặt model mặc định — để agent.json/lệnh tự quyết", () => {
 		const result = parseArgs(["run", "test"]);
-		expect(result.model).toBe("claude-sonnet-4-6");
+		expect(result.model).toBe(""); // default nằm ở từng lệnh (cục bộ), không ở parseArgs
 	});
 
 	it("should leave budget undefined when not specified", () => {

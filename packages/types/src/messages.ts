@@ -6,6 +6,16 @@ export type ContentBlock =
 	| { type: "text"; text: string }
 	| { type: "thinking"; thinking: string }
 	| {
+			/**
+			 * Ảnh người dùng đính kèm. `image` là base64 THUẦN (không tiền tố
+			 * `data:`) hoặc một data URL đầy đủ — lớp gửi model nhận cả hai. Chỉ
+			 * model thị giác đọc được; model chữ sẽ bỏ qua kèm cảnh báo.
+			 */
+			type: "image";
+			image: string;
+			mimeType?: string;
+	  }
+	| {
 			type: "tool_use";
 			id: string;
 			name: string;

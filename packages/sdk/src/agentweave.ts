@@ -3,34 +3,60 @@
  * Wires Inner Harness + Control Plane + Outer Harness into a single governed agent.
  */
 
-import {
-	AGENTWEAVE_VERSION,
-} from "@agentweave/types";
+import { createControlPlane } from "@agentweave/control-plane";
+import { AgentLoop } from "@agentweave/inner-harness";
+import type { LLMCallResult, ThamSoSinh } from "@agentweave/inner-harness";
+import { type MultiAgentOrchestrator, OuterHarness, PluginLoader } from "@agentweave/outer-harness";
+import type { LoadedPlugin, OuterHarnessConfig } from "@agentweave/outer-harness";
+import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import type {
-	InnerEvent,
-	TerminalResult,
-	ToolDefinition,
-	PermissionRule,
-	OutputFilter,
-	TokenUsage,
-	InnerState,
-	Message,
-	AgentSpawnConfig,
 	AgentInfo,
 	AgentMessage,
 	AgentMessageType,
-	PluginManifest,
+	AgentSpawnConfig,
+	ContentBlock,
+	InnerEvent,
+	InnerState,
+	Message,
+	OutputFilter,
+	PermissionRule,
 	PluginContext,
+	PluginManifest,
+	ProcessSandboxBinding,
+	TerminalResult,
+	TokenUsage,
+	ToolDefinition,
 } from "@agentweave/types";
-import { createControlPlane } from "@agentweave/control-plane";
-import { AgentLoop } from "@agentweave/inner-harness";
-import type { LLMCallResult } from "@agentweave/inner-harness";
-import { OuterHarness, MultiAgentOrchestrator, PluginLoader } from "@agentweave/outer-harness";
-import type { OuterHarnessConfig, LoadedPlugin } from "@agentweave/outer-harness";
 
 // ─── Public Config (simplified for SDK consumers) ────────────────
 
 export interface CreateHarnessOptions {
+	/**
+	 * Cửa sổ ngữ cảnh THẬT của model, tính bằng token.
+	 *
+	 * Không truyền thì AgentLoop tự suy (env `OLLAMA_CONTEXT_LENGTH`, mặc định
+	 * 65.536). Suy sai theo hướng LỚN HƠN thực tế là kiểu hỏng tệ nhất: ngưỡng
+	 * nén không bao giờ chạm, Ollama âm thầm cắt phần đầu hội thoại, và agent
+	 * quên mất đề bài mà không có một dấu hiệu nào.
+	 */
+	contextWindow?: number;
+	/**
+	 * Cô lập tool chạy tiến trình ở TẦNG NHÂN (bubblewrap/seatbelt).
+	 *
+	 * Khác `sandbox` trong ToolContext: trường kia là chính sách đường dẫn, so
+	 * khớp chuỗi trong tham số tool nên tool đặt tên trường khác là lọt. Trường
+	 * này bọc hẳn argv — chặn được cả thứ không lường trước, kể cả khi chính
+	 * sách viết sai.
+	 *
+	 * Không truyền = KHÔNG cô lập. Giữ mặc định đó để không đổi hành vi bản
+	 * đang chạy; nơi nào cần thì bật tường minh.
+	 */
+	processSandbox?: ProcessSandboxBinding;
+	/**
+	 * Nhận biết lệnh Bash nào là lệnh kiểm chứng (test/build/lint). Truyền vào
+	 * thì bật cổng chặn "sửa file mà chưa kiểm chứng lần nào".
+	 */
+	laLenhKiemTra?: (command: string) => boolean;
 	/** LLM model to use (e.g. "claude-sonnet-4-6") */
 	model: string;
 	/** Fallback model if primary fails */
@@ -41,6 +67,10 @@ export interface CreateHarnessOptions {
 	maxTurns?: number;
 	/** Enable thinking/reasoning tokens (default true) */
 	thinkingEnabled?: boolean;
+	/** Giao thức có ràng buộc (Ollama format schema) thay vì tự do + recovery. */
+	structuredProtocol?: boolean;
+	/** Tham số bộ sinh (temperature/topP/repeatPenalty/seed). Xem `ThamSoSinh`. */
+	thamSoSinh?: ThamSoSinh;
 
 	/** Tools to register */
 	tools?: ToolDefinition[];
@@ -75,18 +105,22 @@ export interface CreateHarnessOptions {
 	plugins?: PluginManifest[];
 
 	/** Handler for permission "ask" flow (terminal prompt in CLI mode). */
-	onAsk?: (toolName: string, toolInput: Record<string, unknown>, message: string) => Promise<{ allow: boolean; alwaysAllow?: boolean }>;
+	onAsk?: (
+		toolName: string,
+		toolInput: Record<string, unknown>,
+		message: string,
+	) => Promise<{ allow: boolean; alwaysAllow?: boolean }>;
 }
 
 // ─── Harness Instance ────────────────────────────────────────────
 
 export interface HarnessInstance {
 	/** Run the agent with a prompt. Returns collected events + terminal result. */
-	run(prompt: string, options?: RunInstanceOptions): Promise<RunResult>;
+	run(prompt: string | ContentBlock[], options?: RunInstanceOptions): Promise<RunResult>;
 
 	/** Stream events from the agent in real-time. */
 	stream(
-		prompt: string,
+		prompt: string | ContentBlock[],
 		options?: RunInstanceOptions,
 	): AsyncGenerator<InnerEvent, TerminalResult, void>;
 
@@ -101,10 +135,7 @@ export interface HarnessInstance {
 
 	/** Set a custom LLM caller (for testing or custom providers). */
 	setLLMCaller(
-		caller: (
-			messages: ReadonlyArray<Message>,
-			model: string,
-		) => Promise<LLMCallResult>,
+		caller: (messages: ReadonlyArray<Message>, model: string) => Promise<LLMCallResult>,
 	): void;
 
 	/** Spawn a child agent (requires multiAgent config). */
@@ -142,10 +173,7 @@ export interface AgentHandle {
 	receive(): AgentMessage[];
 	/** Set a custom LLM caller for this child. */
 	setLLMCaller(
-		caller: (
-			messages: ReadonlyArray<Message>,
-			model: string,
-		) => Promise<LLMCallResult>,
+		caller: (messages: ReadonlyArray<Message>, model: string) => Promise<LLMCallResult>,
 	): void;
 	/** The child's inner AgentLoop (advanced). */
 	inner: AgentLoop;
@@ -154,6 +182,14 @@ export interface AgentHandle {
 export interface RunInstanceOptions {
 	maxTurns?: number;
 	maxBudgetUsd?: number;
+	/**
+	 * Trần THỜI GIAN cho cả lượt, mili-giây. Bỏ trống = không có trần.
+	 *
+	 * Với model cục bộ đây là phanh DUY NHẤT còn hiệu lực: `maxBudgetUsd` không
+	 * bao giờ kích vì Ollama tính giá 0, còn `maxTurns` đếm lượt chứ không đếm
+	 * giờ. Kiểm ở đầu mỗi lượt nên không cắt ngang lệnh đang chạy.
+	 */
+	timeoutMs?: number;
 	signal?: AbortSignal;
 	/**
 	 * Lịch sử hội thoại nạp sẵn trước khi chạy.
@@ -218,6 +254,11 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 		systemPrompt: options.systemPrompt,
 		maxTurns: options.maxTurns,
 		thinkingEnabled: options.thinkingEnabled,
+		structuredProtocol: options.structuredProtocol,
+		thamSoSinh: options.thamSoSinh,
+		contextWindow: options.contextWindow,
+		processSandbox: options.processSandbox,
+		laLenhKiemTra: options.laLenhKiemTra,
 	});
 
 	// Track the current LLM caller so children can inherit it
@@ -264,6 +305,7 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 			const gen = inner.run(prompt, {
 				maxTurns: runOpts?.maxTurns,
 				maxBudgetUsd: runOpts?.maxBudgetUsd,
+				timeoutMs: runOpts?.timeoutMs,
 				signal: runOpts?.signal,
 				// RunOptions muốn mảng ghi được; sao chép để không lộ tham chiếu ra ngoài.
 				initialMessages: runOpts?.initialMessages ? [...runOpts.initialMessages] : undefined,
@@ -286,6 +328,7 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 			const gen = inner.run(prompt, {
 				maxTurns: runOpts?.maxTurns,
 				maxBudgetUsd: runOpts?.maxBudgetUsd,
+				timeoutMs: runOpts?.timeoutMs,
 				signal: runOpts?.signal,
 				// RunOptions muốn mảng ghi được; sao chép để không lộ tham chiếu ra ngoài.
 				initialMessages: runOpts?.initialMessages ? [...runOpts.initialMessages] : undefined,
@@ -351,16 +394,11 @@ interface SpawnContext {
 		| null;
 }
 
-function createAgentHandle(
-	config: AgentSpawnConfig,
-	ctx: SpawnContext,
-): AgentHandle {
+function createAgentHandle(config: AgentSpawnConfig, ctx: SpawnContext): AgentHandle {
 	const { orchestrator, parentOptions, failMode } = ctx;
 
 	if (!orchestrator) {
-		throw new Error(
-			"multiAgent not configured. Pass multiAgent option to createHarness().",
-		);
+		throw new Error("multiAgent not configured. Pass multiAgent option to createHarness().");
 	}
 
 	// Register with orchestrator (validates budget + concurrency)

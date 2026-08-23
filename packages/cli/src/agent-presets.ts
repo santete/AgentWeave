@@ -88,7 +88,8 @@ export const AGENT_PRESETS: Record<string, AgentPreset> = {
 		stderr: { capture: true, asEvents: false },
 		install: "curl https://cursor.com/install -fsS | bash",
 		verifyCommand: "cursor-agent --version",
-		notes: "Requires Cursor login or CURSOR_API_KEY env var. `-p` headless mode can hang on some prompts — pipeline timeout catches it.",
+		notes:
+			"Requires Cursor login or CURSOR_API_KEY env var. `-p` headless mode can hang on some prompts — pipeline timeout catches it.",
 	},
 
 	custom: {
@@ -100,7 +101,8 @@ export const AGENT_PRESETS: Record<string, AgentPreset> = {
 		stderr: { capture: true, asEvents: false },
 		install: "N/A",
 		verifyCommand: "",
-		notes: "Use --agent-cmd to specify command, --agent-args for args, --prompt-mode for stdin/arg.",
+		notes:
+			"Use --agent-cmd to specify command, --agent-args for args, --prompt-mode for stdin/arg.",
 	},
 };
 

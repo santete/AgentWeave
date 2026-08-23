@@ -56,11 +56,7 @@ function pipeStdin(payload: unknown): void {
 }
 
 function writeGuardConfig(config: unknown): void {
-	writeFileSync(
-		join(workDir, ".agentweave", "guard.json"),
-		JSON.stringify(config),
-		"utf-8",
-	);
+	writeFileSync(join(workDir, ".agentweave", "guard.json"), JSON.stringify(config), "utf-8");
 }
 
 // ─── loadGuardConfig ─────────────────────────────────────────────
@@ -97,9 +93,7 @@ describe("runGuard pre", () => {
 	it("blocks rm -rf via deny rule", async () => {
 		writeGuardConfig({
 			mode: "permissive",
-			permissions: [
-				{ pattern: "Bash(rm -rf*)", behavior: "deny", priority: 200 },
-			],
+			permissions: [{ pattern: "Bash(rm -rf*)", behavior: "deny", priority: 200 }],
 		});
 		pipeStdin({
 			session_id: "s1",

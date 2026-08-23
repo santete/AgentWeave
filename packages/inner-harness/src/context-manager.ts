@@ -33,6 +33,45 @@ export const CUA_SO_DAM_MAY = 200_000;
 /** Vượt ngưỡng này thì nén. 0,8 để còn chỗ cho lượt trả lời tiếp theo. */
 export const NGUONG_NEN = 0.8;
 
+/**
+ * Tool mà kết quả LẤY LẠI ĐƯỢC — chỉ những cái này mới được lược.
+ *
+ * Phân biệt sống còn: `FileRead` lược đi thì model đọc lại là có; `LoadSkill`
+ * lược đi thì tri thức quy trình biến mất và không lệnh nào lấy lại được — model
+ * phải gọi lại LoadSkill mà nó không biết là cần. Bản trước lược MỌI tool_result
+ * nên skill vừa nạp có thể bị cắt cụt ngay ở lượt kế tiếp.
+ *
+ * Nguyên tắc quyết định: lược được khi và chỉ khi có một lệnh RÕ RÀNG lấy lại
+ * được đúng nội dung đó.
+ */
+export const TOOL_NEN_DUOC: ReadonlySet<string> = new Set([
+	"FileRead",
+	"FileWrite",
+	"FileEdit",
+	"Bash",
+	"Grep",
+	"Glob",
+]);
+
+/**
+ * Ngắt mạch: đã nén tới mức cao nhất ngần này lượt liên tiếp mà vẫn tràn thì
+ * dừng hẳn, báo lỗi rõ.
+ *
+ * Bản gốc ghi số liệu thật: 1.279 phiên có 50+ lần nén thất bại liên tiếp, cao
+ * nhất 3.272 lần. Không có ngắt mạch thì vòng lặp không chết hẳn — nó cứ chạy,
+ * cứ đốt token, và không ai biết vì sao agent không tiến triển.
+ */
+export const MAX_NEN_THAT_BAI_LIEN_TIEP = 3;
+
+/**
+ * Bỏ dở lâu hơn ngần này rồi quay lại thì dọn tool result cũ NGAY, không đợi
+ * chạm ngưỡng 0,8.
+ *
+ * Người dùng đóng máy đi họp rồi mở lại: hội thoại cũ gần như chắc chắn không
+ * còn liên quan, mà nó vẫn chiếm chỗ và vẫn làm chậm mọi lượt còn lại.
+ */
+export const NGUONG_BO_DO_MS = 30 * 60 * 1000;
+
 /** Số lượt gần nhất luôn giữ nguyên vẹn. */
 const GIU_GAN_NHAT = 6;
 /** Tool result dài hơn ngần này thì bị lược khi nén. */
@@ -89,10 +128,7 @@ export function suyRaCuaSo(model: string, khaiBao?: number): number {
 }
 
 /** Cập nhật số đo ngữ cảnh từ số token mà provider báo về. */
-export function capNhatDoDay(
-	hienTai: ContextUsage,
-	tokenDauVao: number | undefined,
-): ContextUsage {
+export function capNhatDoDay(hienTai: ContextUsage, tokenDauVao: number | undefined): ContextUsage {
 	// null, NaN, âm — đều là "không đo được", giữ nguyên số cũ chứ không ghi đè.
 	if (typeof tokenDauVao !== "number" || !Number.isFinite(tokenDauVao) || tokenDauVao < 0) {
 		return hienTai;
@@ -124,6 +160,7 @@ export function nenTinNhan(
 	}
 
 	const ranhGioi = messages.length - giuGanNhat;
+	const tenTheoId = banDoTenTool(messages);
 	let boDi = 0;
 	let daLuoc = false;
 
@@ -137,6 +174,12 @@ export function nenTinNhan(
 		let doiTrongTin = false;
 		const khoiMoi = m.content.map((k): ContentBlock => {
 			if (k.type !== "tool_result") return k;
+			// Không lấy lại được thì không được lược — xem TOOL_NEN_DUOC.
+			// Không tra ra tên tool (lịch sử cắt mất lời gọi) thì cũng không lược:
+			// sai theo hướng giữ lại tốn chỗ, còn hơn sai theo hướng mất hẳn.
+			const ten = tenTheoId.get(k.tool_use_id);
+			if (ten === undefined || !TOOL_NEN_DUOC.has(ten)) return k;
+
 			const noi = typeof k.content === "string" ? k.content : JSON.stringify(k.content);
 			if (noi.length <= tranToolResult) return k;
 
@@ -182,13 +225,29 @@ export function nenManhTay(
 	}
 
 	const dauTien = ds[0]!;
-	const ganNhat = ds.slice(ds.length - giuGanNhat);
-	const boBot = ds.slice(1, ds.length - giuGanNhat);
+	// Ranh giới cắt phải LÙI cho tới khi không tách đôi một cặp tool_use /
+	// tool_result. Bản trước cắt thuần theo số lượng, nên tuỳ parity mà để lại
+	// một `tool_result` không có lời gọi nào đi kèm — trái đúng điều docstring
+	// đầu file này khẳng định. Tái hiện được: chèn một tin nhắn nhắc vào giữa
+	// hội thoại là parity lệch và mồ côi xuất hiện ngay.
+	//
+	// Mồ côi không làm Ollama trả lỗi (lịch sử tool đi qua dạng chữ), nhưng model
+	// nhìn thấy một kết quả từ trên trời rơi xuống — kiểu hỏng âm thầm đắt nhất.
+	const ranhGioi = luiQuaCapToolResult(ds, ds.length - giuGanNhat);
+	const ganNhat = ds.slice(ranhGioi);
+	const boBot = ds.slice(1, ranhGioi);
 
 	const kyTuBo = boBot.reduce(
-		(t, m) => t + (typeof m.content === "string" ? m.content.length : JSON.stringify(m.content).length),
+		(t, m) =>
+			t + (typeof m.content === "string" ? m.content.length : JSON.stringify(m.content).length),
 		0,
 	);
+
+	// Lùi ranh giới tới mức không còn gì để bỏ. Trả về bước ① thay vì dựng một
+	// mốc "đã nén" rỗng tuếch rồi báo daNen = true.
+	if (boBot.length === 0) {
+		return { ...buoc1, cach: buoc1.daNen ? "luoc-tool-result" : "khong-lam-gi" };
+	}
 
 	// Một dấu mốc để model biết có phần đã bị cắt — thà nói rõ còn hơn để nó
 	// tưởng hội thoại vốn ngắn như vậy.
@@ -205,4 +264,114 @@ export function nenManhTay(
 		kyTuBoDi: buoc1.kyTuBoDi + kyTuBo,
 		cach: buoc1.daNen ? "ca-hai" : "bo-luot-cu",
 	};
+}
+
+/**
+ * Lùi ranh giới cắt cho tới khi tin nhắn đầu tiên ĐƯỢC GIỮ không phải là một
+ * `tool_result` mồ côi.
+ *
+ * `appendToolResult` đẩy mỗi kết quả thành một tin nhắn user riêng, nên một
+ * lượt gọi 3 tool để lại 3 tin liên tiếp. Vòng lặp đi lùi qua hết cả cụm rồi
+ * dừng ở chính tin assistant chứa `tool_use` — giữ nguyên vẹn cả cặp.
+ *
+ * Chặn dưới là 1: tin nhắn đầu (đề bài) luôn được giữ riêng, không đụng tới.
+ */
+function luiQuaCapToolResult(ds: ReadonlyArray<Message>, batDau: number): number {
+	let i = Math.max(1, Math.min(batDau, ds.length));
+	while (i > 1 && coToolResult(ds[i])) i--;
+	return i;
+}
+
+function coToolResult(m: Message | undefined): boolean {
+	return (
+		m !== undefined &&
+		m.role === "user" &&
+		Array.isArray(m.content) &&
+		m.content.some((k) => k.type === "tool_result")
+	);
+}
+
+/**
+ * Bản đồ `tool_use_id` → tên tool.
+ *
+ * Khối `tool_result` chỉ mang id, không mang tên — muốn biết kết quả này thuộc
+ * tool nào thì phải tra ngược qua lời gọi trong tin nhắn assistant.
+ */
+export function banDoTenTool(messages: ReadonlyArray<Message>): Map<string, string> {
+	const ra = new Map<string, string>();
+	for (const m of messages) {
+		if (!Array.isArray(m.content)) continue;
+		for (const k of m.content) {
+			if (k.type === "tool_use") ra.set(k.id, k.name);
+		}
+	}
+	return ra;
+}
+
+/**
+ * Nén theo THỜI GIAN: phiên bị bỏ dở rồi quay lại thì dọn ngay.
+ *
+ * Khác nén theo ngưỡng ở chỗ nó không đợi context đầy — nó dựa vào một tín hiệu
+ * khác hẳn: khoảng lặng dài nghĩa là người dùng đã rời đi và quay lại với việc
+ * khác. Giữ nguyên khung tin nhắn, chỉ XOÁ HẲN nội dung tool result cũ.
+ *
+ * @param giuGanNhat số tin nhắn cuối giữ nguyên vẹn
+ */
+export function nenTheoThoiGian(
+	messages: ReadonlyArray<Message>,
+	giuGanNhat = GIU_GAN_NHAT,
+): KetQuaNen {
+	// `Math.max(1, ...)` là bắt buộc: `slice(-0)` trả về TOÀN BỘ mảng, nên
+	// giuGanNhat = 0 sẽ thành "giữ hết" thay vì "giữ 0" — bug kinh điển.
+	const giu = Math.max(1, giuGanNhat);
+	if (messages.length <= giu + 1) {
+		return { messages: [...messages], daNen: false, kyTuBoDi: 0, cach: "khong-lam-gi" };
+	}
+
+	const ranhGioi = messages.length - giu;
+	const tenTheoId = banDoTenTool(messages);
+	let boDi = 0;
+	let daXoa = false;
+
+	const ra = messages.map((m, i) => {
+		if (i === 0 || i >= ranhGioi || typeof m.content === "string") return m;
+
+		let doi = false;
+		const khoi = m.content.map((k): ContentBlock => {
+			if (k.type !== "tool_result") return k;
+			const ten = tenTheoId.get(k.tool_use_id);
+			if (ten === undefined || !TOOL_NEN_DUOC.has(ten)) return k;
+
+			const noi = typeof k.content === "string" ? k.content : JSON.stringify(k.content);
+			if (noi.length === 0) return k;
+
+			boDi += noi.length;
+			doi = true;
+			return { ...k, content: NOI_DUNG_DA_XOA };
+		});
+
+		if (!doi) return m;
+		daXoa = true;
+		return { ...m, content: khoi };
+	});
+
+	return {
+		messages: ra,
+		daNen: daXoa,
+		kyTuBoDi: boDi,
+		cach: daXoa ? "luoc-tool-result" : "khong-lam-gi",
+	};
+}
+
+/** Nói rõ đã xoá, kèm cách lấy lại — cắt im lặng thì model tưởng đó là sự thật. */
+export const NOI_DUNG_DA_XOA =
+	"[nội dung cũ đã xoá sau một khoảng nghỉ dài. Chạy lại lệnh hoặc đọc lại file nếu còn cần.]";
+
+/**
+ * Phiên có bị bỏ dở đủ lâu để dọn ngay không.
+ *
+ * @param lucCuoiMs thời điểm hoạt động gần nhất
+ */
+export function daBoDoLau(lucCuoiMs: number, bayGio: number, nguong = NGUONG_BO_DO_MS): boolean {
+	return lucCuoiMs > 0 && bayGio - lucCuoiMs >= nguong;
 }

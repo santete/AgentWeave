@@ -1,0 +1,12 @@
+{
+	"name": "quy-uoc-node-ts",
+	"description": "Quy uoc viet code Node.js/TypeScript: strict, dat ten, async, bat buoc, cam, xu ly loi",
+	"whenToUse": "Khi viet hoac sua code Node.js/TypeScript trong du an nay",
+	"paths": "**/*.ts, **/*.tsx, **/tsconfig.json",
+	"version": "1.0.0",
+	"tags": [
+		"node",
+		"typescript",
+		"quy-uoc"
+	]
+}

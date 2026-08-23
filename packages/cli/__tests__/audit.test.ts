@@ -205,7 +205,12 @@ describe("auditViewCommand — table format", () => {
 	it("prints header + rows with timestamp/phase/tool/decision", async () => {
 		writeLog([
 			fixture({ tool: "Bash", decision: "approve" }),
-			fixture({ tool: "Write", decision: "block", reason: "policy deny", ts: "2026-04-22T10:05:00.000Z" }),
+			fixture({
+				tool: "Write",
+				decision: "block",
+				reason: "policy deny",
+				ts: "2026-04-22T10:05:00.000Z",
+			}),
 		]);
 		await auditViewCommand({ cwd: workDir });
 		// strip ANSI for clarity
@@ -246,11 +251,36 @@ describe("auditViewCommand — LEVEL column + immutable marker", () => {
 
 	it("renders LEVEL header and maps source → label (org/team/user/rt/hook/-)", async () => {
 		writeLog([
-			fixture({ tool: "Bash", decision: "approve", source: "policy", ts: "2026-04-22T10:00:00.000Z" }),
-			fixture({ tool: "Bash", decision: "approve", source: "project", ts: "2026-04-22T10:01:00.000Z" }),
-			fixture({ tool: "Bash", decision: "approve", source: "user", ts: "2026-04-22T10:02:00.000Z" }),
-			fixture({ tool: "Bash", decision: "approve", source: "runtime", ts: "2026-04-22T10:03:00.000Z" }),
-			fixture({ tool: "Bash", decision: "approve", source: "hook", ts: "2026-04-22T10:04:00.000Z" }),
+			fixture({
+				tool: "Bash",
+				decision: "approve",
+				source: "policy",
+				ts: "2026-04-22T10:00:00.000Z",
+			}),
+			fixture({
+				tool: "Bash",
+				decision: "approve",
+				source: "project",
+				ts: "2026-04-22T10:01:00.000Z",
+			}),
+			fixture({
+				tool: "Bash",
+				decision: "approve",
+				source: "user",
+				ts: "2026-04-22T10:02:00.000Z",
+			}),
+			fixture({
+				tool: "Bash",
+				decision: "approve",
+				source: "runtime",
+				ts: "2026-04-22T10:03:00.000Z",
+			}),
+			fixture({
+				tool: "Bash",
+				decision: "approve",
+				source: "hook",
+				ts: "2026-04-22T10:04:00.000Z",
+			}),
 			fixture({ tool: "Bash", decision: "approve", ts: "2026-04-22T10:05:00.000Z" }), // no source
 		]);
 		await auditViewCommand({ cwd: workDir });
@@ -266,8 +296,19 @@ describe("auditViewCommand — LEVEL column + immutable marker", () => {
 
 	it("appends (!) to decision when immutable=true, not when false/undefined", async () => {
 		writeLog([
-			fixture({ tool: "Bash", decision: "block", source: "policy", immutable: true, ts: "2026-04-22T10:00:00.000Z" }),
-			fixture({ tool: "Bash", decision: "approve", source: "user", ts: "2026-04-22T10:01:00.000Z" }),
+			fixture({
+				tool: "Bash",
+				decision: "block",
+				source: "policy",
+				immutable: true,
+				ts: "2026-04-22T10:00:00.000Z",
+			}),
+			fixture({
+				tool: "Bash",
+				decision: "approve",
+				source: "user",
+				ts: "2026-04-22T10:01:00.000Z",
+			}),
 		]);
 		await auditViewCommand({ cwd: workDir });
 		const out = strip(stdoutBuf);
@@ -278,9 +319,7 @@ describe("auditViewCommand — LEVEL column + immutable marker", () => {
 	});
 
 	it("JSON format preserves source + immutable fields intact", async () => {
-		writeLog([
-			fixture({ tool: "Bash", decision: "block", source: "policy", immutable: true }),
-		]);
+		writeLog([fixture({ tool: "Bash", decision: "block", source: "policy", immutable: true })]);
 		await auditViewCommand({ cwd: workDir, format: "json" });
 		const parsed = JSON.parse(stdoutBuf.trim());
 		expect(parsed.source).toBe("policy");
@@ -295,8 +334,20 @@ describe("auditReplayCommand — LEVEL + immutable in replay", () => {
 
 	it("renders OFFSET + LEVEL columns and (!) marker for immutable decisions", async () => {
 		writeLog([
-			fixture({ session_id: "ses_r", decision: "approve", source: "user", ts: "2026-04-22T10:00:00.000Z" }),
-			fixture({ session_id: "ses_r", decision: "block", source: "policy", immutable: true, reason: "rm denied", ts: "2026-04-22T10:00:01.500Z" }),
+			fixture({
+				session_id: "ses_r",
+				decision: "approve",
+				source: "user",
+				ts: "2026-04-22T10:00:00.000Z",
+			}),
+			fixture({
+				session_id: "ses_r",
+				decision: "block",
+				source: "policy",
+				immutable: true,
+				reason: "rm denied",
+				ts: "2026-04-22T10:00:01.500Z",
+			}),
 			fixture({ session_id: "ses_other", tool: "Bash", ts: "2026-04-22T10:00:02.000Z" }),
 		]);
 		const code = await auditReplayCommand({ cwd: workDir, sessionId: "ses_r" });
@@ -312,7 +363,13 @@ describe("auditReplayCommand — LEVEL + immutable in replay", () => {
 
 	it("JSON format preserves source + immutable in replay output", async () => {
 		writeLog([
-			fixture({ session_id: "ses_j", decision: "block", source: "policy", immutable: true, ts: "2026-04-22T10:00:00.000Z" }),
+			fixture({
+				session_id: "ses_j",
+				decision: "block",
+				source: "policy",
+				immutable: true,
+				ts: "2026-04-22T10:00:00.000Z",
+			}),
 		]);
 		await auditReplayCommand({ cwd: workDir, sessionId: "ses_j", format: "json" });
 		const parsed = JSON.parse(stdoutBuf.trim());

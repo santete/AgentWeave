@@ -93,7 +93,7 @@ describe("ToolExecutor", () => {
 		]);
 
 		expect(results[0]!.isError).toBe(true);
-		expect(results[0]!.result).toContain("not found");
+		expect(results[0]!.result).toContain("does not exist");
 	});
 
 	it("should catch tool execution errors", async () => {

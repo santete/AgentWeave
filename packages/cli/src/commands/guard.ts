@@ -13,11 +13,7 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
-import {
-	BudgetManager,
-	buildPermissionContext,
-	PermissionEngine,
-} from "@agentweave/outer-harness";
+import { BudgetManager, buildPermissionContext, PermissionEngine } from "@agentweave/outer-harness";
 import {
 	GuardConfigSchema,
 	HookInputSchema,
@@ -132,12 +128,27 @@ async function handlePre(hook: HookInput, config: GuardConfig, cwd: string): Pro
 		return 0;
 	}
 
-	// deny or ask → block. Ask surfaces as block with a reason so the user
-	// can edit config or rerun; Claude Code does not have an "ask" return.
+	// deny or ask → block. Ask surfaces as block because the Claude Code hook
+	// contract has no "ask" return.
+	//
+	// Hai ca khác hẳn nhau:
+	//   · CÓ luật khớp và người vận hành tự viết `message` → dùng NGUYÊN VĂN.
+	//     Đó là câu họ cố ý viết cho đồng đội đọc; thay bằng chữ máy sinh là
+	//     xoá mất thứ có giá trị nhất trong cấu hình.
+	//   · KHÔNG luật nào khớp → `askMessage` là câu hỏi cho hộp thoại
+	//     ("Allow Bash?"), không phải lý do. Người vận hành đọc
+	//     {"decision":"block","reason":"Allow Bash?"} thì không biết làm gì —
+	//     mà đây lại là thứ họ gặp ĐẦU TIÊN, vì mặc định chưa có luật nào nên
+	//     mọi tool đều rơi vào nhánh "ask".
 	const reason =
-		decision.behavior === "ask"
-			? (decision.askMessage ?? decision.reason)
-			: decision.reason;
+		decision.behavior !== "ask"
+			? decision.reason
+			: decision.matchedRule && decision.askMessage
+				? decision.askMessage
+				: `Chua co luat nao cho phep ${hook.tool_name}, va hook khong hoi duoc nguoi dung. ` +
+					`Them mot luat "allow" trong .agentweave/agent.json ` +
+					`(vi du: {"pattern":"${hook.tool_name}(*)","behavior":"allow"}) roi chay lai.`;
+
 	writeAudit(config, cwd, {
 		phase: "pre",
 		tool: hook.tool_name,

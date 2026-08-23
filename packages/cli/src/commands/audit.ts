@@ -89,7 +89,9 @@ export async function auditViewCommand(args: AuditViewArgs): Promise<number> {
 
 	if (!existsSync(auditPath)) {
 		console.log(`\n${C.yellow}  No audit log at ${relPath}${C.reset}`);
-		console.log(`${C.dim}  Wire up .claude/hooks/ → agentweave guard to start recording.${C.reset}\n`);
+		console.log(
+			`${C.dim}  Wire up .claude/hooks/ → agentweave guard to start recording.${C.reset}\n`,
+		);
 		return 0;
 	}
 
@@ -138,7 +140,9 @@ export async function auditReplayCommand(args: AuditReplayArgs): Promise<number>
 
 	if (!existsSync(auditPath)) {
 		console.log(`\n${C.yellow}  No audit log at ${relPath}${C.reset}`);
-		console.log(`${C.dim}  Wire up .claude/hooks/ → agentweave guard to start recording.${C.reset}\n`);
+		console.log(
+			`${C.dim}  Wire up .claude/hooks/ → agentweave guard to start recording.${C.reset}\n`,
+		);
 		return 0;
 	}
 
@@ -182,7 +186,9 @@ export async function auditReplayCommand(args: AuditReplayArgs): Promise<number>
 
 function printReplay(entries: AuditEntry[], sessionId: string): void {
 	const first = Date.parse(entries[0]!.ts);
-	console.log(`\n${C.cyan}${C.bold}  AgentWeave Audit Replay — session ${sessionId} (${entries.length} entries)${C.reset}`);
+	console.log(
+		`\n${C.cyan}${C.bold}  AgentWeave Audit Replay — session ${sessionId} (${entries.length} entries)${C.reset}`,
+	);
 	console.log(`${C.gray}  ${DIVIDER}${C.reset}`);
 	const header = `  ${pad("OFFSET", 10)} ${pad("PHASE", 5)} ${pad("TOOL", 14)} ${pad("LEVEL", 6)} ${pad("DECISION", 10)} REASON`;
 	console.log(`${C.dim}${header}${C.reset}`);
@@ -197,13 +203,10 @@ function printReplay(entries: AuditEntry[], sessionId: string): void {
 				: e.decision
 			: "-";
 		const reason = truncate(e.reason ?? (e.matched ? `matched ${e.matched}` : "-"), 40);
-		const color =
-			e.decision === "block"
-				? C.red
-				: e.decision === "approve"
-					? C.green
-					: C.gray;
-		console.log(`  ${pad(offset, 10)} ${pad(phase, 5)} ${pad(tool, 14)} ${pad(level, 6)} ${color}${pad(decisionText, 10)}${C.reset} ${reason}`);
+		const color = e.decision === "block" ? C.red : e.decision === "approve" ? C.green : C.gray;
+		console.log(
+			`  ${pad(offset, 10)} ${pad(phase, 5)} ${pad(tool, 14)} ${pad(level, 6)} ${color}${pad(decisionText, 10)}${C.reset} ${reason}`,
+		);
 	}
 	console.log(`${C.gray}  ${DIVIDER}${C.reset}\n`);
 }
@@ -298,7 +301,8 @@ export function parseSince(input: string): number | null {
 	if (m) {
 		const n = Number.parseInt(m[1]!, 10);
 		const unit = m[2]!;
-		const mult = unit === "s" ? 1_000 : unit === "m" ? 60_000 : unit === "h" ? 3_600_000 : 86_400_000;
+		const mult =
+			unit === "s" ? 1_000 : unit === "m" ? 60_000 : unit === "h" ? 3_600_000 : 86_400_000;
 		return Date.now() - n * mult;
 	}
 	const t = Date.parse(input);
@@ -313,7 +317,9 @@ function printTable(entries: AuditEntry[], total: number): void {
 		return;
 	}
 
-	console.log(`\n${C.cyan}${C.bold}  AgentWeave Audit — ${entries.length} of ${total} entries${C.reset}`);
+	console.log(
+		`\n${C.cyan}${C.bold}  AgentWeave Audit — ${entries.length} of ${total} entries${C.reset}`,
+	);
 	console.log(`${C.gray}  ${DIVIDER}${C.reset}`);
 	printTableHeader();
 	for (const e of entries) printRow(e);
@@ -330,19 +336,10 @@ function printRow(e: AuditEntry): void {
 	const phase = e.phase ?? "-";
 	const tool = e.tool ?? "-";
 	const level = levelLabel(e.source);
-	const decisionText = e.decision
-		? e.immutable === true
-			? `${e.decision}(!)`
-			: e.decision
-		: "-";
+	const decisionText = e.decision ? (e.immutable === true ? `${e.decision}(!)` : e.decision) : "-";
 	const reason = truncate(e.reason ?? (e.matched ? `matched ${e.matched}` : "-"), 40);
 
-	const color =
-		e.decision === "block"
-			? C.red
-			: e.decision === "approve"
-				? C.green
-				: C.gray;
+	const color = e.decision === "block" ? C.red : e.decision === "approve" ? C.green : C.gray;
 	const row = `  ${pad(ts, 20)} ${pad(phase, 5)} ${pad(tool, 14)} ${pad(level, 6)} ${color}${pad(decisionText, 10)}${C.reset} ${reason}`;
 	console.log(row);
 }

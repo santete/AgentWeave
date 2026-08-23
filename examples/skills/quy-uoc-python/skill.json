@@ -1,0 +1,11 @@
+{
+	"name": "quy-uoc-python",
+	"description": "Quy uoc viet code Python: kieu tinh, bo cuc, dat ten, bat buoc, cam, xu ly loi",
+	"whenToUse": "Khi viet hoac sua code Python trong du an nay",
+	"paths": "**/*.py, **/pyproject.toml, **/requirements.txt",
+	"version": "1.0.0",
+	"tags": [
+		"python",
+		"quy-uoc"
+	]
+}

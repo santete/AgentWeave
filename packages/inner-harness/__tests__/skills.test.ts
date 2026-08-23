@@ -23,8 +23,15 @@ import {
 	summarizeSkillReport,
 	LOAD_SKILL_TOOL_NAME,
 	SKILL_INDEX_SECTION,
+	nganSachChiMuc,
+	nguonSkillTheoDuongDan,
+	quetDuAn,
 	type SkillManifest,
+	type Skill,
+	type SkillScope,
 } from "../src/skills/index";
+import { thuNhac } from "../src/attachments/index";
+import { taoBoKhop } from "../src/rules/khop-duong-dan";
 import { createLoadSkillTool } from "../src/built-in-tools/load-skill";
 import { AgentLoop } from "../src/agent-loop";
 
@@ -466,6 +473,265 @@ describe("installSkills — nối vào harness trong một bước", () => {
 	it("tóm tắt một dòng dùng được cho bộ tự kiểm tra", async () => {
 		const reg = makeRegistry();
 		const report = await reg.discover();
-		expect(summarizeSkillReport(report)).toMatch(/\d+ skill · chi muc \d+ byte/);
+		expect(summarizeSkillReport(report)).toMatch(/\d+ skill \(\d+ co dieu kien\) · chi muc \d+\/\d+ byte/);
+	});
+});
+
+// ─────────────────────────────────────────────────────────────────
+// Nâng cấp theo bản distil harness: ngân sách theo % cửa sổ, skill có
+// điều kiện, bơm delta. Trọng tâm vẫn là "báo xanh mà sai": chỉ mục
+// phình quá ngân sách, hoặc skill có điều kiện lọt vào chỉ mục nền và
+// mất sạch lợi ích context.
+// ─────────────────────────────────────────────────────────────────
+
+describe("ngan sach chi muc theo % cua so", () => {
+	it("nganSachChiMuc = 1% x cua so x 4 ky tu", () => {
+		expect(nganSachChiMuc(64_000)).toBe(2_560);
+		expect(nganSachChiMuc(200_000)).toBe(8_000);
+	});
+
+	function skillGia(ten: string, scope: SkillScope, moTa: string): Skill {
+		return {
+			manifest: { name: ten, description: moTa, whenToUse: moTa },
+			scope,
+			coDieuKien: false,
+			gocKhop: "/tmp",
+			dir: `/tmp/${ten}`,
+			contentPath: `/tmp/${ten}/SKILL.md`,
+			contentBytes: 10,
+		};
+	}
+
+	it("nac 1: vua ngan sach thi giu mo ta day du", () => {
+		const ds = [skillGia("a", "project", "mo ta ngan gon cua skill a")];
+		const ra = renderSkillIndex(ds, 5_000);
+		expect(ra).toContain("- a: mo ta ngan gon cua skill a");
+	});
+
+	it("tran cung 250 ky tu moi dong ap dung ca khi con du ngan sach", () => {
+		const dai = "x".repeat(300);
+		const ra = renderSkillIndex([skillGia("a", "project", dai)], 100_000);
+		const dong = ra.split("\n").find((d) => d.startsWith("- a:"))!;
+		expect(dong.length).toBeLessThanOrEqual("- a: ".length + 250);
+	});
+
+	it("nac 2: chat ngan sach thi cat mo ta skill thuong, GIU NGUYEN skill org", () => {
+		const moTa = "y".repeat(200);
+		const ds = [
+			skillGia("org-mot", "org", moTa),
+			skillGia("du-an-mot", "project", moTa),
+			skillGia("du-an-hai", "project", moTa),
+		];
+		const ra = renderSkillIndex(ds, 700);
+
+		// Skill org la chinh sach dong bang trong goi ban giao — trong khu co lap
+		// khong ai sua lai duoc, nen no la thu HY SINH SAU CUNG.
+		expect(ra).toContain(`- org-mot: ${moTa}`);
+		const dongDuAn = ra.split("\n").find((d) => d.startsWith("- du-an-mot:"))!;
+		expect(dongDuAn.length).toBeLessThan(moTa.length);
+	});
+
+	it("nac 3: ngan sach qua chat thi skill thuong chi con TEN, org van du mo ta", () => {
+		const moTa = "z".repeat(200);
+		const ds = [
+			skillGia("org-mot", "org", moTa),
+			...Array.from({ length: 20 }, (_, i) => skillGia(`du-an-${i}`, "project", moTa)),
+		];
+		const ra = renderSkillIndex(ds, 420);
+
+		expect(ra).toContain(`- org-mot: ${moTa}`);
+		expect(ra).toContain("\n- du-an-0\n");
+		expect(ra).not.toContain("- du-an-0:");
+	});
+
+	it("bao cao khi chi muc van vuot ngan sach sau khi da xuong thang het muc", async () => {
+		const dir = join(root, "ngan-sach", ".agentweave", "skills");
+		await mkdir(dir, { recursive: true });
+		for (let i = 0; i < 6; i++) {
+			await makeSkill(dir, `org-lon-${i}`, { whenToUse: "w".repeat(250) });
+		}
+		const reg = new SkillRegistry({
+			projectDir: null,
+			userSkillsDir: null,
+			orgSkillsDir: dir,
+			contextWindow: 8_000, // ngan sach 320 ky tu
+		});
+		const rp = await reg.discover();
+		expect(rp.problems.some((p) => p.kind === "chi_muc_vuot_ngan_sach")).toBe(true);
+	});
+});
+
+describe("skill co dieu kien theo paths:", () => {
+	const goc = join(root, "co-dieu-kien");
+	const skillsDir = join(goc, ".agentweave", "skills");
+
+	it("KHONG vao chi muc nen, nhung van co trong danh sach", async () => {
+		await makeSkill(skillsDir, "quy-uoc-sql", {
+			paths: "**/*.sql",
+			whenToUse: "khi sua migration SQL",
+		});
+		await makeSkill(skillsDir, "luon-dung", { whenToUse: "moi luc" });
+
+		const reg = new SkillRegistry({ projectDir: goc, userSkillsDir: null, orgSkillsDir: null });
+		const rp = await reg.discover();
+
+		expect(rp.soCoDieuKien).toBe(1);
+		expect(reg.renderIndex()).not.toContain("quy-uoc-sql");
+		expect(reg.renderIndex()).toContain("luon-dung");
+		// Van nap duoc bang ten neu model hoac nguoi dung goi thang.
+		expect(reg.get("quy-uoc-sql")).toBeDefined();
+	});
+
+	it("khopFile tra skill khi cham file khop, khong tra khi lech", async () => {
+		const reg = new SkillRegistry({ projectDir: goc, userSkillsDir: null, orgSkillsDir: null });
+		await reg.discover();
+		expect(reg.khopFile(join(goc, "db", "001.sql")).map((s) => s.manifest.name)).toEqual([
+			"quy-uoc-sql",
+		]);
+		expect(reg.khopFile(join(goc, "src", "a.ts"))).toEqual([]);
+	});
+
+	it('paths: "**" duoc coi la vo dieu kien', async () => {
+		const g2 = join(root, "moi-noi");
+		await makeSkill(join(g2, ".agentweave", "skills"), "khap-noi", { paths: "**" });
+		const reg = new SkillRegistry({ projectDir: g2, userSkillsDir: null, orgSkillsDir: null });
+		const rp = await reg.discover();
+		expect(rp.soCoDieuKien).toBe(0);
+		expect(reg.renderIndex()).toContain("khap-noi");
+	});
+
+	it("paths: hong thi BO skill va bao loi nghiem trong", async () => {
+		const g3 = join(root, "paths-hong");
+		await makeSkill(join(g3, ".agentweave", "skills"), "hong", { paths: "/" });
+		const reg = new SkillRegistry({ projectDir: g3, userSkillsDir: null, orgSkillsDir: null });
+		const rp = await reg.discover();
+		expect(rp.skills.map((s) => s.manifest.name)).not.toContain("hong");
+		expect(rp.problems.some((p) => p.kind === "paths_khong_hop_le" && p.fatal)).toBe(true);
+	});
+});
+
+describe("nguon nhac cua skill", () => {
+	it("gioi thieu skill co dieu kien khi cham file, va chi mot lan", async () => {
+		const goc = join(root, "co-dieu-kien");
+		const reg = new SkillRegistry({ projectDir: goc, userSkillsDir: null, orgSkillsDir: null });
+		await reg.discover();
+		const nguon = nguonSkillTheoDuongDan(reg);
+
+		const lan1 = await thuNhac([nguon], {
+			luot: 2,
+			fileVuaCham: [join(goc, "db", "a.sql"), join(goc, "db", "b.sql")],
+			daBom: new Set(),
+		});
+		expect(lan1.nhac).toHaveLength(1);
+		expect(lan1.nhac[0]?.noiDung).toContain("quy-uoc-sql");
+		expect(lan1.nhac[0]?.noiDung).toContain(LOAD_SKILL_TOOL_NAME);
+
+		const lan2 = await thuNhac([nguon], {
+			luot: 3,
+			fileVuaCham: [join(goc, "db", "c.sql")],
+			daBom: new Set(["skill:quy-uoc-sql"]),
+		});
+		expect(lan2.nhac).toEqual([]);
+	});
+
+});
+
+describe("mo ta LoadSkill", () => {
+	it("neu HAU QUA chu khong chi ra lenh cam, va chong goi lai", () => {
+		const reg = new SkillRegistry({ projectDir: null, userSkillsDir: null, orgSkillsDir: null });
+		const tool = createLoadSkillTool(reg);
+		// Model nho tuan theo cau neu hau qua tot hon han cau cam truu tuong.
+		expect(tool.description).toContain("BLOCKING REQUIREMENT");
+		expect(tool.description).toContain("you will get it wrong");
+		expect(tool.description).toContain("ALREADY loaded");
+	});
+});
+
+// ─────────────────────────────────────────────────────────────────
+// Dò stack lúc khởi động.
+//
+// Vấn đề: skill quy ước gắn `paths:` chỉ xuất hiện SAU khi model chạm
+// tệp khớp — tức là sau khi nó đã viết tệp .cs đầu tiên theo trí nhớ.
+// Quy ước sinh ra để định hình chính lần viết đó.
+// ─────────────────────────────────────────────────────────────────
+
+describe("do stack luc khoi dong", () => {
+	it("du an DA CO tep khop → skill vao thang chi muc nen, co mat tu luot 1", async () => {
+		const goc = join(root, "du-an-dotnet");
+		await mkdir(join(goc, "src"), { recursive: true });
+		await writeFile(join(goc, "src", "Program.cs"), "class Program {}");
+		await makeSkill(join(goc, ".agentweave", "skills"), "quy-uoc-dotnet", {
+			paths: "**/*.cs, **/*.csproj",
+			whenToUse: "khi viet code C#",
+		});
+
+		const reg = new SkillRegistry({ projectDir: goc, userSkillsDir: null, orgSkillsDir: null });
+		const rp = await reg.discover();
+
+		expect(reg.renderIndex()).toContain("quy-uoc-dotnet");
+		expect(rp.skills[0]?.coTrongDuAn).toBe(true);
+		// Van la skill co dieu kien, chi la dieu kien DA thoa.
+		expect(rp.skills[0]?.coDieuKien).toBe(true);
+	});
+
+	it("du an KHONG co tep khop → skill nam im, khong ton mot dong chi muc nao", async () => {
+		const goc = join(root, "du-an-python");
+		await mkdir(join(goc, "src"), { recursive: true });
+		await writeFile(join(goc, "src", "main.py"), "print(1)");
+		await makeSkill(join(goc, ".agentweave", "skills"), "quy-uoc-dotnet", {
+			paths: "**/*.cs, **/*.csproj",
+			whenToUse: "khi viet code C#",
+		});
+
+		const reg = new SkillRegistry({ projectDir: goc, userSkillsDir: null, orgSkillsDir: null });
+		const rp = await reg.discover();
+
+		expect(reg.renderIndex()).not.toContain("quy-uoc-dotnet");
+		expect(rp.soCoDieuKien).toBe(1);
+		// Van kich hoat duoc theo duong dan neu ve sau model tao tep .cs.
+		expect(reg.khopFile(join(goc, "src", "A.cs")).map((s) => s.manifest.name)).toEqual([
+			"quy-uoc-dotnet",
+		]);
+	});
+
+	it("skill da vao chi muc nen thi KHONG gioi thieu lai qua attachment", async () => {
+		const goc = join(root, "du-an-dotnet");
+		const reg = new SkillRegistry({ projectDir: goc, userSkillsDir: null, orgSkillsDir: null });
+		await reg.discover();
+		// Bom them mot dong gioi thieu cho thu model da thay trong chi muc la lang phi.
+		expect(reg.khopFile(join(goc, "src", "Program.cs"))).toEqual([]);
+	});
+
+	it("tep trong node_modules KHONG duoc tinh — mot thu vien khong lam doi stack du an", async () => {
+		const goc = join(root, "du-an-js");
+		await mkdir(join(goc, "node_modules", "vai-thu-vien"), { recursive: true });
+		await writeFile(join(goc, "node_modules", "vai-thu-vien", "Native.cs"), "// cua thu vien");
+		await writeFile(join(goc, "index.js"), "1");
+		await makeSkill(join(goc, ".agentweave", "skills"), "quy-uoc-dotnet", {
+			paths: "**/*.cs",
+			whenToUse: "khi viet code C#",
+		});
+
+		const reg = new SkillRegistry({ projectDir: goc, userSkillsDir: null, orgSkillsDir: null });
+		await reg.discover();
+		expect(reg.renderIndex()).not.toContain("quy-uoc-dotnet");
+	});
+
+	it("quetDuAn tra ve dung khoa da khop, bo qua thu muc build", async () => {
+		const goc = join(root, "quet-thu");
+		await mkdir(join(goc, "a", "b"), { recursive: true });
+		await mkdir(join(goc, "dist"), { recursive: true });
+		await writeFile(join(goc, "a", "b", "x.sql"), "select 1");
+		await writeFile(join(goc, "dist", "y.rs"), "fn main(){}");
+
+		const trung = await quetDuAn(goc, [
+			{ khoa: "sql", khop: taoBoKhop("**/*.sql")! },
+			{ khoa: "rust", khop: taoBoKhop("**/*.rs")! },
+		]);
+		expect([...trung]).toEqual(["sql"]);
+	});
+
+	it("khong co bo khop nao thi khong quet gi ca", async () => {
+		expect(await quetDuAn(root, [])).toEqual(new Set());
 	});
 });

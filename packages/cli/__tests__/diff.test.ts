@@ -65,7 +65,11 @@ describe("dungDiff — FileEdit", () => {
 	});
 
 	it("thay bằng chuỗi y hệt thì báo không đổi", async () => {
-		const d = await dungDiff("FileEdit", { path: "a.js", old_string: "ba", new_string: "ba" }, thuMuc);
+		const d = await dungDiff(
+			"FileEdit",
+			{ path: "a.js", old_string: "ba", new_string: "ba" },
+			thuMuc,
+		);
 		expect(d!.text).toBe("");
 		expect(d!.them).toBe(0);
 		expect(d!.bot).toBe(0);
@@ -100,7 +104,11 @@ describe("dungDiff — FileWrite", () => {
 	});
 
 	it("ghi nội dung y hệt thì báo không đổi", async () => {
-		const d = await dungDiff("FileWrite", { path: "a.js", content: "mot\nhai\nba\nbon\nnam\n" }, thuMuc);
+		const d = await dungDiff(
+			"FileWrite",
+			{ path: "a.js", content: "mot\nhai\nba\nbon\nnam\n" },
+			thuMuc,
+		);
 		expect(d!.text).toBe("");
 	});
 });
@@ -121,7 +129,11 @@ describe("dungDiff — trường hợp không áp dụng", () => {
 		const to = Array.from({ length: 3000 }, (_, i) => `dong ${i}`).join("\n");
 		await writeFile(join(thuMuc, "to.js"), to);
 
-		const d = await dungDiff("FileWrite", { path: "to.js", content: `${to}\nthem mot dong` }, thuMuc);
+		const d = await dungDiff(
+			"FileWrite",
+			{ path: "to.js", content: `${to}\nthem mot dong` },
+			thuMuc,
+		);
 
 		expect(d!.them).toBe(1);
 		// Trần in ra phải chặn diff khổng lồ làm trôi màn hình.

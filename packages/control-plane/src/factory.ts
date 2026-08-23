@@ -31,8 +31,15 @@ export function createControlPlane(
 		sendCommand: (cmd) => commandBus.send(cmd),
 		onCommand: (handler) => commandBus.setHandler(handler),
 
-		// Interceptors
-		intercept: (type, req) => interceptors.intercept(type, req),
+		// Interceptors.
+		//
+		// PHẢI chuyển tiếp `options` (chứa timeoutMs). Bỏ nó đi thì mọi lời gọi
+		// rơi về hạn giờ mặc định 30 giây — kể cả `timeoutMs: 0` mà agent-loop
+		// truyền cho quyết định của con người. Hậu quả đã đo: xin quyền ghi file,
+		// người dùng rời màn hình 30 giây, agent tự TỪ CHỐI với "Interceptor
+		// timeout (30000ms)". Đúng thứ nguyên tắc "không bấm giờ người dùng" cấm,
+		// nhưng bị chính lớp bọc này âm thầm vô hiệu.
+		intercept: (type, req, options) => interceptors.intercept(type, req, options),
 		registerInterceptor: (type, handler) =>
 			interceptors.registerInterceptor(type, handler),
 

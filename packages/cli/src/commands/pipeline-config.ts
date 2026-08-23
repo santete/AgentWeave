@@ -56,13 +56,13 @@ const MODULE_LABELS: Record<string, string> = {
 	outputStandardizer: "Output Standardize",
 };
 
-type ModuleName = typeof MODULE_NAMES[number];
+type ModuleName = (typeof MODULE_NAMES)[number];
 
 export interface PipelineConfigArgs {
 	action: "show" | "on" | "off" | "set" | "init" | "reset";
-	targets?: string[];  // module names or "all"
-	key?: string;        // for "set": "qualityGate.checks"
-	value?: string;      // for "set": "pnpm test:unit,eslint src/"
+	targets?: string[]; // module names or "all"
+	key?: string; // for "set": "qualityGate.checks"
+	value?: string; // for "set": "pnpm test:unit,eslint src/"
 }
 
 export function pipelineConfigCommand(args: PipelineConfigArgs): void {
@@ -94,25 +94,32 @@ function showConfig(): void {
 	const { config, source } = loadConfig();
 	const sourceLabel = source ? source : "defaults (no agentweave.yaml)";
 
-	console.log(`\n  ${C.cyan}${C.bold}Pipeline Config${C.reset} ${C.dim}(${sourceLabel})${C.reset}\n`);
+	console.log(
+		`\n  ${C.cyan}${C.bold}Pipeline Config${C.reset} ${C.dim}(${sourceLabel})${C.reset}\n`,
+	);
 
 	for (const name of MODULE_NAMES) {
 		const mod = config.modules[name];
 		const enabled = mod?.enabled ?? false;
 		const tag = enabled ? `${C.green}ON ${C.reset}` : `${C.red}OFF${C.reset}`;
 		const label = MODULE_LABELS[name] ?? name;
-		console.log(`  [${tag}]  ${label}${" ".repeat(Math.max(0, 22 - label.length))}${C.dim}${name}${C.reset}`);
+		console.log(
+			`  [${tag}]  ${label}${" ".repeat(Math.max(0, 22 - label.length))}${C.dim}${name}${C.reset}`,
+		);
 	}
 
 	// Execution
 	const mode = config.execution.mode;
-	const agent = mode === "process-adapter"
-		? `${config.execution.processAdapter?.command ?? "?"} ${(config.execution.processAdapter?.args ?? []).join(" ")}`.trim()
-		: mode === "agent-loop"
-			? config.execution.agentLoop?.model ?? "?"
-			: mode;
+	const agent =
+		mode === "process-adapter"
+			? `${config.execution.processAdapter?.command ?? "?"} ${(config.execution.processAdapter?.args ?? []).join(" ")}`.trim()
+			: mode === "agent-loop"
+				? (config.execution.agentLoop?.model ?? "?")
+				: mode;
 	console.log(`\n  ${C.white}Execution:${C.reset} ${mode} (${agent})`);
-	console.log(`  ${C.white}Metrics:${C.reset}   ${config.metrics.enabled ? "ON" : "OFF"}${config.metrics.persistPath ? ` → ${config.metrics.persistPath}` : ""}`);
+	console.log(
+		`  ${C.white}Metrics:${C.reset}   ${config.metrics.enabled ? "ON" : "OFF"}${config.metrics.persistPath ? ` → ${config.metrics.persistPath}` : ""}`,
+	);
 
 	console.log(`\n  ${C.dim}Toggle:  agentweave pipeline config on/off <module>${C.reset}`);
 	console.log(`  ${C.dim}Set:     agentweave pipeline config set <key> <value>${C.reset}`);
@@ -203,7 +210,9 @@ function setConfigValue(key: string, value: string): void {
 		if (resolved.length === 0) {
 			console.log(`\n  ${C.red}Unknown module: ${rawModName}${C.reset}`);
 			console.log(`  ${C.dim}Available: ${MODULE_NAMES.join(", ")}${C.reset}`);
-			console.log(`  ${C.dim}Aliases: qa, retry, normalize, context, plan, exec, patch, output${C.reset}\n`);
+			console.log(
+				`  ${C.dim}Aliases: qa, retry, normalize, context, plan, exec, patch, output${C.reset}\n`,
+			);
 			return;
 		}
 		const modName = resolved[0]!;
@@ -220,7 +229,13 @@ function setConfigValue(key: string, value: string): void {
 				command: cmd.trim(),
 				required: true,
 			}));
-		} else if (field === "maxRetries" || field === "maxSteps" || field === "maxFiles" || field === "maxFilesChanged" || field === "maxTokens") {
+		} else if (
+			field === "maxRetries" ||
+			field === "maxSteps" ||
+			field === "maxFiles" ||
+			field === "maxFilesChanged" ||
+			field === "maxTokens"
+		) {
 			mod[field] = parseInt(value, 10);
 		} else if (field === "scopeStrict") {
 			mod[field] = value === "true" || value === "yes";
@@ -241,7 +256,9 @@ function setConfigValue(key: string, value: string): void {
 	}
 
 	console.log(`\n  ${C.red}Invalid key format: ${key}${C.reset}`);
-	console.log(`  ${C.dim}Use: <module>.<field> or execution.agent or metrics.persistPath${C.reset}\n`);
+	console.log(
+		`  ${C.dim}Use: <module>.<field> or execution.agent or metrics.persistPath${C.reset}\n`,
+	);
 }
 
 // ─── Init ────────────────────────────────────────────────────────
@@ -249,16 +266,22 @@ function setConfigValue(key: string, value: string): void {
 function initConfig(): void {
 	if (existsSync(CONFIG_PATH)) {
 		console.log(`\n  ${C.yellow}${CONFIG_PATH} already exists.${C.reset}`);
-		console.log(`  ${C.dim}Use 'agentweave pipeline config reset' to overwrite with defaults.${C.reset}\n`);
+		console.log(
+			`  ${C.dim}Use 'agentweave pipeline config reset' to overwrite with defaults.${C.reset}\n`,
+		);
 		return;
 	}
 
 	const defaults = getDefaultSDLCConfig();
-	const data = { inner: { modules: defaults.modules, execution: defaults.execution, metrics: defaults.metrics } };
+	const data = {
+		inner: { modules: defaults.modules, execution: defaults.execution, metrics: defaults.metrics },
+	};
 	writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2), "utf-8");
 
 	console.log(`\n  ${C.green}Created${C.reset} ${CONFIG_PATH}`);
-	console.log(`  ${C.dim}Edit the file or use 'agentweave pipeline config set' to configure.${C.reset}`);
+	console.log(
+		`  ${C.dim}Edit the file or use 'agentweave pipeline config set' to configure.${C.reset}`,
+	);
 	console.log(`  ${C.dim}View with 'agentweave pipeline show'.${C.reset}\n`);
 }
 
@@ -266,7 +289,9 @@ function initConfig(): void {
 
 function resetConfig(): void {
 	const defaults = getDefaultSDLCConfig();
-	const data = { inner: { modules: defaults.modules, execution: defaults.execution, metrics: defaults.metrics } };
+	const data = {
+		inner: { modules: defaults.modules, execution: defaults.execution, metrics: defaults.metrics },
+	};
 	writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2), "utf-8");
 
 	console.log(`\n  ${C.green}Reset${C.reset} ${CONFIG_PATH} to defaults.`);

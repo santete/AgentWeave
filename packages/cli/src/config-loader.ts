@@ -94,13 +94,15 @@ function mergeConfig(defaults: SDLCConfig, overrides: Record<string, unknown>): 
 		}
 	}
 
-	const execution = typeof overrides.execution === "object" && overrides.execution !== null
-		? { ...defaults.execution, ...(overrides.execution as Record<string, unknown>) }
-		: defaults.execution;
+	const execution =
+		typeof overrides.execution === "object" && overrides.execution !== null
+			? { ...defaults.execution, ...(overrides.execution as Record<string, unknown>) }
+			: defaults.execution;
 
-	const metrics = typeof overrides.metrics === "object" && overrides.metrics !== null
-		? { ...defaults.metrics, ...(overrides.metrics as Record<string, unknown>) }
-		: defaults.metrics;
+	const metrics =
+		typeof overrides.metrics === "object" && overrides.metrics !== null
+			? { ...defaults.metrics, ...(overrides.metrics as Record<string, unknown>) }
+			: defaults.metrics;
 
 	return { modules, execution, metrics } as SDLCConfig;
 }

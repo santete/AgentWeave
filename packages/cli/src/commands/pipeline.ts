@@ -14,7 +14,13 @@ import type { SDLCMetricsSnapshot, SDLCConfig, QualityGateCheck } from "@agentwe
 import type { PolicyPaths } from "@agentweave/outer-harness";
 import { loadConfig } from "../config-loader.js";
 import { resolveAgent, AGENT_PRESETS } from "../agent-presets.js";
-import { getAgentEnv, hasCredentials, scrubCredentials, buildChildEnv, ensureGitignore } from "../credential-store.js";
+import {
+	getAgentEnv,
+	hasCredentials,
+	scrubCredentials,
+	buildChildEnv,
+	ensureGitignore,
+} from "../credential-store.js";
 import { createAdapterGovernance, type AdapterGovernance } from "../lib/adapter-governance.js";
 import { createSdlcGovernance, type SdlcGovernanceBundle } from "../lib/sdlc-governance.js";
 import { terminalAskPrompt } from "../lib/terminal-ask.js";
@@ -77,19 +83,72 @@ const BOX_L = "│";
 // ─── 8-Step Definition ───────────────────────────────────────────
 
 const STEPS = [
-	{ num: 1, key: "taskNormalizer",    name: "Task Normalize",      icon: "📋", desc: "Raw input → structured task (goal, context, constraints)" },
-	{ num: 2, key: "contextBuilder",    name: "Context Build",       icon: "🔍", desc: "Discover relevant files, schemas, conventions" },
-	{ num: 3, key: "planGenerator",     name: "Plan Generate",       icon: "📝", desc: "Task → step-by-step execution plan" },
-	{ num: 4, key: "executionBridge",   name: "Execute",             icon: "⚡", desc: "Delegate to AI agent (Claude, Cursor, Aider...)" },
-	{ num: 5, key: "patchValidator",    name: "Patch Validate",      icon: "🔎", desc: "Check scope, file count, no side effects" },
-	{ num: 6, key: "qualityGate",       name: "Quality Gate",        icon: "🧪", desc: "Run tests, lint, compile, typecheck" },
-	{ num: 7, key: "retryEngine",       name: "Retry Engine",        icon: "🔄", desc: "Classify error → strategy → targeted retry" },
-	{ num: 8, key: "outputStandardizer", name: "Output Standardize", icon: "📦", desc: "Generate commit message, PR description" },
+	{
+		num: 1,
+		key: "taskNormalizer",
+		name: "Task Normalize",
+		icon: "📋",
+		desc: "Raw input → structured task (goal, context, constraints)",
+	},
+	{
+		num: 2,
+		key: "contextBuilder",
+		name: "Context Build",
+		icon: "🔍",
+		desc: "Discover relevant files, schemas, conventions",
+	},
+	{
+		num: 3,
+		key: "planGenerator",
+		name: "Plan Generate",
+		icon: "📝",
+		desc: "Task → step-by-step execution plan",
+	},
+	{
+		num: 4,
+		key: "executionBridge",
+		name: "Execute",
+		icon: "⚡",
+		desc: "Delegate to AI agent (Claude, Cursor, Aider...)",
+	},
+	{
+		num: 5,
+		key: "patchValidator",
+		name: "Patch Validate",
+		icon: "🔎",
+		desc: "Check scope, file count, no side effects",
+	},
+	{
+		num: 6,
+		key: "qualityGate",
+		name: "Quality Gate",
+		icon: "🧪",
+		desc: "Run tests, lint, compile, typecheck",
+	},
+	{
+		num: 7,
+		key: "retryEngine",
+		name: "Retry Engine",
+		icon: "🔄",
+		desc: "Classify error → strategy → targeted retry",
+	},
+	{
+		num: 8,
+		key: "outputStandardizer",
+		name: "Output Standardize",
+		icon: "📦",
+		desc: "Generate commit message, PR description",
+	},
 ] as const;
 
 // ─── pipeline show ───────────────────────────────────────────────
 
-export function pipelineShowCommand(cliOverrides?: { checks?: string[]; retries?: number; agent?: string; model?: string }): void {
+export function pipelineShowCommand(cliOverrides?: {
+	checks?: string[];
+	retries?: number;
+	agent?: string;
+	model?: string;
+}): void {
 	// Load real config from agentweave.yaml (or defaults)
 	const { config, source } = loadConfig();
 
@@ -127,16 +186,21 @@ export function pipelineShowCommand(cliOverrides?: { checks?: string[]; retries?
 
 	// Metrics
 	const metricsOn = config.metrics.enabled;
-	console.log(`  ${C.white}Metrics:${C.reset} ${metricsOn ? `${C.green}ON${C.reset}` : `${C.gray}OFF${C.reset}`}${config.metrics.persistPath ? ` → ${config.metrics.persistPath}` : ""}`);
+	console.log(
+		`  ${C.white}Metrics:${C.reset} ${metricsOn ? `${C.green}ON${C.reset}` : `${C.gray}OFF${C.reset}`}${config.metrics.persistPath ? ` → ${config.metrics.persistPath}` : ""}`,
+	);
 	console.log(`  ${C.gray}${LINE}${C.reset}`);
 
 	// Separate steps into categories based on wrap mode
-	const isWrapMode = config.execution.mode === "process-adapter" ||
+	const isWrapMode =
+		config.execution.mode === "process-adapter" ||
 		(config.execution.mode === "agent-loop" && !config.modules.taskNormalizer.enabled);
 
 	if (isWrapMode) {
 		// Show agent-handled vs agentweave-added sections
-		console.log(`\n  ${C.gray}Agent handles: task understanding, planning, code generation${C.reset}`);
+		console.log(
+			`\n  ${C.gray}Agent handles: task understanding, planning, code generation${C.reset}`,
+		);
 		console.log(`  ${C.gray}${LINE}${C.reset}`);
 		console.log(`  ${C.cyan}${C.bold}AgentWeave adds: QA + Validation + Metrics${C.reset}`);
 	}
@@ -157,14 +221,20 @@ export function pipelineShowCommand(cliOverrides?: { checks?: string[]; retries?
 		console.log();
 		if (isWrapMode && !enabled && !isUniqueValue && !isMetrics) {
 			// Dim disabled steps that agent handles
-			console.log(`  ${C.gray}${step.icon} Step ${step.num}  ${step.name}${" ".repeat(Math.max(0, 22 - step.name.length))}[ OFF] agent handles this${C.reset}`);
+			console.log(
+				`  ${C.gray}${step.icon} Step ${step.num}  ${step.name}${" ".repeat(Math.max(0, 22 - step.name.length))}[ OFF] agent handles this${C.reset}`,
+			);
 		} else if (isWrapMode && isUniqueValue && enabled) {
 			// Highlight unique value steps
-			console.log(`  ${step.icon} ${C.bold}Step ${step.num}${C.reset}  ${C.white}${C.bold}${step.name}${C.reset}${" ".repeat(Math.max(0, 22 - step.name.length))}[${statusTag}] ${C.cyan}★ unique value${C.reset}`);
+			console.log(
+				`  ${step.icon} ${C.bold}Step ${step.num}${C.reset}  ${C.white}${C.bold}${step.name}${C.reset}${" ".repeat(Math.max(0, 22 - step.name.length))}[${statusTag}] ${C.cyan}★ unique value${C.reset}`,
+			);
 			console.log(`     ${C.dim}${step.desc}${C.reset}`);
 			if (detail) console.log(`     ${C.cyan}${detail}${C.reset}`);
 		} else {
-			console.log(`  ${step.icon} ${C.bold}Step ${step.num}${C.reset}  ${C.white}${step.name}${C.reset}${" ".repeat(Math.max(0, 22 - step.name.length))}[${statusTag}]`);
+			console.log(
+				`  ${step.icon} ${C.bold}Step ${step.num}${C.reset}  ${C.white}${step.name}${C.reset}${" ".repeat(Math.max(0, 22 - step.name.length))}[${statusTag}]`,
+			);
 			console.log(`     ${C.dim}${step.desc}${C.reset}`);
 			if (detail) console.log(`     ${C.cyan}${detail}${C.reset}`);
 		}
@@ -183,7 +253,11 @@ export function pipelineShowCommand(cliOverrides?: { checks?: string[]; retries?
 }
 
 /** Extract meaningful detail from module config. */
-function getModuleDetail(key: string, modConf: Record<string, unknown>, _config: SDLCConfig): string {
+function getModuleDetail(
+	key: string,
+	modConf: Record<string, unknown>,
+	_config: SDLCConfig,
+): string {
 	if (!modConf?.enabled) return "";
 	const c = modConf as Record<string, unknown>;
 
@@ -275,7 +349,10 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 	const { config: loadedConfig, source } = loadConfig();
 	if (!hasAgent) {
 		// Check if config has agent set
-		if (loadedConfig.execution.mode === "process-adapter" && loadedConfig.execution.processAdapter?.command) {
+		if (
+			loadedConfig.execution.mode === "process-adapter" &&
+			loadedConfig.execution.processAdapter?.command
+		) {
 			args.agent = loadedConfig.execution.processAdapter.command;
 			hasAgent = true;
 		} else if (!source) {
@@ -284,14 +361,24 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 			if (detected) {
 				args.agent = detected.key;
 				hasAgent = true;
-				console.log(`\n  ${C.green}Auto-detected:${C.reset} ${detected.name} (${detected.version})`);
-				console.log(`  ${C.dim}Save as default: agentweave pipeline config set execution.agent ${detected.key}${C.reset}`);
+				console.log(
+					`\n  ${C.green}Auto-detected:${C.reset} ${detected.name} (${detected.version})`,
+				);
+				console.log(
+					`  ${C.dim}Save as default: agentweave pipeline config set execution.agent ${detected.key}${C.reset}`,
+				);
 			} else {
 				// No agent CLI found, no API key → guide user
-				console.log(`\n  ${C.yellow}${C.bold}No agent CLI detected and no API key configured.${C.reset}`);
+				console.log(
+					`\n  ${C.yellow}${C.bold}No agent CLI detected and no API key configured.${C.reset}`,
+				);
 				console.log(`  ${C.dim}Setup your environment:${C.reset}\n`);
-				console.log(`    ${C.cyan}agentweave pipeline setup${C.reset}      ${C.dim}Guided wizard${C.reset}`);
-				console.log(`    ${C.cyan}agentweave pipeline status${C.reset}     ${C.dim}Check what's available${C.reset}\n`);
+				console.log(
+					`    ${C.cyan}agentweave pipeline setup${C.reset}      ${C.dim}Guided wizard${C.reset}`,
+				);
+				console.log(
+					`    ${C.cyan}agentweave pipeline status${C.reset}     ${C.dim}Check what's available${C.reset}\n`,
+				);
 				console.log(`  ${C.dim}Or install an agent CLI:${C.reset}`);
 				console.log(`    ${C.dim}npm i -g @anthropic-ai/claude-code && claude login${C.reset}\n`);
 				return;
@@ -312,22 +399,34 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 
 	// Header
 	console.log(`\n  ${BOX_T}`);
-	console.log(`  ${BOX_L}  ${C.cyan}${C.bold}AgentWeave SDLC Pipeline v${AGENTWEAVE_VERSION}${C.reset}${" ".repeat(34 - AGENTWEAVE_VERSION.length)}${BOX_L}`);
+	console.log(
+		`  ${BOX_L}  ${C.cyan}${C.bold}AgentWeave SDLC Pipeline v${AGENTWEAVE_VERSION}${C.reset}${" ".repeat(34 - AGENTWEAVE_VERSION.length)}${BOX_L}`,
+	);
 	console.log(`  ${BOX_M}`);
-	console.log(`  ${BOX_L}  ${C.white}Task:${C.reset}    ${truncate(args.prompt, 52)}${" ".repeat(Math.max(0, 53 - Math.min(args.prompt.length, 52)))}${BOX_L}`);
+	console.log(
+		`  ${BOX_L}  ${C.white}Task:${C.reset}    ${truncate(args.prompt, 52)}${" ".repeat(Math.max(0, 53 - Math.min(args.prompt.length, 52)))}${BOX_L}`,
+	);
 
 	if (agent) {
 		const label = agent.presetName ?? args.agent!;
 		const cmdStr = `${agent.command} ${agent.args.join(" ")}`.trim();
-		console.log(`  ${BOX_L}  ${C.white}Agent:${C.reset}   ${truncate(label, 52)}${" ".repeat(Math.max(0, 53 - Math.min(label.length, 52)))}${BOX_L}`);
-		console.log(`  ${BOX_L}  ${C.dim}         ${truncate(cmdStr, 52)}${C.reset}${" ".repeat(Math.max(0, 53 - Math.min(cmdStr.length, 52)))}${BOX_L}`);
+		console.log(
+			`  ${BOX_L}  ${C.white}Agent:${C.reset}   ${truncate(label, 52)}${" ".repeat(Math.max(0, 53 - Math.min(label.length, 52)))}${BOX_L}`,
+		);
+		console.log(
+			`  ${BOX_L}  ${C.dim}         ${truncate(cmdStr, 52)}${C.reset}${" ".repeat(Math.max(0, 53 - Math.min(cmdStr.length, 52)))}${BOX_L}`,
+		);
 	} else {
-		console.log(`  ${BOX_L}  ${C.white}Mode:${C.reset}    agent-loop (${model})${" ".repeat(Math.max(0, 37 - model.length))}${BOX_L}`);
+		console.log(
+			`  ${BOX_L}  ${C.white}Mode:${C.reset}    agent-loop (${model})${" ".repeat(Math.max(0, 37 - model.length))}${BOX_L}`,
+		);
 	}
 
 	if (checks.length > 0) {
 		const checksStr = checks.map((c) => c.command).join(", ");
-		console.log(`  ${BOX_L}  ${C.white}Checks:${C.reset}  ${truncate(checksStr, 52)}${" ".repeat(Math.max(0, 53 - Math.min(checksStr.length, 52)))}${BOX_L}`);
+		console.log(
+			`  ${BOX_L}  ${C.white}Checks:${C.reset}  ${truncate(checksStr, 52)}${" ".repeat(Math.max(0, 53 - Math.min(checksStr.length, 52)))}${BOX_L}`,
+		);
 	}
 
 	console.log(`  ${BOX_L}  ${C.white}Retries:${C.reset} ${retries}${" ".repeat(52)}${BOX_L}`);
@@ -343,9 +442,13 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 		if (credCount > 0) {
 			agentEnv = credEnv;
 			const keyNames = Object.keys(credEnv).join(", ");
-			console.log(`  ${BOX_L}  ${C.green}Keys:${C.reset}    ${truncate(keyNames, 52)} ${C.dim}(auto-injected)${C.reset}${" ".repeat(Math.max(0, 20 - Math.min(keyNames.length, 15)))}${BOX_L}`);
+			console.log(
+				`  ${BOX_L}  ${C.green}Keys:${C.reset}    ${truncate(keyNames, 52)} ${C.dim}(auto-injected)${C.reset}${" ".repeat(Math.max(0, 20 - Math.min(keyNames.length, 15)))}${BOX_L}`,
+			);
 		} else if (!hasCredentials("*")) {
-			console.log(`  ${BOX_L}  ${C.yellow}Keys:${C.reset}    ${C.dim}none (set with: agentweave credentials set)${C.reset}${" ".repeat(6)}${BOX_L}`);
+			console.log(
+				`  ${BOX_L}  ${C.yellow}Keys:${C.reset}    ${C.dim}none (set with: agentweave credentials set)${C.reset}${" ".repeat(6)}${BOX_L}`,
+			);
 		}
 	}
 
@@ -374,11 +477,7 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 	let governance: AdapterGovernance | null = null;
 	if (agent) {
 		governance = createAdapterGovernance({ sessionId: governanceSessionId });
-		governance.logSpawn(
-			agent.command,
-			agent.args,
-			agentEnv ? Object.keys(agentEnv) : [],
-		);
+		governance.logSpawn(agent.command, agent.args, agentEnv ? Object.keys(agentEnv) : []);
 	}
 
 	// SDLC-level governance: stage-transition audit (both modes) + tool-call
@@ -394,8 +493,7 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 	// --no-policy is absent. Empty overrides still trigger env + OS-path lookup,
 	// so use --no-policy when you want to suppress a system-wide policy.user.yaml.
 	const policyActive =
-		!args.noPolicy &&
-		(args.policyPaths !== undefined || args.policyRequireAll === true);
+		!args.noPolicy && (args.policyPaths !== undefined || args.policyRequireAll === true);
 
 	const sdlcGov: SdlcGovernanceBundle = createSdlcGovernance({
 		sessionId: governanceSessionId,
@@ -412,7 +510,16 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 
 	const pipeline = createSDLCPipeline({
 		execution: agent
-			? { mode: "process-adapter", processAdapter: { command: agent.command, args: agent.args, promptMode: agent.promptMode, env: agentEnv ? buildChildEnv(agentEnv) : undefined, processTimeoutMs: ADAPTER_TIMEOUT_MS } }
+			? {
+					mode: "process-adapter",
+					processAdapter: {
+						command: agent.command,
+						args: agent.args,
+						promptMode: agent.promptMode,
+						env: agentEnv ? buildChildEnv(agentEnv) : undefined,
+						processTimeoutMs: ADAPTER_TIMEOUT_MS,
+					},
+				}
 			: { mode: "agent-loop", agentLoop: { model, maxTurns: 50 } },
 		governance: sdlcGov.outer,
 		controlPlane: sdlcGov.controlPlane,
@@ -448,7 +555,10 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 			if (done) break;
 
 			if (event.type === "message:assistant") {
-				const content = (event as unknown as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+				const content = (event as unknown as Record<string, unknown>).content as Array<{
+					type: string;
+					text: string;
+				}>;
 				const rawText = content?.[0]?.text ?? "";
 
 				// Run adapter text through OutputPipeline (secret/PII redaction + audit)
@@ -456,9 +566,10 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 				// our own code and are trusted — skip governance to avoid redacting
 				// pipeline markers.
 				const isSdlcMarker = rawText.startsWith("[SDLC]");
-				const { text, redacted } = governance && !isSdlcMarker
-					? governance.filterText(rawText)
-					: { text: rawText, redacted: false };
+				const { text, redacted } =
+					governance && !isSdlcMarker
+						? governance.filterText(rawText)
+						: { text: rawText, redacted: false };
 
 				if (governance && !isSdlcMarker && rawText.length > 0) {
 					governance.logMessage(rawText, text, redacted);
@@ -478,7 +589,9 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 
 			if (event.type === "tool:completed") {
 				const e = event as unknown as Record<string, unknown>;
-				console.log(`${C.green}    ✓ ${e.toolName}${C.reset} ${C.dim}${((e.durationMs as number) ?? 0).toFixed(0)}ms${C.reset}`);
+				console.log(
+					`${C.green}    ✓ ${e.toolName}${C.reset} ${C.dim}${((e.durationMs as number) ?? 0).toFixed(0)}ms${C.reset}`,
+				);
 			}
 			if (event.type === "tool:failed") {
 				const e = event as unknown as Record<string, unknown>;
@@ -501,10 +614,7 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 	const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
 	if (governance) {
-		governance.logExit(
-			pipelineError ? "error" : "completed",
-			Date.now() - startTime,
-		);
+		governance.logExit(pipelineError ? "error" : "completed", Date.now() - startTime);
 		governance.flush();
 	}
 	const metrics = pipeline.getLastMetrics();
@@ -519,7 +629,9 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 
 		if (comparison?.baseline) {
 			console.log(`  ${BOX_M}`);
-			console.log(`  ${BOX_L}  ${C.cyan}${C.bold}vs. Previous Run${C.reset}${" ".repeat(43)}${BOX_L}`);
+			console.log(
+				`  ${BOX_L}  ${C.cyan}${C.bold}vs. Previous Run${C.reset}${" ".repeat(43)}${BOX_L}`,
+			);
 			console.log(`  ${BOX_M}`);
 			printComparisonBox(comparison.deltas);
 		}
@@ -528,7 +640,9 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 	}
 
 	console.log(`  ${BOX_M}`);
-	console.log(`  ${BOX_L}  ${C.dim}Saved: ${metricsDir}/baseline.json${C.reset}${" ".repeat(Math.max(0, 55 - metricsDir.length - 14))}${BOX_L}`);
+	console.log(
+		`  ${BOX_L}  ${C.dim}Saved: ${metricsDir}/baseline.json${C.reset}${" ".repeat(Math.max(0, 55 - metricsDir.length - 14))}${BOX_L}`,
+	);
 	console.log(`  ${BOX_L}  ${C.dim}View:  agentweave metrics${C.reset}${" ".repeat(35)}${BOX_L}`);
 	console.log(`  ${BOX_B}\n`);
 }
@@ -592,9 +706,15 @@ function printMetricsBox(m: SDLCMetricsSnapshot, elapsed: string): void {
 	printMetricLine("Test pass rate", phanTramHoacTrong(m.m2_testPassRate), m.m2_testPassRate);
 	printMetricLine("Scope accuracy", phanTramHoacTrong(m.m3_scopeAccuracy), m.m3_scopeAccuracy);
 	printMetricLine("Plan accuracy", phanTramHoacTrong(m.m8_planAccuracy), m.m8_planAccuracy);
-	console.log(`  ${BOX_L}  Retry count:      ${m.m4_retryCount}${" ".repeat(Math.max(0, 41 - String(m.m4_retryCount).length))}${BOX_L}`);
-	console.log(`  ${BOX_L}  Cost:             $${m.m5_costUsd.toFixed(4)}${" ".repeat(Math.max(0, 40 - m.m5_costUsd.toFixed(4).length))}${BOX_L}`);
-	console.log(`  ${BOX_L}  Time:             ${elapsed}s${" ".repeat(Math.max(0, 41 - elapsed.length - 1))}${BOX_L}`);
+	console.log(
+		`  ${BOX_L}  Retry count:      ${m.m4_retryCount}${" ".repeat(Math.max(0, 41 - String(m.m4_retryCount).length))}${BOX_L}`,
+	);
+	console.log(
+		`  ${BOX_L}  Cost:             $${m.m5_costUsd.toFixed(4)}${" ".repeat(Math.max(0, 40 - m.m5_costUsd.toFixed(4).length))}${BOX_L}`,
+	);
+	console.log(
+		`  ${BOX_L}  Time:             ${elapsed}s${" ".repeat(Math.max(0, 41 - elapsed.length - 1))}${BOX_L}`,
+	);
 
 	if (m.m7_regressionDetected) {
 		console.log(`  ${BOX_L}  ${C.red}⚠ Regression detected${C.reset}${" ".repeat(38)}${BOX_L}`);
@@ -608,7 +728,9 @@ function printMetricLine(label: string, valueStr: string, ratio: number | null):
 	const barW = 15;
 	if (ratio === null) {
 		const padL = (label + " ".repeat(17)).slice(0, 17);
-		console.log(`  ${BOX_L}  ${padL}${C.dim}${"·".repeat(barW)}${C.reset} chưa đo${" ".repeat(17)}${BOX_L}`);
+		console.log(
+			`  ${BOX_L}  ${padL}${C.dim}${"·".repeat(barW)}${C.reset} chưa đo${" ".repeat(17)}${BOX_L}`,
+		);
 		return;
 	}
 	const filled = Math.round(ratio * barW);
@@ -638,14 +760,17 @@ function printComparisonBox(deltas: Record<string, number>): void {
 		const isGood = POSITIVE.has(key) ? delta > 0 : delta < 0;
 		const icon = isGood ? `${C.green}▲` : `${C.red}▼`;
 		const sign = delta > 0 ? "+" : "";
-		const fmt = key.includes("cost") || key.includes("Cost")
-			? `${sign}$${delta.toFixed(4)}`
-			: key.includes("retry") || key.includes("Retry")
-				? `${sign}${delta}`
-				: `${sign}${(delta * 100).toFixed(1)}%`;
+		const fmt =
+			key.includes("cost") || key.includes("Cost")
+				? `${sign}$${delta.toFixed(4)}`
+				: key.includes("retry") || key.includes("Retry")
+					? `${sign}${delta}`
+					: `${sign}${(delta * 100).toFixed(1)}%`;
 
 		const padLabel = (label + " ".repeat(17)).slice(0, 17);
-		console.log(`  ${BOX_L}  ${icon} ${padLabel}${fmt}${C.reset}${" ".repeat(Math.max(0, 39 - fmt.length))}${BOX_L}`);
+		console.log(
+			`  ${BOX_L}  ${icon} ${padLabel}${fmt}${C.reset}${" ".repeat(Math.max(0, 39 - fmt.length))}${BOX_L}`,
+		);
 	}
 }
 
@@ -655,18 +780,31 @@ function truncate(s: string, max: number): string {
 
 // ─── Auto-Detect Best Available Agent ────────────────────────────
 
-interface DetectedAgentInfo { key: string; name: string; version: string; loggedIn: boolean }
+interface DetectedAgentInfo {
+	key: string;
+	name: string;
+	version: string;
+	loggedIn: boolean;
+}
 
 function autoDetectAgent(): DetectedAgentInfo | null {
 	// Priority: claude > aider > codex (claude has best tool calling + subscription support)
 	const candidates: Array<{ key: string; name: string; cmd: string; authCheck?: () => boolean }> = [
 		{
-			key: "claude", name: "Claude Code", cmd: "claude",
+			key: "claude",
+			name: "Claude Code",
+			cmd: "claude",
 			authCheck: () => {
 				try {
-					const raw = execSync("claude auth status", { timeout: 5000, encoding: "utf-8", stdio: "pipe" });
+					const raw = execSync("claude auth status", {
+						timeout: 5000,
+						encoding: "utf-8",
+						stdio: "pipe",
+					});
 					return JSON.parse(raw).loggedIn === true;
-				} catch { return false; }
+				} catch {
+					return false;
+				}
 			},
 		},
 		{ key: "aider", name: "Aider", cmd: "aider" },
@@ -675,12 +813,18 @@ function autoDetectAgent(): DetectedAgentInfo | null {
 
 	for (const c of candidates) {
 		try {
-			const version = execSync(`${c.cmd} --version`, { timeout: 5000, encoding: "utf-8", stdio: "pipe" }).trim();
+			const version = execSync(`${c.cmd} --version`, {
+				timeout: 5000,
+				encoding: "utf-8",
+				stdio: "pipe",
+			}).trim();
 			const loggedIn = c.authCheck ? c.authCheck() : true;
 			if (loggedIn) {
 				return { key: c.key, name: c.name, version, loggedIn };
 			}
-		} catch { /* not installed */ }
+		} catch {
+			/* not installed */
+		}
 	}
 
 	return null;

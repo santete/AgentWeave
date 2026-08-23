@@ -20,7 +20,11 @@ import { monitorCommand, monitorExportCommand, monitorServeCommand } from "./com
 import { sessionCommand } from "./commands/session.js";
 import { taskCommand } from "./commands/task.js";
 import { metricsCommand } from "./commands/metrics.js";
-import { pipelineRunCommand, pipelineShowCommand, pipelineAgentsCommand } from "./commands/pipeline.js";
+import {
+	pipelineRunCommand,
+	pipelineShowCommand,
+	pipelineAgentsCommand,
+} from "./commands/pipeline.js";
 import { pipelineSetupCommand } from "./commands/pipeline-setup.js";
 import { pipelineStatusCommand } from "./commands/pipeline-status.js";
 import { pipelineConfigCommand } from "./commands/pipeline-config.js";
@@ -100,7 +104,7 @@ function printHelp(): void {
   PIPELINE RUN OPTIONS:
     --agent <cmd>         CLI agent to wrap (e.g. claude, cursor, aider)
     --agent-args <args>   Extra args for agent (comma-separated)
-    --model <model>       LLM model for agent-loop mode (default: claude-sonnet-4-6)
+    --model <model>       LLM model for agent-loop mode (default: qwen3-coder:30b)
     --checks <cmds>       QA check commands (comma-separated)
     --retries <n>         Max retries (default: 3)
     --metrics-dir <path>  Metrics storage dir (default: .agentweave/metrics)
@@ -143,7 +147,7 @@ function printHelp(): void {
     agentweave session list [--dir <path>] List reference-loop sessions
 
   RUN OPTIONS:
-    --model <model>       LLM model (default: claude-sonnet-4-6)
+    --model <model>       LLM model (default: qwen3-coder:30b)
     --budget <usd>        Max budget in USD
     --max-turns <n>       Max turns (default: 50)
     --mode <mode>         Permission mode: default|strict|permissive|plan
@@ -206,7 +210,11 @@ export function parseArgs(args: string[]): {
 } {
 	let command = "";
 	let prompt = "";
-	let model = "claude-sonnet-4-6";
+	// KHÔNG đặt model mặc định ở đây. Đặt cứng làm args.model luôn có giá trị →
+	// (a) `model` trong .agentweave/agent.json bị đè, không bao giờ có tác dụng;
+	// (b) serve/chat không config rơi về model đám mây → chết "API key missing"
+	// trên máy air-gap. Mặc định cục bộ nằm ở từng lệnh (qwen3-coder:30b).
+	let model = "";
 	let budget: number | undefined;
 	let maxTurns: number | undefined;
 	let permissionMode: "default" | "strict" | "permissive" | "plan" | undefined;
@@ -306,7 +314,11 @@ async function main(): Promise<void> {
 				if (action === "on" || action === "off") {
 					pipelineConfigCommand({ action, targets: configArgs.slice(1) });
 				} else if (action === "set") {
-					pipelineConfigCommand({ action: "set", key: configArgs[1], value: configArgs.slice(2).join(" ") });
+					pipelineConfigCommand({
+						action: "set",
+						key: configArgs[1],
+						value: configArgs.slice(2).join(" "),
+					});
 				} else if (action === "init") {
 					pipelineConfigCommand({ action: "init" });
 				} else if (action === "reset") {
@@ -324,7 +336,9 @@ async function main(): Promise<void> {
 				const checksRaw = getFlag(args, "--checks");
 				pipelineShowCommand({
 					checks: checksRaw ? checksRaw.split(",").map((s) => s.trim()) : undefined,
-					retries: getFlag(args, "--retries") ? parseInt(getFlag(args, "--retries")!, 10) : undefined,
+					retries: getFlag(args, "--retries")
+						? parseInt(getFlag(args, "--retries")!, 10)
+						: undefined,
 					agent: getFlag(args, "--agent"),
 				});
 			} else {
@@ -395,109 +409,114 @@ async function main(): Promise<void> {
 		}
 
 		case "mcp": {
-				const mcpIdx = args.indexOf("mcp");
-				const subAction = args[mcpIdx + 1];
-				if (subAction === "print-config") {
-					mcpPrintCommand();
-				} else {
-					await mcpStartCommand();
-				}
-				break;
+			const mcpIdx = args.indexOf("mcp");
+			const subAction = args[mcpIdx + 1];
+			if (subAction === "print-config") {
+				mcpPrintCommand();
+			} else {
+				await mcpStartCommand();
 			}
+			break;
+		}
 
-			case "guard": {
-				const guardIdx = args.indexOf("guard");
-				const sub = args[guardIdx + 1];
-				const phase: GuardPhase | null =
-					sub === "pre-tool-use" ? "pre" : sub === "post-tool-use" ? "post" : null;
-				if (!phase) {
-					console.error("Error: Usage: agentweave guard pre-tool-use|post-tool-use");
-					process.exit(1);
-				}
-				const code = await runGuard(phase);
+		case "guard": {
+			const guardIdx = args.indexOf("guard");
+			const sub = args[guardIdx + 1];
+			const phase: GuardPhase | null =
+				sub === "pre-tool-use" ? "pre" : sub === "post-tool-use" ? "post" : null;
+			if (!phase) {
+				console.error("Error: Usage: agentweave guard pre-tool-use|post-tool-use");
+				process.exit(1);
+			}
+			const code = await runGuard(phase);
+			process.exit(code);
+		}
+
+		case "audit": {
+			const auditIdx = args.indexOf("audit");
+			const sub = args[auditIdx + 1];
+			const fmt = getFlag(args, "--format");
+			const format: "table" | "json" | undefined =
+				fmt === "json" || fmt === "table" ? fmt : undefined;
+			if (sub === "view") {
+				const limitRaw = getFlag(args, "--limit");
+				const code = await auditViewCommand({
+					path: getFlag(args, "--path"),
+					since: getFlag(args, "--since"),
+					tool: getFlag(args, "--tool"),
+					decision: getFlag(args, "--decision"),
+					limit: limitRaw ? parseInt(limitRaw, 10) : undefined,
+					format,
+					tail: hasFlag(args, "--tail"),
+				});
 				process.exit(code);
 			}
+			if (sub === "replay") {
+				const sessionId = args[auditIdx + 2];
+				if (!sessionId || sessionId.startsWith("--")) {
+					console.error("Error: Usage: agentweave audit replay <session-id> [options]");
+					process.exit(1);
+				}
+				const code = await auditReplayCommand({
+					sessionId,
+					path: getFlag(args, "--path"),
+					since: getFlag(args, "--since"),
+					until: getFlag(args, "--until"),
+					format,
+				});
+				process.exit(code);
+			}
+			console.error("Error: Usage: agentweave audit view|replay [options]");
+			process.exit(1);
+		}
 
-			case "audit": {
-				const auditIdx = args.indexOf("audit");
-				const sub = args[auditIdx + 1];
+		case "policy": {
+			const polIdx = args.indexOf("policy");
+			const sub = args[polIdx + 1];
+			if (sub === "show") {
 				const fmt = getFlag(args, "--format");
 				const format: "table" | "json" | undefined =
 					fmt === "json" || fmt === "table" ? fmt : undefined;
-				if (sub === "view") {
-					const limitRaw = getFlag(args, "--limit");
-					const code = await auditViewCommand({
-						path: getFlag(args, "--path"),
-						since: getFlag(args, "--since"),
-						tool: getFlag(args, "--tool"),
-						decision: getFlag(args, "--decision"),
-						limit: limitRaw ? parseInt(limitRaw, 10) : undefined,
-						format,
-						tail: hasFlag(args, "--tail"),
-					});
-					process.exit(code);
+				const code = policyShowCommand({
+					paths: collectPolicyPaths(args),
+					format,
+				});
+				process.exit(code);
+			}
+			if (sub === "lint") {
+				const file = args[polIdx + 2];
+				if (!file || file.startsWith("--")) {
+					console.error("Error: Usage: agentweave policy lint <file> [--as org|team|user]");
+					process.exit(1);
 				}
-				if (sub === "replay") {
-					const sessionId = args[auditIdx + 2];
-					if (!sessionId || sessionId.startsWith("--")) {
-						console.error("Error: Usage: agentweave audit replay <session-id> [options]");
+				const asRaw = getFlag(args, "--as");
+				let as: PolicyLevel | undefined;
+				if (asRaw) {
+					if (asRaw !== "org" && asRaw !== "team" && asRaw !== "user") {
+						console.error(`Error: --as must be one of: org, team, user (got "${asRaw}")`);
 						process.exit(1);
 					}
-					const code = await auditReplayCommand({
-						sessionId,
-						path: getFlag(args, "--path"),
-						since: getFlag(args, "--since"),
-						until: getFlag(args, "--until"),
-						format,
-					});
-					process.exit(code);
+					as = asRaw;
 				}
-				console.error("Error: Usage: agentweave audit view|replay [options]");
-				process.exit(1);
+				const code = policyLintCommand({ file, as });
+				process.exit(code);
 			}
+			console.error("Error: Usage: agentweave policy show|lint [options]");
+			process.exit(1);
+		}
 
-			case "policy": {
-				const polIdx = args.indexOf("policy");
-				const sub = args[polIdx + 1];
-				if (sub === "show") {
-					const fmt = getFlag(args, "--format");
-					const format: "table" | "json" | undefined =
-						fmt === "json" || fmt === "table" ? fmt : undefined;
-					const code = policyShowCommand({
-						paths: collectPolicyPaths(args),
-						format,
-					});
-					process.exit(code);
-				}
-				if (sub === "lint") {
-					const file = args[polIdx + 2];
-					if (!file || file.startsWith("--")) {
-						console.error("Error: Usage: agentweave policy lint <file> [--as org|team|user]");
-						process.exit(1);
-					}
-					const asRaw = getFlag(args, "--as");
-					let as: PolicyLevel | undefined;
-					if (asRaw) {
-						if (asRaw !== "org" && asRaw !== "team" && asRaw !== "user") {
-							console.error(`Error: --as must be one of: org, team, user (got "${asRaw}")`);
-							process.exit(1);
-						}
-						as = asRaw;
-					}
-					const code = policyLintCommand({ file, as });
-					process.exit(code);
-				}
-				console.error("Error: Usage: agentweave policy show|lint [options]");
-				process.exit(1);
-			}
-
-			case "credentials": {
+		case "credentials": {
 			const credIdx = args.indexOf("credentials");
 			const credArgs = args.slice(credIdx + 1).filter((a) => !a.startsWith("--"));
 			const credAction = credArgs[0] ?? "list";
 
 			if (credAction === "set") {
-				await credentialsCommand({ action: "set", agent: credArgs[1], envVar: credArgs[2], value: credArgs[3] });
+				await credentialsCommand({
+					action: "set",
+					agent: credArgs[1],
+					envVar: credArgs[2],
+					value: credArgs[3],
+				});
 			} else if (credAction === "remove") {
 				credentialsCommand({ action: "remove", agent: credArgs[1], envVar: credArgs[2] });
 			} else if (credAction === "check") {

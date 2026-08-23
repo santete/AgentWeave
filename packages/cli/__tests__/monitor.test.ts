@@ -17,15 +17,19 @@ function sinkStream(): { write: Writable; getText: () => string } {
 function getText(url: string): Promise<{ status: number; body: string; contentType: string }> {
 	return new Promise((resolve, reject) => {
 		const u = new URL(url);
-		http.get({ host: u.hostname, port: u.port, path: u.pathname }, (res) => {
-			const bufs: Buffer[] = [];
-			res.on("data", (b: Buffer) => bufs.push(b));
-			res.on("end", () => resolve({
-				status: res.statusCode ?? 0,
-				body: Buffer.concat(bufs).toString("utf-8"),
-				contentType: (res.headers["content-type"] ?? "").toString(),
-			}));
-		}).on("error", reject);
+		http
+			.get({ host: u.hostname, port: u.port, path: u.pathname }, (res) => {
+				const bufs: Buffer[] = [];
+				res.on("data", (b: Buffer) => bufs.push(b));
+				res.on("end", () =>
+					resolve({
+						status: res.statusCode ?? 0,
+						body: Buffer.concat(bufs).toString("utf-8"),
+						contentType: (res.headers["content-type"] ?? "").toString(),
+					}),
+				);
+			})
+			.on("error", reject);
 	});
 }
 
@@ -63,7 +67,9 @@ describe("monitorServeCommand", () => {
 			instance: "test-serve",
 			signal: ac.signal,
 			log,
-			onReady: (a) => { readyAddr = a; },
+			onReady: (a) => {
+				readyAddr = a;
+			},
 		});
 
 		// Wait until onReady fires (polling — fast).
@@ -92,7 +98,9 @@ describe("monitorServeCommand", () => {
 			port: 0,
 			signal: ac.signal,
 			log,
-			onReady: (a) => { readyAddr = a; },
+			onReady: (a) => {
+				readyAddr = a;
+			},
 		});
 
 		for (let i = 0; i < 100 && !readyAddr; i++) {

@@ -7,6 +7,10 @@ import { BUILT_IN_TOOLS } from "@agentweave/inner-harness";
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import type { CreateHarnessOptions, InnerEvent } from "@agentweave/sdk";
 import { redactSecrets, terminalAskPrompt } from "../lib/terminal-ask.js";
+import { napTriThuc } from "../lib/nap-tri-thuc";
+import { dungCoLap } from "../lib/co-lap";
+import { docCauHinhAgent } from "../lib/agent-config";
+import { LUAT_NGUY_HIEM } from "../lib/luat-nguy-hiem.js";
 
 export interface RunCommandArgs {
 	prompt: string;
@@ -51,15 +55,13 @@ export async function runCommand(args: RunCommandArgs): Promise<void> {
 	printHeader(args);
 
 	const options: CreateHarnessOptions = {
-		model: args.model,
+		model: args.model || "qwen3-coder:30b",
 		tools: BUILT_IN_TOOLS,
 		maxTurns: args.maxTurns ?? 50,
 		permissions: {
 			mode: args.permissionMode ?? "default",
 			rules: [
-				{ pattern: "Bash(rm -rf *)", behavior: "deny", source: "policy", priority: 100, message: "Destructive deletion blocked" },
-				{ pattern: "Bash(sudo *)", behavior: "deny", source: "policy", priority: 100, message: "Sudo blocked" },
-				{ pattern: "FileWrite(*.env)", behavior: "deny", source: "policy", priority: 100, message: "Cannot write .env" },
+				...LUAT_NGUY_HIEM,
 				{ pattern: "FileRead(*)", behavior: "allow", source: "project", priority: 50 },
 				{ pattern: "Grep(*)", behavior: "allow", source: "project", priority: 50 },
 				{ pattern: "Glob(*)", behavior: "allow", source: "project", priority: 50 },
@@ -84,7 +86,21 @@ export async function runCommand(args: RunCommandArgs): Promise<void> {
 		onAsk: terminalAskPrompt,
 	};
 
-	const harness = createHarness(options);
+	const { config: cauHinhDuAn } = await docCauHinhAgent(process.cwd());
+	const coLap = await dungCoLap(process.cwd(), cauHinhDuAn);
+	if (coLap.hong) {
+		console.error(`✗ ${coLap.thongBao}`);
+		process.exitCode = 1;
+		return;
+	}
+	if (coLap.thongBao) console.error(`🔒 ${coLap.thongBao}`);
+
+	const harness = createHarness({ ...options, processSandbox: coLap.binding });
+
+	// Rule, skill và bộ nhớ của dự án. Thiếu bước này thì `agentweave run` chạy
+	// với một agent KHÔNG biết quy ước nào của dự án — khác hẳn `chat` và `serve`
+	// mà không có gì báo, nên người dùng tưởng hai lệnh tương đương.
+	await napTriThuc(harness.inner, { goc: process.cwd(), cauHinh: {}, quiet: true });
 
 	const gen = harness.stream(args.prompt, { maxBudgetUsd: args.budget });
 
@@ -107,10 +123,16 @@ function printHeader(args: RunCommandArgs): void {
 	console.log("");
 	console.log(`  ${C.gray}┌─────────────────────────────────────────────┐${C.reset}`);
 	console.log(`  ${C.gray}│${C.reset} Model:      ${C.bold}${args.model}${C.reset}`);
-	console.log(`  ${C.gray}│${C.reset} Mode:       ${C.yellow}${args.permissionMode ?? "default"}${C.reset}`);
-	console.log(`  ${C.gray}│${C.reset} Budget:     ${args.budget ? `$${args.budget}` : "unlimited"}`);
+	console.log(
+		`  ${C.gray}│${C.reset} Mode:       ${C.yellow}${args.permissionMode ?? "default"}${C.reset}`,
+	);
+	console.log(
+		`  ${C.gray}│${C.reset} Budget:     ${args.budget ? `$${args.budget}` : "unlimited"}`,
+	);
 	console.log(`  ${C.gray}│${C.reset} Max turns:  ${args.maxTurns ?? 50}`);
-	console.log(`  ${C.gray}│${C.reset} Tools:      ${C.dim}Bash, FileRead, FileWrite, FileEdit, Grep, Glob${C.reset}`);
+	console.log(
+		`  ${C.gray}│${C.reset} Tools:      ${C.dim}Bash, FileRead, FileWrite, FileEdit, Grep, Glob${C.reset}`,
+	);
 	console.log(`  ${C.gray}│${C.reset} Filters:    ${C.dim}secrets, PII${C.reset}`);
 	console.log(`  ${C.gray}│${C.reset} Sandbox:    ${C.dim}deny /etc, .env, .ssh, .aws${C.reset}`);
 	console.log(`  ${C.gray}└─────────────────────────────────────────────┘${C.reset}`);
@@ -129,11 +151,15 @@ function printEvent(event: InnerEvent): void {
 			break;
 
 		case "llm:request_start":
-			console.log(`  ${C.dim}  LLM request → ${event.model} (est. ${event.estimatedInputTokens} tokens)${C.reset}`);
+			console.log(
+				`  ${C.dim}  LLM request → ${event.model} (est. ${event.estimatedInputTokens} tokens)${C.reset}`,
+			);
 			break;
 
 		case "llm:stream_end":
-			console.log(`  ${C.dim}  LLM response ← ${event.usage.inputTokens}in/${event.usage.outputTokens}out (${event.stopReason})${C.reset}`);
+			console.log(
+				`  ${C.dim}  LLM response ← ${event.usage.inputTokens}in/${event.usage.outputTokens}out (${event.stopReason})${C.reset}`,
+			);
 			break;
 
 		case "tool:requested":
@@ -141,17 +167,23 @@ function printEvent(event: InnerEvent): void {
 				process.stdout.write("\n");
 				dangChayChu = false;
 			}
-			console.log(`  ${C.yellow}  ⚡ TOOL${C.reset} ${C.bold}${event.toolName}${C.reset}(${redactSecrets(JSON.stringify(event.toolInput)).slice(0, 100)})`);
+			console.log(
+				`  ${C.yellow}  ⚡ TOOL${C.reset} ${C.bold}${event.toolName}${C.reset}(${redactSecrets(JSON.stringify(event.toolInput)).slice(0, 100)})`,
+			);
 			break;
 
 		case "permission:allowed":
 			permissionAllowed++;
-			console.log(`  ${C.green}  ✓ ALLOW${C.reset} ${event.toolName} ${C.dim}[${event.source}]${C.reset}`);
+			console.log(
+				`  ${C.green}  ✓ ALLOW${C.reset} ${event.toolName} ${C.dim}[${event.source}]${C.reset}`,
+			);
 			break;
 
 		case "permission:denied":
 			permissionDenied++;
-			console.log(`  ${C.red}  ✗ DENY${C.reset}  ${event.toolName} — ${event.reason} ${C.dim}[${event.source}]${C.reset}`);
+			console.log(
+				`  ${C.red}  ✗ DENY${C.reset}  ${event.toolName} — ${event.reason} ${C.dim}[${event.source}]${C.reset}`,
+			);
 			break;
 
 		case "permission:asking":
@@ -160,14 +192,21 @@ function printEvent(event: InnerEvent): void {
 
 		case "tool:completed":
 			toolCallCount++;
-			const preview = typeof event.result === "string" ? event.result.slice(0, 120) : JSON.stringify(event.result).slice(0, 120);
+			const preview =
+				typeof event.result === "string"
+					? event.result.slice(0, 120)
+					: JSON.stringify(event.result).slice(0, 120);
 			console.log(`  ${C.green}  ✓ DONE${C.reset}  ${event.durationMs.toFixed(0)}ms`);
-			console.log(`  ${C.dim}  ↳ ${preview.replace(/\n/g, "\\n")}${preview.length >= 120 ? "..." : ""}${C.reset}`);
+			console.log(
+				`  ${C.dim}  ↳ ${preview.replace(/\n/g, "\\n")}${preview.length >= 120 ? "..." : ""}${C.reset}`,
+			);
 			break;
 
 		case "tool:failed":
 			toolCallCount++;
-			console.log(`  ${C.red}  ✗ FAIL${C.reset}  ${event.error} ${C.dim}(${event.durationMs.toFixed(0)}ms)${C.reset}`);
+			console.log(
+				`  ${C.red}  ✗ FAIL${C.reset}  ${event.error} ${C.dim}(${event.durationMs.toFixed(0)}ms)${C.reset}`,
+			);
 			break;
 
 		case "llm:stream_delta":
@@ -191,7 +230,9 @@ function printEvent(event: InnerEvent): void {
 			break;
 
 		case "error":
-			console.log(`  ${C.bgRed}${C.white} ERROR ${C.reset} ${event.error} ${event.recoverable ? C.dim + "(recoverable)" + C.reset : ""}`);
+			console.log(
+				`  ${C.bgRed}${C.white} ERROR ${C.reset} ${event.error} ${event.recoverable ? C.dim + "(recoverable)" + C.reset : ""}`,
+			);
 			break;
 
 		case "agent:spawned":
@@ -220,14 +261,16 @@ function printEvent(event: InnerEvent): void {
 
 // ─── Footer ─────────────────────────────────────────────────────
 
-function printFooter(result: import("@agentweave/types").TerminalResult, harness: import("@agentweave/sdk").HarnessInstance): void {
+function printFooter(
+	result: import("@agentweave/types").TerminalResult,
+	harness: import("@agentweave/sdk").HarnessInstance,
+): void {
 	const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 	const usage = harness.getUsage();
 	const audit = harness.outer.getAuditLogger().size();
 
-	const reasonColor = result.reason === "completed" ? C.green
-		: result.reason === "aborted" ? C.yellow
-		: C.red;
+	const reasonColor =
+		result.reason === "completed" ? C.green : result.reason === "aborted" ? C.yellow : C.red;
 
 	console.log(`  ${C.cyan}═══════════════════════════════════════════════${C.reset}`);
 	console.log(`  ${C.bold}Session Summary${C.reset}`);
@@ -238,7 +281,9 @@ function printFooter(result: import("@agentweave/types").TerminalResult, harness
 	console.log("");
 	console.log(`  ${C.bold}Governance${C.reset}`);
 	console.log(`  ├─ Tools called:     ${toolCallCount}`);
-	console.log(`  ├─ Permissions:      ${C.green}${permissionAllowed} allowed${C.reset} / ${C.red}${permissionDenied} denied${C.reset}`);
+	console.log(
+		`  ├─ Permissions:      ${C.green}${permissionAllowed} allowed${C.reset} / ${C.red}${permissionDenied} denied${C.reset}`,
+	);
 	console.log(`  ├─ Audit log:        ${audit} entries`);
 	console.log(`  └─ Output filters:   secrets, PII active`);
 	console.log("");
@@ -248,4 +293,3 @@ function printFooter(result: import("@agentweave/types").TerminalResult, harness
 	console.log(`  └─ Cost:             $${usage.totalCost.toFixed(4)}`);
 	console.log("");
 }
-

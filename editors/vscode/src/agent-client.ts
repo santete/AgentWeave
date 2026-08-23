@@ -37,8 +37,14 @@ export type SuKienAgent =
 			context: { usedTokens: number; maxTokens: number } | null;
 			/** File agent đã sửa trong lượt này. */
 			edited: string[];
-			/** Agent có THẬT SỰ chạy lệnh kiểm tra không — không phải lời nó tự nhận. */
+			/** Lệnh kiểm tra đã chạy XONG và báo đạt. Không phải lời model tự nhận. */
 			ranCheck: boolean;
+			/**
+			 * Vì sao `ranCheck` như vậy. Một cờ đúng/sai không phân biệt được ba
+			 * tình huống rất khác nhau: chưa chạy gì, chạy mà bị giết vì quá hạn
+			 * giờ (không có kết luận), và chạy xong báo hỏng (có kết luận, là hỏng).
+			 */
+			checkOutcome: "khong-chay" | "dat" | "hong" | "bi-giet";
 			perf?: {
 				/** Thời gian AGENT làm việc, ĐÃ trừ khoảng người dùng ngồi duyệt. */
 				totalMs: number;
@@ -55,7 +61,32 @@ export type SuKienAgent =
 	| { type: "models"; models: Array<{ name: string; size: number }>; current: string }
 	| { type: "model_changed"; model: string }
 	| { type: "text_corrected"; text: string }
-	| { type: "error"; message: string };
+	| {
+			type: "sessions";
+			current: string;
+			sessions: Array<{ id: string; capNhat: string; tomTat: string; soLuot: number; model: string }>;
+	  }
+	| {
+			type: "resumed";
+			id: string;
+			tomTat: string;
+			soLuot: number;
+			messages: number;
+			transcript: Array<{ kind: "hoi" | "tra-loi" | "tool"; text: string; coAnh?: boolean }>;
+	  }
+	| { type: "undone"; path: string; daXoa: boolean; conLai: number }
+	| { type: "image_attached"; mimeType: string }
+	| { type: "model_switched"; from: string; to: string; reason: string; tam: boolean }
+	| { type: "notice"; level: "info" | "warn"; message: string }
+	/**
+	 * Một lượt do SERVER khởi phát (hẹn giờ đến hạn), không phải người dùng bấm gửi.
+	 *
+	 * Cần tin này vì trạng thái "đang bận" do webview tự đặt lúc bấm gửi — lượt
+	 * server khởi phát thì nó không biết, ô nhập vẫn mở, và câu gõ tiếp theo bị
+	 * từ chối bằng "dang chay mot luot khac".
+	 */
+	| { type: "turn_start"; reason: "hen_gio" }
+	| { type: "error"; message: string; hint?: string[] };
 
 export interface TuyChonAgent {
 	cliPath: string;
@@ -129,8 +160,9 @@ export class AgentClient extends EventEmitter {
 		this.tienTrinh.stdin.write(`${JSON.stringify(obj)}\n`);
 	}
 
-	hoi(text: string): void {
-		this.gui({ type: "prompt", text });
+	hoi(text: string, anh?: Array<{ data: string; mimeType?: string }>): void {
+		if (anh && anh.length) this.gui({ type: "prompt", text, images: anh });
+		else this.gui({ type: "prompt", text });
 	}
 
 	traLoiQuyen(id: string, allow: boolean, alwaysAllow = false): void {
@@ -151,6 +183,20 @@ export class AgentClient extends EventEmitter {
 
 	doiModel(model: string): void {
 		this.gui({ type: "set_model", model });
+	}
+
+	lietKePhien(): void {
+		this.gui({ type: "list_sessions" });
+	}
+
+	/** Mở lại phiên. Bỏ trống id = phiên gần nhất. */
+	moPhien(id?: string): void {
+		this.gui(id ? { type: "resume", id } : { type: "resume" });
+	}
+
+	/** Hoàn tác thay đổi file gần nhất. */
+	hoanTac(): void {
+		this.gui({ type: "undo" });
 	}
 
 	dungLai(): void {

@@ -14,9 +14,15 @@ import { setCredential, ensureGitignore, getKeySource } from "../credential-stor
 import { AGENT_PRESETS } from "../agent-presets.js";
 
 const C = {
-	reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
-	green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m",
-	cyan: "\x1b[36m", gray: "\x1b[90m", white: "\x1b[37m",
+	reset: "\x1b[0m",
+	bold: "\x1b[1m",
+	dim: "\x1b[2m",
+	green: "\x1b[32m",
+	red: "\x1b[31m",
+	yellow: "\x1b[33m",
+	cyan: "\x1b[36m",
+	gray: "\x1b[90m",
+	white: "\x1b[37m",
 };
 const LINE = "─".repeat(60);
 
@@ -31,22 +37,30 @@ export async function pipelineSetupCommand(): Promise<void> {
 
 	console.log(`\n  ${C.cyan}${C.bold}AgentWeave Pipeline Setup${C.reset}`);
 	console.log(`  ${C.dim}${LINE}${C.reset}`);
-	console.log(`  ${C.dim}This wizard helps you configure how AgentWeave executes tasks.${C.reset}\n`);
+	console.log(
+		`  ${C.dim}This wizard helps you configure how AgentWeave executes tasks.${C.reset}\n`,
+	);
 
 	// ── Step 1: Choose Mode ──────────────────────────────────
 
 	console.log(`  ${C.white}${C.bold}Step 1: Choose Execution Mode${C.reset}\n`);
-	console.log(`  ${C.cyan}[1]${C.reset} ${C.bold}Wrap Agent CLI${C.reset} ${C.dim}(process-adapter)${C.reset}`);
+	console.log(
+		`  ${C.cyan}[1]${C.reset} ${C.bold}Wrap Agent CLI${C.reset} ${C.dim}(process-adapter)${C.reset}`,
+	);
 	console.log(`      You have a subscription (Claude Pro, Cursor Pro, etc.)`);
 	console.log(`      AgentWeave wraps your agent CLI — no API key needed.`);
 	console.log(`      ${C.green}Best for: developers with existing subscriptions${C.reset}\n`);
 
-	console.log(`  ${C.cyan}[2]${C.reset} ${C.bold}Direct LLM API${C.reset} ${C.dim}(agent-loop)${C.reset}`);
+	console.log(
+		`  ${C.cyan}[2]${C.reset} ${C.bold}Direct LLM API${C.reset} ${C.dim}(agent-loop)${C.reset}`,
+	);
 	console.log(`      You have an API key (Anthropic, OpenAI, Google, OpenRouter).`);
 	console.log(`      AgentWeave calls LLM directly — full control over model + cost.`);
 	console.log(`      ${C.green}Best for: CI/CD, automation, multi-model routing${C.reset}\n`);
 
-	console.log(`  ${C.cyan}[3]${C.reset} ${C.bold}Simple LLM Call${C.reset} ${C.dim}(api-direct)${C.reset}`);
+	console.log(
+		`  ${C.cyan}[3]${C.reset} ${C.bold}Simple LLM Call${C.reset} ${C.dim}(api-direct)${C.reset}`,
+	);
 	console.log(`      Single LLM call, no tool execution. Text in, text out.`);
 	console.log(`      ${C.green}Best for: code review, explanation, simple generation${C.reset}\n`);
 
@@ -76,10 +90,14 @@ async function setupProcessAdapter(rl: ReturnType<typeof createInterface>): Prom
 	console.log(`  ${C.dim}${LINE}${C.reset}\n`);
 
 	console.log(`  ${C.white}Which agent CLI do you use?${C.reset}\n`);
-	console.log(`  ${C.cyan}[1]${C.reset} Claude Code    ${C.dim}(npm i -g @anthropic-ai/claude-code)${C.reset}`);
+	console.log(
+		`  ${C.cyan}[1]${C.reset} Claude Code    ${C.dim}(npm i -g @anthropic-ai/claude-code)${C.reset}`,
+	);
 	console.log(`  ${C.cyan}[2]${C.reset} Aider          ${C.dim}(pip install aider-chat)${C.reset}`);
 	console.log(`  ${C.cyan}[3]${C.reset} Codex          ${C.dim}(npm i -g @openai/codex)${C.reset}`);
-	console.log(`  ${C.cyan}[4]${C.reset} Custom CLI     ${C.dim}(any command that reads stdin/args)${C.reset}\n`);
+	console.log(
+		`  ${C.cyan}[4]${C.reset} Custom CLI     ${C.dim}(any command that reads stdin/args)${C.reset}\n`,
+	);
 
 	const agentChoice = await ask(rl, `  Choose agent [1/2/3/4]: `);
 
@@ -166,10 +184,16 @@ async function setupAgentLoop(rl: ReturnType<typeof createInterface>): Promise<v
 	console.log(`  ${C.dim}${LINE}${C.reset}\n`);
 
 	console.log(`  ${C.white}Which LLM provider do you have an API key for?${C.reset}\n`);
-	console.log(`  ${C.cyan}[1]${C.reset} Anthropic      ${C.dim}(Claude models — best tool calling)${C.reset}`);
+	console.log(
+		`  ${C.cyan}[1]${C.reset} Anthropic      ${C.dim}(Claude models — best tool calling)${C.reset}`,
+	);
 	console.log(`  ${C.cyan}[2]${C.reset} OpenAI         ${C.dim}(GPT models)${C.reset}`);
-	console.log(`  ${C.cyan}[3]${C.reset} Google         ${C.dim}(Gemini models — generous free tier)${C.reset}`);
-	console.log(`  ${C.cyan}[4]${C.reset} OpenRouter     ${C.dim}(any model — has free options)${C.reset}\n`);
+	console.log(
+		`  ${C.cyan}[3]${C.reset} Google         ${C.dim}(Gemini models — generous free tier)${C.reset}`,
+	);
+	console.log(
+		`  ${C.cyan}[4]${C.reset} OpenRouter     ${C.dim}(any model — has free options)${C.reset}\n`,
+	);
 
 	const providerChoice = await ask(rl, `  Choose provider [1/2/3/4]: `);
 
@@ -232,7 +256,9 @@ async function setupAgentLoop(rl: ReturnType<typeof createInterface>): Promise<v
 	pipelineConfigCommand({ action: "set", key: "execution.model", value: model });
 
 	console.log(`\n  ${C.green}${C.bold}Setup complete!${C.reset}`);
-	console.log(`  ${C.dim}Key source: ${getKeySource() === "passphrase" ? "PBKDF2 encrypted" : "machine-derived (set AGENTWEAVE_CREDENTIAL_KEY for stronger encryption)"}${C.reset}`);
+	console.log(
+		`  ${C.dim}Key source: ${getKeySource() === "passphrase" ? "PBKDF2 encrypted" : "machine-derived (set AGENTWEAVE_CREDENTIAL_KEY for stronger encryption)"}${C.reset}`,
+	);
 	console.log(`  ${C.dim}Run: agentweave pipeline run "your task"${C.reset}`);
 	console.log(`  ${C.dim}Or:  agentweave pipeline show${C.reset}\n`);
 }
@@ -250,5 +276,7 @@ async function setupApiDirect(rl: ReturnType<typeof createInterface>): Promise<v
 
 	// The config was set to agent-loop by setupAgentLoop — override
 	console.log(`  ${C.dim}Note: api-direct mode uses same API key as agent-loop.${C.reset}`);
-	console.log(`  ${C.dim}When running pipeline, meta-steps use api-direct automatically.${C.reset}\n`);
+	console.log(
+		`  ${C.dim}When running pipeline, meta-steps use api-direct automatically.${C.reset}\n`,
+	);
 }

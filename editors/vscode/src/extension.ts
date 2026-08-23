@@ -69,6 +69,12 @@ function batDauClient(): void {
 
 function xuLySuKien(e: SuKienAgent): void {
 	switch (e.type) {
+		case "ready":
+			// Server vừa sẵn sàng → xin danh sách model ngay, không đợi webview.
+			// Bọc cặp với việc webview tự xin lúc tải: một trong hai luôn tới đích,
+			// nên dropdown model không còn kẹt "disabled".
+			client?.lietKeModel();
+			break;
 		case "context": {
 			const pct = Math.round((e.used / e.max) * 100);
 			thanhTrangThai.text = `$(database) ngữ cảnh ${pct}%`;
@@ -124,7 +130,18 @@ function moKhungChat(ctx: vscode.ExtensionContext): void {
 	panel.webview.onDidReceiveMessage((m: Record<string, unknown>) => {
 		switch (m.type) {
 			case "hoi":
-				client?.hoi(String(m.text));
+				client?.hoi(
+					String(m.text),
+					Array.isArray(m.images)
+						? (m.images as Array<{ data: string; mimeType?: string }>)
+						: undefined,
+				);
+				break;
+			case "dinhAnh":
+				// Mở hộp thoại chọn ảnh ở tiến trình host rồi đẩy base64 vào webview.
+				void chonAnhTuFile().then((a) => {
+					if (a) panel?.webview.postMessage({ type: "anhTuFile", ...a });
+				});
 				break;
 			case "quyen":
 				client?.traLoiQuyen(String(m.id), m.allow === true, m.alwaysAllow === true);
@@ -146,10 +163,61 @@ function moKhungChat(ctx: vscode.ExtensionContext): void {
 				if (goc) void vscode.window.showTextDocument(vscode.Uri.joinPath(goc, String(m.path)));
 				break;
 			}
+			case "listSessions":
+				client?.lietKePhien();
+				break;
+			case "moPhien":
+				client?.moPhien(m.id ? String(m.id) : undefined);
+				break;
+			case "hoanTac":
+				client?.hoanTac();
+				break;
+			case "timKiemFile":
+				// Gợi ý đường dẫn cho @ — hỏi thẳng workspace của VS Code, không
+				// cần thêm giao thức phía agent. Loại thư mục nặng để danh sách gọn.
+				void timFileGoiY(String(m.q ?? "")).then((ds) =>
+					panel?.webview.postMessage({ type: "goiYFile", ds }),
+				);
+				break;
 		}
 	});
 
 	if (!client?.dangSong()) batDauClient();
+}
+
+/**
+ * Tìm tối đa 20 file khớp chuỗi gõ sau @.
+ *
+ * Dùng API workspace của VS Code nên tôn trọng sẵn .gitignore và files.exclude
+ * của người dùng — không phải nhét thêm luật loại trừ vào agent. Khớp theo chuỗi
+ * con trên đường dẫn tương đối, đủ dùng cho một danh sách gõ nhanh.
+ */
+async function chonAnhTuFile(): Promise<{ data: string; mimeType: string; ten: string } | null> {
+	const chon = await vscode.window.showOpenDialog({
+		canSelectMany: false,
+		filters: { "Ảnh": ["png", "jpg", "jpeg", "gif", "webp", "bmp"] },
+		openLabel: "Đính ảnh vào chat",
+	});
+	if (!chon || !chon[0]) return null;
+	const uri = chon[0];
+	const bytes = await vscode.workspace.fs.readFile(uri);
+	const duoi = (uri.path.split(".").pop() ?? "png").toLowerCase();
+	const mimeType = duoi === "jpg" ? "image/jpeg" : `image/${duoi}`;
+	const b64 = Buffer.from(bytes).toString("base64");
+	return { data: `data:${mimeType};base64,${b64}`, mimeType, ten: uri.path.split("/").pop() ?? "anh" };
+}
+
+async function timFileGoiY(q: string): Promise<string[]> {
+	const glob = "**/*";
+	const loai = "**/{node_modules,.git,dist,.turbo,out,build}/**";
+	const uris = await vscode.workspace.findFiles(glob, loai, 2000);
+	const goc = vscode.workspace.workspaceFolders?.[0]?.uri;
+	const rel = uris.map((u) => (goc ? vscode.workspace.asRelativePath(u, false) : u.fsPath));
+	const kq = q.trim()
+		? rel.filter((r) => r.toLowerCase().includes(q.toLowerCase()))
+		: rel;
+	// Ngắn trước cho những đường dẫn nông nổi lên đầu — thường là thứ cần.
+	return kq.sort((a, b) => a.length - b.length).slice(0, 20);
 }
 
 function dungHtml(webview: vscode.Webview, goc: vscode.Uri): string {
@@ -165,7 +233,7 @@ function dungHtml(webview: vscode.Webview, goc: vscode.Uri): string {
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+      content="default-src 'none'; style-src ${webview.cspSource}; img-src data:; script-src 'nonce-${nonce}';">
 <link href="${css}" rel="stylesheet">
 <style>:root { --aw-co-chu: ${Math.min(Math.max(coChu, 10), 24)}px; }</style>
 </head>
@@ -178,14 +246,22 @@ function dungHtml(webview: vscode.Webview, goc: vscode.Uri): string {
     <span class="dong-ho" id="dong-ho">0.0s</span>
   </div>
   <div id="thanh-nhap">
-    <textarea id="o-nhap" rows="3" placeholder="Hỏi gì đó… dùng @đường-dẫn để chèn file"></textarea>
+    <div id="anh-cho" class="an"></div>
+    <div id="o-nhap-boc">
+      <textarea id="o-nhap" rows="3" placeholder="Hỏi gì đó… @đường-dẫn để chèn file · dán (Ctrl+V) hoặc nút Ảnh để gửi ảnh"></textarea>
+      <div id="goi-y-file" class="an"></div>
+    </div>
     <div id="nut">
       <select id="chon-model" disabled title="Model đang dùng"></select>
       <button id="gui">Gửi</button>
       <button id="huy" class="phu">Dừng</button>
+      <button id="anh" class="phu" title="Đính ảnh (hoặc dán Ctrl+V vào ô nhập)">🖼 Ảnh</button>
+      <button id="hoan-tac" class="phu" title="Hoàn tác thay đổi file gần nhất" disabled>↶ Hoàn tác</button>
+      <button id="phien" class="phu" title="Phiên đã lưu">Phiên</button>
       <button id="xoa" class="phu">Xoá hội thoại</button>
     </div>
   </div>
+  <div id="bang-phien" class="an"></div>
   <script nonce="${nonce}" src="${js}"></script>
 </body>
 </html>`;

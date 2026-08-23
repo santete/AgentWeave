@@ -54,16 +54,11 @@ export class TokenCounter {
 	recalculateCost(model: string): void {
 		const pricing = MODEL_PRICING[model] ?? (laModelCucBo(model) ? MIEN_PHI : DEFAULT_PRICING);
 		const inputCost =
-			((this.usage.inputTokens + this.usage.cacheCreationTokens) *
-				pricing.input) /
-			1_000_000;
+			((this.usage.inputTokens + this.usage.cacheCreationTokens) * pricing.input) / 1_000_000;
 		const outputCost =
-			((this.usage.outputTokens + this.usage.thinkingTokens) *
-				pricing.output) /
-			1_000_000;
+			((this.usage.outputTokens + this.usage.thinkingTokens) * pricing.output) / 1_000_000;
 		// Cache reads are 10% of input price
-		const cacheReadCost =
-			(this.usage.cacheReadTokens * pricing.input * 0.1) / 1_000_000;
+		const cacheReadCost = (this.usage.cacheReadTokens * pricing.input * 0.1) / 1_000_000;
 		this.usage.totalCost = inputCost + outputCost + cacheReadCost;
 	}
 

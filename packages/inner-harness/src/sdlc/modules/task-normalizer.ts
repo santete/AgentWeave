@@ -4,11 +4,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type {
-	SDLCModule,
-	SDLCModuleContext,
-	SDLCTask,
-} from "@agentweave/types";
+import type { SDLCModule, SDLCModuleContext, SDLCTask } from "@agentweave/types";
 
 const NORMALIZE_PROMPT = `You are a task normalizer. Given a raw developer request, extract a structured task.
 Respond in EXACTLY this JSON format (no markdown, no explanation):
@@ -35,7 +31,11 @@ export class TaskNormalizerModule implements SDLCModule<string, SDLCTask> {
 		return this.normalizeWithTemplate(taskId, input);
 	}
 
-	private async normalizeWithLLM(taskId: string, input: string, context: SDLCModuleContext): Promise<SDLCTask> {
+	private async normalizeWithLLM(
+		taskId: string,
+		input: string,
+		context: SDLCModuleContext,
+	): Promise<SDLCTask> {
 		const model = context.config.modules.taskNormalizer.model ?? "claude-haiku-4-5";
 
 		try {

@@ -52,9 +52,7 @@ export class ProviderRegistry {
 	}
 
 	list(): ReadonlyArray<ModelProvider> {
-		return [...this.providers.values()].sort(
-			(a, b) => (b.priority ?? 0) - (a.priority ?? 0),
-		);
+		return [...this.providers.values()].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
 	}
 
 	has(id: string): boolean {

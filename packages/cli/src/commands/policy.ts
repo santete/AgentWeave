@@ -82,16 +82,12 @@ export function policyShowCommand(args: PolicyShowArgs): number {
 	const resolvedCount = rows.filter((r) => r.path).length;
 	console.log(`\n  AgentWeave policy cascade — ${resolvedCount}/3 levels resolved`);
 	console.log(`  ${"─".repeat(78)}`);
-	console.log(
-		`  ${pad("LEVEL", 6)}${pad("RULES", 7)}${pad("HASH (sha256)", 18)}PATH`,
-	);
+	console.log(`  ${pad("LEVEL", 6)}${pad("RULES", 7)}${pad("HASH (sha256)", 18)}PATH`);
 	console.log(`  ${"─".repeat(78)}`);
 	for (const r of rows) {
 		const hashShort = r.hash ? r.hash.slice(0, 12) + "…" : "—";
 		const path = r.path ?? "(not resolved)";
-		console.log(
-			`  ${pad(r.level, 6)}${pad(String(r.rules), 7)}${pad(hashShort, 18)}${path}`,
-		);
+		console.log(`  ${pad(r.level, 6)}${pad(String(r.rules), 7)}${pad(hashShort, 18)}${path}`);
 	}
 	console.log(`  ${"─".repeat(78)}`);
 	console.log(`  Total rules merged: ${loaded.rules.length}`);

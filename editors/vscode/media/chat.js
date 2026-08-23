@@ -9,6 +9,8 @@ const oNhap = document.getElementById("o-nhap");
 
 let khoiDangChay = null; // khối chữ model đang sinh
 let chuDangChay = ""; // chữ thô, để dựng lại markdown khi đoạn kết thúc
+// id các lời gọi tool bị ẩn — để ẩn nốt kết quả của chúng.
+const idToolAn = new Set();
 let dangBan = false;
 let dongHo = null;
 let lucBatDau = 0;
@@ -71,9 +73,18 @@ function ngungChay() {
 }
 
 /**
- * Dựng markdown ở mức tối thiểu: khối ```mã```, `mã trong dòng`, **đậm**.
+ * Dựng markdown ở mức tối thiểu.
+ *
+ * Khối: ```mã```, "## tiêu đề", "- mục", "1. mục".
+ * Trong dòng: `mã`, **đậm**.
+ *
  * CỐ Ý không dùng innerHTML — chữ do model sinh ra, nhét thẳng vào HTML là mở
  * cửa cho chèn mã. Mọi thứ dựng bằng createElement + textContent.
+ *
+ * Vì sao cần hiểu tiêu đề và danh sách: `.khoi` có `white-space: pre-wrap` nên
+ * xuống dòng vốn đã hiện đúng, nhưng "## Kết luận" và "- mục" thì hiện ra
+ * nguyên dấu cú pháp. Người đọc thấy chữ thô lẫn dấu markdown — vừa xấu vừa
+ * khó quét mắt, mà đó lại là thứ họ nhìn nhiều nhất.
  */
 function veChu(khung, chu) {
   khung.textContent = "";
@@ -87,22 +98,73 @@ function veChu(khung, chu) {
       khung.appendChild(pre);
       return;
     }
-    for (const mau of doan.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/)) {
-      if (!mau) continue;
-      if (mau.startsWith("`") && mau.endsWith("`") && mau.length > 2) {
-        const c = document.createElement("code");
-        c.className = "trong-dong";
-        c.textContent = mau.slice(1, -1);
-        khung.appendChild(c);
-      } else if (mau.startsWith("**") && mau.endsWith("**") && mau.length > 4) {
-        const b = document.createElement("strong");
-        b.textContent = mau.slice(2, -2);
-        khung.appendChild(b);
-      } else {
-        khung.appendChild(document.createTextNode(mau));
-      }
-    }
+    veDoanChu(khung, doan);
   });
+}
+
+/** Dựng phần chữ thường: tách theo DÒNG để nhận ra tiêu đề và danh sách. */
+function veDoanChu(khung, doan) {
+  const dong = doan.split("\n");
+  let ds = null; // <ul>/<ol> đang mở, null = đang ở văn xuôi
+
+  const dongDs = () => {
+    ds = null;
+  };
+
+  for (let k = 0; k < dong.length; k++) {
+    const d = dong[k];
+    const tieuDe = /^(#{1,4})\s+(.*)$/.exec(d);
+    const muc = /^\s*[-*]\s+(.*)$/.exec(d);
+    const so = /^\s*(\d{1,3})[.)]\s+(.*)$/.exec(d);
+
+    if (tieuDe) {
+      dongDs();
+      const h = document.createElement("div");
+      h.className = `md-h md-h${tieuDe[1].length}`;
+      veTrongDong(h, tieuDe[2]);
+      khung.appendChild(h);
+      continue;
+    }
+
+    if (muc || so) {
+      const loai = muc ? "ul" : "ol";
+      if (!ds || ds.tagName.toLowerCase() !== loai) {
+        ds = document.createElement(loai);
+        ds.className = "md-ds";
+        khung.appendChild(ds);
+      }
+      const li = document.createElement("li");
+      veTrongDong(li, muc ? muc[1] : so[2]);
+      ds.appendChild(li);
+      continue;
+    }
+
+    dongDs();
+    // Dòng trống ngay sau một khối đã có thẻ riêng thì bỏ — nếu không sẽ thừa
+    // một dòng trắng, vì thẻ khối đã tự có lề trên/dưới.
+    if (d.trim() === "" && khung.lastChild && khung.lastChild.nodeType === 1) continue;
+    veTrongDong(khung, d);
+    if (k < dong.length - 1) khung.appendChild(document.createTextNode("\n"));
+  }
+}
+
+/** Định dạng trong một dòng: `mã` và **đậm**. */
+function veTrongDong(khung, chu) {
+  for (const mau of chu.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/)) {
+    if (!mau) continue;
+    if (mau.startsWith("`") && mau.endsWith("`") && mau.length > 2) {
+      const c = document.createElement("code");
+      c.className = "trong-dong";
+      c.textContent = mau.slice(1, -1);
+      khung.appendChild(c);
+    } else if (mau.startsWith("**") && mau.endsWith("**") && mau.length > 4) {
+      const b = document.createElement("strong");
+      b.textContent = mau.slice(2, -2);
+      khung.appendChild(b);
+    } else {
+      khung.appendChild(document.createTextNode(mau));
+    }
+  }
 }
 
 /** Một ô số đo. `muc` = "nhanh" | "cham" | "" để tô màu. */
@@ -161,6 +223,33 @@ window.addEventListener("message", (ev) => {
       oNhap.focus();
       break;
 
+    case "anhTuFile":
+      themAnh(e.data, e.mimeType);
+      oNhap.focus();
+      break;
+
+    case "notice":
+      themKhoi(e.level === "warn" ? "canh-bao" : "he-thong-mo", e.message);
+      break;
+
+    // Lượt do server khởi phát (hẹn giờ). Webview chỉ tự vào trạng thái bận khi
+    // NGƯỜI DÙNG bấm gửi, nên không có tin này thì ô nhập vẫn mở và câu gõ tiếp
+    // theo bị từ chối bằng "dang chay mot luot khac".
+    case "turn_start":
+      khoiDangChay = null;
+      chuDangChay = "";
+      datBan(true);
+      batDauChay("Đang chạy việc hẹn giờ");
+      break;
+
+    case "model_switched":
+      // Tự đổi model cho lượt có ảnh (model chính không đọc được ảnh).
+      themKhoi(
+        "he-thong",
+        `🖼 ${e.to} đọc ảnh` + (e.tam ? ` → ${e.from} dựng theo mô tả` : ""),
+      );
+      break;
+
     case "text_corrected":
       // Chữ vừa hiện hoá ra là tool-call viết dạng văn bản. Thay hẳn khối đó —
       // để nguyên thì người dùng thấy một đống JSON thô giữa câu trả lời.
@@ -210,6 +299,14 @@ window.addEventListener("message", (ev) => {
       if (khoiDangChay && chuDangChay) veChu(khoiDangChay, chuDangChay);
       khoiDangChay = null;
       chuDangChay = "";
+      // TodoWrite chỉ sửa danh sách việc trong bộ nhớ — vẽ từng lời gọi ra chỉ
+      // tạo một bức tường ⚡ che mất các tool làm việc thật. Bản gốc cũng ẩn
+      // (`renderToolUseMessage() → null`). Tiến độ hiện ở thanh trạng thái.
+      if (e.name === "TodoWrite") {
+        idToolAn.add(e.id);
+        datViec("Đang cập nhật danh sách việc");
+        break;
+      }
       datViec(`Đang chạy ${e.name}`);
       const d = themKhoi("tool");
       // KHÔNG innerHTML: e.name tới từ model.
@@ -224,8 +321,19 @@ window.addEventListener("message", (ev) => {
     }
 
     case "tool_result": {
+      // Ẩn cả kết quả của TodoWrite — lời gọi đã ẩn thì kết quả treo lơ lửng.
+      if (idToolAn.has(e.id)) {
+        idToolAn.delete(e.id);
+        break;
+      }
       const d = themKhoi(e.ok ? "ket-qua" : "ket-qua-hong");
-      d.textContent = `${e.ok ? "✓" : "✗"} ${e.durationMs}ms · ${String(e.preview).split("\n")[0].slice(0, 160)}`;
+      // Kết quả ĐẠT: một dòng là đủ — người dùng chỉ cần biết nó chạy xong.
+      // Kết quả HỎNG: giữ tới 4 dòng. Lỗi thường ngắn mà lại là thứ người dùng
+      // cần đọc nhất; cắt còn một dòng thì họ thấy màu đỏ mà không biết vì sao.
+      const tho = String(e.preview ?? "");
+      const soDong = e.ok ? 1 : 4;
+      const than = tho.split("\n").slice(0, soDong).join("\n").slice(0, e.ok ? 160 : 600);
+      d.textContent = `${e.ok ? "✓" : "✗"} ${e.durationMs}ms · ${than}${tho.length > than.length ? " …" : ""}`;
       break;
     }
 
@@ -354,28 +462,48 @@ window.addEventListener("message", (ev) => {
 
       // Cảnh báo dựa trên QUAN SÁT, không dựa vào lời model tự nhận. Model 30B
       // hay tuyên bố "các test đều pass" mà chưa chạy lệnh nào.
-      if (e.edited && e.edited.length > 0 && !e.ranCheck) {
+      //
+      // Ba trạng thái xấu khác nhau, đừng gộp làm một: "chưa chạy" là chưa có
+      // ai hỏi; "bị giết" là đã hỏi mà không kịp trả lời; "báo hỏng" là đã có
+      // câu trả lời và câu trả lời là không đạt. Gộp lại thì người dùng không
+      // biết phải làm gì tiếp.
+      const soSua = (e.edited || []).length;
+      if (soSua > 0 && e.checkOutcome !== "dat") {
+        const loi = {
+          "khong-chay":
+            `⚠ Đã sửa ${soSua} file nhưng CHƯA chạy kiểm tra nào: ${(e.edited || []).join(", ")}. ` +
+            `Mọi khẳng định "chạy ổn" ở trên đều chưa được kiểm chứng.`,
+          "bi-giet":
+            `⚠ Lệnh kiểm tra bị giết vì quá hạn giờ — KHÔNG có kết luận nào cho ${soSua} file đã sửa. ` +
+            `Nếu dự án build lâu, tăng bashTimeoutMs trong .agentweave/agent.json.`,
+          hong:
+            `⚠ Lệnh kiểm tra đã chạy và BÁO HỎNG — ${soSua} file đã sửa vẫn chưa đạt: ` +
+            `${(e.edited || []).join(", ")}.`,
+        }[e.checkOutcome || "khong-chay"];
+
         const c = themKhoi("chua-kiem-chung");
-        c.textContent =
-          `⚠ Đã sửa ${e.edited.length} file nhưng CHƯA chạy kiểm tra nào: ${e.edited.join(", ")}. ` +
-          `Mọi khẳng định "chạy ổn" ở trên đều chưa được kiểm chứng.`;
+        c.textContent = loi;
         const b = document.createElement("button");
-        b.textContent = "Bảo agent chạy kiểm tra";
+        b.textContent = e.checkOutcome === "hong" ? "Bảo agent sửa cho đạt" : "Bảo agent chạy kiểm tra";
         b.className = "phu";
         b.onclick = () => {
-          themKhoi("cau-hoi", "Chạy lệnh kiểm tra của dự án rồi báo kết quả thật.");
+          const y =
+            e.checkOutcome === "hong"
+              ? "Lenh kiem tra dang bao hong. Doc ky output, sua cho den khi chay dat, roi bao ket qua that."
+              : "Chay lenh kiem tra cua du an bang Bash roi bao ket qua that, ke ca khi that bai.";
+          themKhoi("cau-hoi", y);
           datBan(true);
-          vscode.postMessage({
-            type: "hoi",
-            text: "Chay lenh kiem tra cua du an bang Bash roi bao ket qua that, ke ca khi that bai.",
-          });
+          vscode.postMessage({ type: "hoi", text: y });
         };
         c.appendChild(document.createElement("br"));
         c.appendChild(b);
-      } else if (e.edited && e.edited.length > 0 && e.ranCheck) {
-        themKhoi("he-thong-mo", `✓ đã sửa ${e.edited.length} file và có chạy kiểm tra`);
+      } else if (soSua > 0) {
+        themKhoi("he-thong-mo", `✓ đã sửa ${soSua} file · lệnh kiểm tra chạy xong và đạt`);
       }
 
+      // Có sửa file thì mở nút hoàn tác. Nút này áp lên NGĂN XẾP của agent —
+      // bấm nhiều lần lùi dần từng thay đổi một.
+      if (soSua > 0) document.getElementById("hoan-tac").disabled = false;
       break;
     }
 
@@ -384,27 +512,259 @@ window.addEventListener("message", (ev) => {
       themKhoi("he-thong", "Đã xoá hội thoại");
       break;
 
-    case "error":
+    case "sessions": {
+      veBangPhien(e.sessions, e.current);
+      break;
+    }
+
+    case "resumed": {
+      // Dựng LẠI hội thoại cũ để đọc được, không chỉ nạp ngữ cảnh ngầm.
+      oTinNhan.innerHTML = "";
+      themKhoi("he-thong", `↻ Đã mở lại phiên ${e.id} · ${e.soLuot} lượt`);
+      for (const m of e.transcript || []) {
+        if (m.kind === "hoi") {
+          const q = themKhoi("cau-hoi");
+          if (m.coAnh) {
+            const tag = document.createElement("span");
+            tag.className = "anh-tag";
+            tag.textContent = "🖼 ";
+            q.appendChild(tag);
+          }
+          q.appendChild(document.createTextNode(m.text || "(ảnh)"));
+        } else if (m.kind === "tra-loi") {
+          veChu(themKhoi("tra-loi"), m.text);
+        } else if (m.kind === "tool") {
+          const d = themKhoi("tool");
+          const nhan = document.createElement("span");
+          nhan.className = "nhan";
+          nhan.textContent = `⚡ ${m.text}`;
+          d.appendChild(nhan);
+        }
+      }
+      themKhoi("he-thong-mo", "— gõ tiếp để tiếp tục —");
+      anBangPhien();
+      break;
+    }
+
+    case "undone": {
+      const chu = e.daXoa
+        ? `↶ Đã hoàn tác: xoá ${e.path} (file này vốn do agent tạo mới)`
+        : `↶ Đã hoàn tác: khôi phục ${e.path} về bản trước`;
+      themKhoi("he-thong", `${chu}${e.conLai ? ` · còn ${e.conLai} bước có thể hoàn tác` : ""}`);
+      if (!e.conLai) document.getElementById("hoan-tac").disabled = true;
+      break;
+    }
+
+    case "goiYFile":
+      veGoiYFile(e.ds || []);
+      break;
+
+    case "error": {
       khoiDangChay = null;
       chuDangChay = "";
       ngungChay();
       datBan(false);
-      themKhoi("loi", `✗ ${e.message}`);
+      const oLoi = themKhoi("loi", `✗ ${e.message}`);
+      // hint = các bước sửa cụ thể (vd Ollama chưa chạy). Hiện thành danh
+      // sách đánh số, dễ làm theo hơn một dòng lỗi thô.
+      if (Array.isArray(e.hint) && e.hint.length) {
+        const ol = document.createElement("ol");
+        ol.className = "buoc-sua";
+        for (const b of e.hint) {
+          const li = document.createElement("li");
+          li.textContent = b;
+          ol.appendChild(li);
+        }
+        oLoi.appendChild(ol);
+      }
       break;
+    }
   }
 });
 
 function gui() {
   const t = oNhap.value.trim();
-  if (!t || dangBan) return;
-  themKhoi("cau-hoi", t);
+  if ((!t && anhCho.length === 0) || dangBan) return;
+  // Tin nhắn gửi hiện kèm THUMBNAIL ảnh, không phải "🖼×1" khô khan.
+  const q = themKhoi("cau-hoi");
+  if (t) q.appendChild(document.createTextNode(t));
+  if (anhCho.length) {
+    const strip = document.createElement("div");
+    strip.className = "cau-hoi-anh";
+    for (const a of anhCho) {
+      const im = document.createElement("img");
+      im.src = a.data;
+      strip.appendChild(im);
+    }
+    q.appendChild(strip);
+  }
   oNhap.value = "";
   khoiDangChay = null;
   chuDangChay = "";
   datBan(true);
   batDauChay("Đang đọc yêu cầu");
-  vscode.postMessage({ type: "hoi", text: t });
+  vscode.postMessage({ type: "hoi", text: t, images: anhCho.map((a) => ({ data: a.data, mimeType: a.mimeType })) });
+  xoaHetAnh();
 }
+
+// ── Ảnh đính kèm ──
+// Dán (Ctrl+V) một ảnh chụp màn hình lỗi, hoặc bấm nút Ảnh. Giữ trong bộ nhớ tới
+// khi gửi; mỗi ảnh hiện một thumbnail bấm ✕ để bỏ.
+const anhCho = [];
+const oAnhCho = document.getElementById("anh-cho");
+
+function veAnhCho() {
+  oAnhCho.textContent = "";
+  if (!anhCho.length) {
+    oAnhCho.classList.add("an");
+    return;
+  }
+  anhCho.forEach((a, i) => {
+    const o = document.createElement("div");
+    o.className = "anh-thumb";
+    const img = document.createElement("img");
+    img.src = a.data;
+    o.appendChild(img);
+    const x = document.createElement("button");
+    x.className = "bo-anh";
+    x.textContent = "✕";
+    x.title = "Bỏ ảnh";
+    x.onclick = () => {
+      anhCho.splice(i, 1);
+      veAnhCho();
+    };
+    o.appendChild(x);
+    oAnhCho.appendChild(o);
+  });
+  oAnhCho.classList.remove("an");
+}
+function themAnh(dataUrl, mimeType) {
+  if (anhCho.length >= 6) return; // đủ dùng; nhiều quá thì ngữ cảnh nặng
+  anhCho.push({ data: dataUrl, mimeType: mimeType || "image/png" });
+  veAnhCho();
+}
+function xoaHetAnh() {
+  anhCho.length = 0;
+  veAnhCho();
+}
+
+// Dán ảnh từ clipboard.
+oNhap.addEventListener("paste", (ev) => {
+  const items = (ev.clipboardData || {}).items || [];
+  for (const it of items) {
+    if (it.type && it.type.startsWith("image/")) {
+      const f = it.getAsFile();
+      if (!f) continue;
+      const r = new FileReader();
+      r.onload = () => themAnh(String(r.result), f.type);
+      r.readAsDataURL(f);
+      ev.preventDefault(); // đừng dán data URL thô vào ô chữ
+    }
+  }
+});
+
+// ── Bảng phiên đã lưu ──
+const oBangPhien = document.getElementById("bang-phien");
+
+function veBangPhien(ds, current) {
+  oBangPhien.textContent = "";
+  const tieu = document.createElement("div");
+  tieu.className = "tieu-de-phien";
+  tieu.textContent = ds.length ? "Phiên đã lưu (mới nhất trước)" : "Chưa có phiên nào được lưu";
+  oBangPhien.appendChild(tieu);
+  for (const p of ds) {
+    const hang = document.createElement("div");
+    hang.className = "hang-phien" + (p.id === current ? " hien-tai" : "");
+    const t = document.createElement("div");
+    t.className = "phien-tom-tat";
+    t.textContent = p.tomTat || "(không có tóm tắt)";
+    const meta = document.createElement("div");
+    meta.className = "phien-meta";
+    const luc = (p.capNhat || "").slice(0, 16).replace("T", " ");
+    meta.textContent = `${luc} · ${p.soLuot} lượt · ${p.model}` + (p.id === current ? " · đang mở" : "");
+    hang.appendChild(t);
+    hang.appendChild(meta);
+    if (p.id !== current) {
+      hang.onclick = () => vscode.postMessage({ type: "moPhien", id: p.id });
+      hang.title = "Mở lại phiên này";
+    }
+    oBangPhien.appendChild(hang);
+  }
+  oBangPhien.classList.remove("an");
+}
+function anBangPhien() {
+  oBangPhien.classList.add("an");
+}
+
+// ── Gợi ý @đường-dẫn ──
+const oGoiY = document.getElementById("goi-y-file");
+let goiYChon = -1; // dòng đang chọn trong dropdown
+let goiYDs = [];
+
+/** Lấy token @... ngay trước con trỏ; null nếu không đang gõ @. */
+function tokenAt() {
+  const v = oNhap.value;
+  const caret = oNhap.selectionStart;
+  const truoc = v.slice(0, caret);
+  const m = truoc.match(/(^|\s)@([^\s@]*)$/);
+  if (!m) return null;
+  return { q: m[2], batDau: caret - m[2].length - 1, caret };
+}
+
+function xinGoiY() {
+  const tk = tokenAt();
+  if (!tk) {
+    anGoiY();
+    return;
+  }
+  vscode.postMessage({ type: "timKiemFile", q: tk.q });
+}
+
+function veGoiYFile(ds) {
+  // Có thể tới sau khi người dùng đã gõ tiếp và không còn ở @token nữa.
+  if (!tokenAt()) {
+    anGoiY();
+    return;
+  }
+  goiYDs = ds;
+  goiYChon = ds.length ? 0 : -1;
+  oGoiY.textContent = "";
+  if (!ds.length) {
+    anGoiY();
+    return;
+  }
+  ds.forEach((d, i) => {
+    const r = document.createElement("div");
+    r.className = "goi-y-hang" + (i === goiYChon ? " chon" : "");
+    r.textContent = d;
+    r.onmousedown = (ev) => {
+      ev.preventDefault(); // giữ focus ở textarea
+      chonGoiY(i);
+    };
+    oGoiY.appendChild(r);
+  });
+  oGoiY.classList.remove("an");
+}
+function anGoiY() {
+  oGoiY.classList.add("an");
+  goiYChon = -1;
+  goiYDs = [];
+}
+function chonGoiY(i) {
+  const tk = tokenAt();
+  if (!tk || !goiYDs[i]) return;
+  const v = oNhap.value;
+  const sau = v.slice(tk.caret);
+  const chen = `@${goiYDs[i]} `;
+  oNhap.value = v.slice(0, tk.batDau) + chen + sau;
+  const vitri = tk.batDau + chen.length;
+  oNhap.setSelectionRange(vitri, vitri);
+  anGoiY();
+  oNhap.focus();
+}
+
+oNhap.addEventListener("input", xinGoiY);
+oNhap.addEventListener("blur", () => setTimeout(anGoiY, 120));
 
 document.getElementById("gui").onclick = gui;
 document.getElementById("huy").onclick = () => {
@@ -413,15 +773,61 @@ document.getElementById("huy").onclick = () => {
   datBan(false);
 };
 document.getElementById("xoa").onclick = () => vscode.postMessage({ type: "xoa" });
+document.getElementById("hoan-tac").onclick = () => vscode.postMessage({ type: "hoanTac" });
+document.getElementById("anh").onclick = () => vscode.postMessage({ type: "dinhAnh" });
+document.getElementById("phien").onclick = () => {
+  // Bấm lần nữa để đóng nếu đang mở — nút bật/tắt.
+  if (!oBangPhien.classList.contains("an")) anBangPhien();
+  else vscode.postMessage({ type: "listSessions" });
+};
 document.getElementById("chon-model").onchange = (ev) =>
   vscode.postMessage({ type: "doiModel", model: ev.target.value });
 
 // Enter gửi, Shift+Enter xuống dòng — quy ước quen thuộc.
+// Nhưng khi dropdown gợi ý @ đang mở, các phím mũi tên / Enter / Esc lái dropdown
+// trước, không đụng tới việc gửi.
 oNhap.addEventListener("keydown", (ev) => {
+  const moGoiY = !oGoiY.classList.contains("an") && goiYDs.length;
+  if (moGoiY) {
+    if (ev.key === "ArrowDown") {
+      ev.preventDefault();
+      dieuHuongGoiY(1);
+      return;
+    }
+    if (ev.key === "ArrowUp") {
+      ev.preventDefault();
+      dieuHuongGoiY(-1);
+      return;
+    }
+    if (ev.key === "Enter" || ev.key === "Tab") {
+      ev.preventDefault();
+      chonGoiY(goiYChon < 0 ? 0 : goiYChon);
+      return;
+    }
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      anGoiY();
+      return;
+    }
+  }
   if (ev.key === "Enter" && !ev.shiftKey) {
     ev.preventDefault();
     gui();
   }
 });
 
+function dieuHuongGoiY(buoc) {
+  const hang = oGoiY.querySelectorAll(".goi-y-hang");
+  if (!hang.length) return;
+  goiYChon = (goiYChon + buoc + hang.length) % hang.length;
+  hang.forEach((h, i) => h.classList.toggle("chon", i === goiYChon));
+  hang[goiYChon].scrollIntoView({ block: "nearest" });
+}
+
 datBan(false);
+
+// Xin danh sách model NGAY khi webview tải — kể cả khi tải lại (đổi tab rồi
+// quay lại, VS Code dựng lại webview). Trước đây chỉ xin khi nhận 'ready', mà
+// 'ready' server chỉ phát một lần lúc spawn → sau khi webview tải lại, dropdown
+// kẹt 'disabled' vĩnh viễn, không đổi được model. Webview→extension luôn tin cậy.
+vscode.postMessage({ type: "listModels" });

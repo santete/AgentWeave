@@ -18,16 +18,12 @@ beforeEach(() => {
 	workDir = mkdtempSync(join(tmpdir(), "aw-policy-"));
 	stdoutBuf = "";
 	stderrBuf = "";
-	logSpy = vi
-		.spyOn(console, "log")
-		.mockImplementation((...parts: unknown[]) => {
-			stdoutBuf += parts.join(" ") + "\n";
-		});
-	errSpy = vi
-		.spyOn(console, "error")
-		.mockImplementation((...parts: unknown[]) => {
-			stderrBuf += parts.join(" ") + "\n";
-		});
+	logSpy = vi.spyOn(console, "log").mockImplementation((...parts: unknown[]) => {
+		stdoutBuf += parts.join(" ") + "\n";
+	});
+	errSpy = vi.spyOn(console, "error").mockImplementation((...parts: unknown[]) => {
+		stderrBuf += parts.join(" ") + "\n";
+	});
 });
 
 afterEach(() => {
@@ -36,10 +32,7 @@ afterEach(() => {
 	rmSync(workDir, { recursive: true, force: true });
 });
 
-function writePolicyFile(
-	path: string,
-	rules: Array<Record<string, unknown>>,
-): void {
+function writePolicyFile(path: string, rules: Array<Record<string, unknown>>): void {
 	writeFileSync(path, JSON.stringify({ version: 1, rules }, null, 2));
 }
 
@@ -101,9 +94,7 @@ describe("policyShowCommand", () => {
 describe("policyLintCommand", () => {
 	it("passes on valid file and infers level from filename", () => {
 		const path = join(workDir, "policy.org.yaml");
-		writePolicyFile(path, [
-			{ pattern: "Bash(*)", behavior: "deny", priority: 1, immutable: true },
-		]);
+		writePolicyFile(path, [{ pattern: "Bash(*)", behavior: "deny", priority: 1, immutable: true }]);
 		const code = policyLintCommand({ file: path });
 		expect(code).toBe(0);
 		expect(stdoutBuf).toContain("level:     org (inferred from filename)");
@@ -114,9 +105,7 @@ describe("policyLintCommand", () => {
 
 	it("explicit --as overrides filename inference", () => {
 		const path = join(workDir, "draft.yaml"); // no infer hint
-		writePolicyFile(path, [
-			{ pattern: "Bash(ls)", behavior: "allow", priority: 50 },
-		]);
+		writePolicyFile(path, [{ pattern: "Bash(ls)", behavior: "allow", priority: 50 }]);
 		const code = policyLintCommand({ file: path, as: "team" });
 		expect(code).toBe(0);
 		expect(stdoutBuf).toContain("level:     team");

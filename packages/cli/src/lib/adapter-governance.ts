@@ -49,7 +49,12 @@ export interface AdapterGovernance {
  */
 const DEFAULT_FILTERS: OutputFilter[] = [
 	{ name: "secrets", type: "secret", patterns: [], replacement: "[REDACTED:SECRET]" },
-	{ name: "pii", type: "pii", entities: ["email", "ssn", "phone", "credit_card"], replacement: "[REDACTED:PII]" },
+	{
+		name: "pii",
+		type: "pii",
+		entities: ["email", "ssn", "phone", "credit_card"],
+		replacement: "[REDACTED:PII]",
+	},
 ];
 
 export function createAdapterGovernance(config: AdapterGovernanceConfig): AdapterGovernance {
@@ -72,10 +77,11 @@ export function createAdapterGovernance(config: AdapterGovernanceConfig): Adapte
 		if (entries.length <= lastPersistedCount) return;
 		try {
 			mkdirSync(dirname(auditPath), { recursive: true });
-			const toWrite = entries
-				.slice(lastPersistedCount)
-				.map((e) => JSON.stringify(e))
-				.join("\n") + "\n";
+			const toWrite =
+				entries
+					.slice(lastPersistedCount)
+					.map((e) => JSON.stringify(e))
+					.join("\n") + "\n";
 			appendFileSync(auditPath, toWrite);
 			lastPersistedCount = entries.length;
 		} catch {
@@ -126,7 +132,11 @@ export function createAdapterGovernance(config: AdapterGovernanceConfig): Adapte
 			if (!persist) return;
 			try {
 				mkdirSync(dirname(auditPath), { recursive: true });
-				const all = audit.getEntries().map((e) => JSON.stringify(e)).join("\n") + "\n";
+				const all =
+					audit
+						.getEntries()
+						.map((e) => JSON.stringify(e))
+						.join("\n") + "\n";
 				writeFileSync(auditPath, all);
 				lastPersistedCount = audit.getEntries().length;
 			} catch {

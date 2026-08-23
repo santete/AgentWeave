@@ -7,11 +7,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import type {
-	SDLCModule,
-	SDLCModuleContext,
-	SDLCTask,
-} from "@agentweave/types";
+import type { SDLCModule, SDLCModuleContext, SDLCTask } from "@agentweave/types";
 
 /** Strip all characters except alphanumeric, underscore, hyphen, dot */
 function sanitizeKeyword(keyword: string): string {
@@ -65,7 +61,10 @@ export class ContextBuilderModule implements SDLCModule<SDLCTask, SDLCTask> {
 
 		// Use file paths from context as search hints
 		for (const ctx of task.context) {
-			const basename = ctx.split("/").pop()?.replace(/\.\w+$/, "");
+			const basename = ctx
+				.split("/")
+				.pop()
+				?.replace(/\.\w+$/, "");
 			if (basename && basename.length > 2) keywords.push(basename);
 		}
 
@@ -80,17 +79,28 @@ export class ContextBuilderModule implements SDLCModule<SDLCTask, SDLCTask> {
 		// keyword is already sanitized by extractKeywords()
 		try {
 			if (process.platform === "win32") {
-				const output = execFileSync(
-					"findstr",
-					["/S", "/M", "/I", keyword, "*.ts", "*.js"],
-					{ cwd, timeout: 5000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
-				);
+				const output = execFileSync("findstr", ["/S", "/M", "/I", keyword, "*.ts", "*.js"], {
+					cwd,
+					timeout: 5000,
+					encoding: "utf-8",
+					stdio: ["pipe", "pipe", "pipe"],
+				});
 				return output.trim().split("\n").filter(Boolean).slice(0, limit);
 			}
 
 			const output = execFileSync(
 				"grep",
-				["-rl", `--include=*.ts`, `--include=*.js`, "--exclude-dir=node_modules", "--exclude-dir=dist", "-m", String(limit), keyword, "."],
+				[
+					"-rl",
+					`--include=*.ts`,
+					`--include=*.js`,
+					"--exclude-dir=node_modules",
+					"--exclude-dir=dist",
+					"-m",
+					String(limit),
+					keyword,
+					".",
+				],
 				{ cwd, timeout: 5000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
 			);
 			return output.trim().split("\n").filter(Boolean).slice(0, limit);
