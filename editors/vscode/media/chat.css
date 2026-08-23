@@ -32,17 +32,27 @@ body {
    (11 trên 42 câu trả lời dài). Trần này không tạo ra cấu trúc mà model không
    viết, nhưng nó biến một dòng 850 ký tự thành mấy dòng đọc được.
 
+   92ch chứ không 76ch: 76 quá gắt trong pane rộng — bên phải trống hoác một
+   mảng và mắt thấy khó chịu hơn cả dòng dài. 92 vẫn chặn được dòng 200 ký tự
+   mà không để lại khoảng trắng lộ liễu.
+
    Đơn vị `ch` chứ không phải `px`: nó co giãn theo cỡ chữ người dùng chọn
    trong Settings, nên trần luôn đúng bằng ~76 ký tự bất kể họ để 12px hay 18px.
    Không căn giữa — pane hẹp thì căn giữa làm lề trái nhảy loạn khi kéo rộng. */
 #tin-nhan > * {
-	max-width: 76ch;
+	max-width: 92ch;
 }
 
-/* Khối tự cuộn ngang thì cho tràn trần: cắt chúng theo 76ch chỉ tạo thêm
-   thanh cuộn chứ không giúp đọc. */
-#tin-nhan > .khoi pre.ma,
-#tin-nhan > .diff {
+/* MIỄN TRỪ: khối có BỐ CỤC riêng, không phải văn xuôi.
+   Trần bề ngang giúp đọc chữ, nhưng áp lên một hàng flex thì nó bẻ hàng — đo
+   thật: dãy ô số đo `.so-do` xuống hàng lung tung trong khi bên phải còn trống.
+   Thẻ xin quyền, diff, khối pipeline cũng vậy: chúng tự quản bề ngang. */
+#tin-nhan > .so-do,
+#tin-nhan > .the-quyen,
+#tin-nhan > .diff,
+#tin-nhan > .pipeline,
+#tin-nhan > .chua-kiem-chung,
+#tin-nhan .khoi pre.ma {
 	max-width: none;
 }
 

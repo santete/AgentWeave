@@ -261,7 +261,12 @@ export async function serveCommand(args: ServeArgs): Promise<void> {
 
 	let model = args.model || cauHinh.model || "qwen3-coder:30b";
 	const cheDoQuyen = args.permissionMode ?? cauHinh.permissionMode ?? "default";
-	const maxTurns = args.maxTurns ?? cauHinh.maxTurns ?? 50;
+	// 400 chứ không 50. Năm mươi là con số bịa: một refactor thật dễ dàng cần
+	// hàng trăm lời gọi tool, và cắt giữa chừng bỏ lại mã nửa vời — tệ hơn hẳn
+	// so với chạy lâu. `maxTurns` giờ chỉ là lưới CUỐI cho vòng lặp hỏng; điểm
+	// dừng THẬT là các cơ chế theo tiến triển ở §3: lặp y hệt, gọi liên tiếp,
+	// kiểm hỏng mà đầu ra không đổi.
+	const maxTurns = args.maxTurns ?? cauHinh.maxTurns ?? 400;
 
 	let lichSu: ReadonlyArray<Message> = [];
 

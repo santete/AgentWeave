@@ -471,7 +471,7 @@ function taoCauHinh(
 		model: args.model,
 		tools: boToolMacDinh({ bashTimeoutMs: duAn.bashTimeoutMs }),
 		systemPrompt: cauDan,
-		maxTurns: args.maxTurns ?? 50,
+		maxTurns: args.maxTurns ?? 400,
 		structuredProtocol: duAn.structuredProtocol ?? true,
 		// Cửa sổ THẬT của model. Thiếu dòng này thì AgentLoop suy ra 65.536 cho
 		// mọi model, và model 32K sẽ tràn ngữ cảnh mà không báo gì.

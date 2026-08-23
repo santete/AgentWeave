@@ -59,7 +59,7 @@ export async function runCommand(args: RunCommandArgs): Promise<void> {
 	const options: CreateHarnessOptions = {
 		model: args.model || "qwen3-coder:30b",
 		tools: BUILT_IN_TOOLS,
-		maxTurns: args.maxTurns ?? 50,
+		maxTurns: args.maxTurns ?? 400,
 		permissions: {
 			mode: args.permissionMode ?? "default",
 			rules: [
@@ -148,7 +148,7 @@ function printHeader(args: RunCommandArgs): void {
 	console.log(
 		`  ${C.gray}│${C.reset} Budget:     ${args.budget ? `$${args.budget}` : "unlimited"}`,
 	);
-	console.log(`  ${C.gray}│${C.reset} Max turns:  ${args.maxTurns ?? 50}`);
+	console.log(`  ${C.gray}│${C.reset} Max turns:  ${args.maxTurns ?? 400}`);
 	console.log(
 		`  ${C.gray}│${C.reset} Tools:      ${C.dim}Bash, FileRead, FileWrite, FileEdit, Grep, Glob${C.reset}`,
 	);

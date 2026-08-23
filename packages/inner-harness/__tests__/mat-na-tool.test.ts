@@ -279,8 +279,10 @@ describe("cổng thứ hai — lệnh kiểm còn HỎNG thì không cho dừng"
 				/lenh kiem con HONG/.test(String((e as { reason?: string }).reason)),
 		);
 		expect(chan.length).toBeGreaterThan(0);
-		// Có TRẦN — không được quay vô hạn.
-		expect(chan.length).toBeLessThanOrEqual(4);
+		// Có điểm dừng — nhưng dựa trên KHÔNG CÒN TIẾN TRIỂN, không phải "đã thử
+		// đủ số lần". Ở đây model không chạy lại lệnh kiểm lần nào sau khi bị ép,
+		// nên `EP_MA_KHONG_CHAY_KIEM_TOI_DA` là thứ dừng nó lại.
+		expect(chan.length).toBeLessThanOrEqual(5);
 	});
 
 	it("kiểm ĐẠT → cho dừng ngay, không quấy rầy", async () => {
@@ -294,5 +296,71 @@ describe("cổng thứ hai — lệnh kiểm còn HỎNG thì không cho dừng"
 					/lenh kiem con HONG/.test(String((e as { reason?: string }).reason)),
 			),
 		).toEqual([]);
+	});
+});
+
+describe("cổng ② dừng theo TIẾN TRIỂN, không theo số lần thử", () => {
+	/**
+	 * Đếm lần thử là thước đo sai — một refactor thật có thể cần hai chục vòng.
+	 * Thước đo đúng: đầu ra lệnh kiểm có ĐỔI không.
+	 */
+	function loopKiem(dayKetQua: string[]) {
+		const loop = new AgentLoop({
+			model: "mock",
+			maxTurns: 40,
+			laLenhKiemTra: (c) => /npm test/.test(c),
+		});
+		let i = 0;
+		loop.registerTool({
+			name: "Bash",
+			description: "chay lenh",
+			parameters: z.object({}).passthrough(),
+			execute: async () => dayKetQua[Math.min(i++, dayKetQua.length - 1)],
+			metadata: {
+				isReadOnly: false,
+				isDestructive: false,
+				isConcurrencySafe: false,
+				category: "file",
+			},
+		} as unknown as ToolDefinition);
+		loop.registerTool(toolGia("FileWrite", "Written 10 bytes"));
+		// Model ngoan: lượt nào cũng chạy lệnh kiểm, rồi định kết thúc.
+		let n = 0;
+		loop.setLLMCaller(async () => {
+			n++;
+			return n % 2 === 1
+				? {
+						stopReason: "tool_use",
+						toolCalls: [
+							{ toolUseId: `t${n}`, toolName: "Bash", toolInput: { command: "npm test" } },
+						],
+					}
+				: { text: "xong roi", stopReason: "end_turn" };
+		});
+		return loop;
+	}
+
+	const demChan = (ev: InnerEvent[]) =>
+		ev.filter(
+			(e) =>
+				e.type === "recovery:retry" &&
+				/lenh kiem con HONG/.test(String((e as { reason?: string }).reason)),
+		).length;
+
+	it("đầu ra kiểm CỨ ĐỔI thì cho đi tiếp quá 4 vòng", async () => {
+		// Mỗi lần một lỗi khác = đang gỡ dần. Trần cũ (4) sẽ cắt oan ở đây.
+		const loop = loopKiem(
+			Array.from({ length: 12 }, (_, k) => `[mã thoát 1]\nloi thu ${"x".repeat(k + 1)}`),
+		);
+		const ev: InnerEvent[] = [];
+		for await (const e of loop.run("sua di")) ev.push(e);
+		expect(demChan(ev)).toBeGreaterThan(4);
+	});
+
+	it("đầu ra kiểm Y HỆT NHAU thì dừng sớm", async () => {
+		const loop = loopKiem(["[mã thoát 1]\nloi y het"]);
+		const ev: InnerEvent[] = [];
+		for await (const e of loop.run("sua di")) ev.push(e);
+		expect(demChan(ev)).toBeLessThanOrEqual(5);
 	});
 });

@@ -251,13 +251,26 @@ const MAT_NA_CHAY = ["Bash", "FileRead"];
 // lặp lại y nguyên bài răn ở mọi lần sau đó, nên "loop biến thể" nghiền hết
 // 50 lượt mà không gì dừng được nó.
 /**
- * Số nhịp ép sửa khi lệnh kiểm còn HỎNG.
+ * Dừng ép sửa khi lệnh kiểm hỏng ngần này lần LIÊN TIẾP với đầu ra Y HỆT NHAU.
  *
- * Bốn: đủ để model thử vài hướng, chưa tới mức một model không đủ sức sửa phải
- * quay mười phút rồi mới chịu dừng. Đây là trần, và trần thì luôn là lời thú
- * nhận — ta ép được vài nhịp, không ép được mãi.
+ * KHÔNG phải trần số lần thử. Đếm lần thử là thước đo sai: một refactor thật
+ * có thể cần hai chục vòng, và chặn ở lần thứ tư là con số bịa ra không liên
+ * quan gì tới mục tiêu. Miễn đầu ra lệnh kiểm còn ĐỔI thì agent còn đang gỡ
+ * dần — cho đi tiếp, bao nhiêu vòng cũng được.
+ *
+ * Ba lần ra y hệt một lỗi mới là giậm chân. Vẫn phải có điểm dừng: một vòng
+ * lặp hỏng chạy vô hạn trên máy không ai trông là hại thật.
  */
-const EP_SUA_CHO_DAT = 4;
+const KIEM_HONG_GIONG_HET_TOI_DA = 3;
+
+/**
+ * Dừng khi cổng ② nổ ngần này lần mà model KHÔNG chạy lại lệnh kiểm.
+ *
+ * Thiếu điều kiện này thì chỉ cần model phớt lời "chạy lại lệnh kiểm" là bộ
+ * đếm giậm-chân đứng im mãi và vòng lặp chạy tới `maxTurns`. Không chạy lại
+ * phép đo cũng là một dạng không tiến triển.
+ */
+const EP_MA_KHONG_CHAY_KIEM_TOI_DA = 3;
 
 /**
  * Lệnh cấm `respond` bám bao nhiêu lượt trước khi tự hạ.
@@ -366,6 +379,26 @@ export class AgentLoop implements InnerHarnessProvider {
 	private kiemTraGanNhatDat: boolean | null = null;
 	/** Số lần đã chặn kết thúc vì lệnh kiểm còn HỎNG. */
 	private soLanEpSuaChoDat = 0;
+	/**
+	 * Dấu vân tay của lần kiểm HỎNG gần nhất — thứ quyết định dừng hay đi tiếp.
+	 *
+	 * Thay cho một con số đếm lần thử. Đếm lần thử là thước đo SAI: một refactor
+	 * thật có thể cần hai chục vòng, chặn ở lần thứ tư là con số bịa ra không
+	 * liên quan gì tới mục tiêu. Thước đo đúng là TIẾN TRIỂN — đầu ra lệnh kiểm
+	 * có đổi không.
+	 */
+	private dauKiemHongTruoc: string | null = null;
+	/** Số lần kiểm hỏng LIÊN TIẾP với đầu ra y hệt nhau. */
+	private soLanKiemHongGiongHet = 0;
+	/**
+	 * Số lần cổng ② nổ mà model KHÔNG chạy lại lệnh kiểm.
+	 *
+	 * Điều kiện dừng thứ hai, bắt buộc phải có: nếu chỉ đo "đầu ra kiểm có đổi
+	 * không" thì một model không thèm chạy lại lệnh kiểm sẽ khiến bộ đếm đứng im
+	 * mãi và vòng lặp chạy tới `maxTurns`. Không chạy lại phép đo cũng là một
+	 * dạng không tiến triển.
+	 */
+	private soLanEpMaKhongChayKiem = 0;
 	/**
 	 * File bị sửa SAU khi cổng ② nổ.
 	 *
@@ -1097,9 +1130,11 @@ export class AgentLoop implements InnerHarnessProvider {
 				if (
 					this.laLenhKiemTra !== undefined &&
 					this.kiemTraGanNhatDat === false &&
-					this.soLanEpSuaChoDat < EP_SUA_CHO_DAT
+					this.soLanKiemHongGiongHet < KIEM_HONG_GIONG_HET_TOI_DA &&
+					this.soLanEpMaKhongChayKiem < EP_MA_KHONG_CHAY_KIEM_TOI_DA
 				) {
 					this.soLanEpSuaChoDat++;
+					this.soLanEpMaKhongChayKiem++;
 					const mnDat = this.thuHepTool(MAT_NA_TIEN_TRIEN);
 
 					// ── CẤM `respond` TỪ NHỊP 2 — cùng luật với cổng done=false ──
@@ -1114,8 +1149,10 @@ export class AgentLoop implements InnerHarnessProvider {
 					// Bám qua nhiều lượt, chỉ hạ khi có tiến triển thật.
 					if (this.camRespond) this.luotConCamRespond = LUOT_CAM_RESPOND;
 
-					this.vetGuard("kiem-con-hong", this.soLanEpSuaChoDat, EP_SUA_CHO_DAT, mnDat, {
+					this.vetGuard("kiem-con-hong", this.soLanEpSuaChoDat, 0, mnDat, {
 						camRespond: this.camRespond,
+						giongHet: `${this.soLanKiemHongGiongHet}/${KIEM_HONG_GIONG_HET_TOI_DA}`,
+						khongChayKiem: `${this.soLanEpMaKhongChayKiem}/${EP_MA_KHONG_CHAY_KIEM_TOI_DA}`,
 					});
 					if (vanBanCuoi) this.messages.appendAssistant(vanBanCuoi);
 					this.bomNhacGuard(
@@ -1132,11 +1169,12 @@ export class AgentLoop implements InnerHarnessProvider {
 								? "\n\nTalking is no longer an option this turn — the respond action has been " +
 									"REMOVED from your choices. Call a tool."
 								: "") +
-							` (attempt ${this.soLanEpSuaChoDat}/${EP_SUA_CHO_DAT})`,
+							` (attempt ${this.soLanEpSuaChoDat} — this keeps going as long as the failure ` +
+							`output keeps CHANGING; it stops only when you produce the same failure repeatedly)`,
 					);
 					yield this.makeEvent({
 						type: "recovery:retry",
-						reason: `lenh kiem con HONG — ep sua tiep (${this.soLanEpSuaChoDat}/${EP_SUA_CHO_DAT})${mnDat}${this.camRespond ? " — CAM respond" : ""}`,
+						reason: `lenh kiem con HONG — ep sua tiep (lan ${this.soLanEpSuaChoDat}, giong het ${this.soLanKiemHongGiongHet}/${KIEM_HONG_GIONG_HET_TOI_DA})${mnDat}${this.camRespond ? " — CAM respond" : ""}`,
 						attempt: this.state.turnIndex,
 					});
 					continue;
@@ -1351,7 +1389,7 @@ export class AgentLoop implements InnerHarnessProvider {
 						),
 					)
 				) {
-					this.vetGuard("khoa-ghi-file-kiem", this.soLanEpSuaChoDat, EP_SUA_CHO_DAT, "", {
+					this.vetGuard("khoa-ghi-file-kiem", this.soLanEpSuaChoDat, 0, "", {
 						tool: tc.toolName,
 					});
 					yield* this.chanLoiGoi(
@@ -1598,12 +1636,26 @@ export class AgentLoop implements InnerHarnessProvider {
 							if (typeof lenh === "string" && this.laLenhKiemTra(lenh)) {
 								this.daChayKiemTra = true;
 								this.luotConCamRespond = 0; // chạy được lệnh kiểm cũng là tiến triển
+								this.soLanEpMaKhongChayKiem = 0;
 								// Mã thoát ≠ 0 thì `bash.ts` mở đầu kết quả bằng
 								// `[mã thoát N]` — tín hiệu đạt/hỏng đã nằm sẵn trong
 								// vòng lặp, không cần host báo xuống.
 								const ra = typeof result.result === "string" ? result.result : "";
 								this.kiemTraGanNhatDat =
 									!ra.startsWith(DAU_MA_THOAT) && !ra.startsWith(DAU_BI_GIET);
+								if (this.kiemTraGanNhatDat) {
+									this.dauKiemHongTruoc = null;
+									this.soLanKiemHongGiongHet = 0;
+								} else {
+									// Chuẩn hoá nhẹ trước khi so: bỏ chữ số và đường dẫn tuyệt
+									// đối. Thời gian build và thư mục tạm đổi mỗi lần chạy mà
+									// không nói lên tiến triển nào — so thô sẽ thấy "khác" mãi
+									// và vòng lặp không bao giờ dừng.
+									const dau = ra.replace(/\d+/g, "#").replace(/\/\S+/g, "/P").slice(0, 4000);
+									this.soLanKiemHongGiongHet =
+										dau === this.dauKiemHongTruoc ? this.soLanKiemHongGiongHet + 1 : 0;
+									this.dauKiemHongTruoc = dau;
+								}
 							}
 						}
 						// Tín hiệu kích hoạt rule/skill có điều kiện. Ghi cả lệnh ĐỌC:
