@@ -232,3 +232,67 @@ describe("gọi liên tiếp cùng một tool", () => {
 		expect(matNaDaAp(ev)).toContain("Bash");
 	});
 });
+
+describe("cổng thứ hai — lệnh kiểm còn HỎNG thì không cho dừng", () => {
+	/**
+	 * Cổng cũ chỉ hỏi "đã kiểm chưa" — một boolean. Model chạy `dotnet build`
+	 * MỘT lần, dù mã thoát 1, là nó thoả mãn vĩnh viễn. Đo thật qua 4 phiên:
+	 * 28 lượt kết thúc, 25 lượt KHÔNG sửa file nào, cả 28 đều ghi `completed`.
+	 */
+	function dungLoop(ketQuaKiem: string) {
+		const loop = new AgentLoop({
+			model: "mock",
+			maxTurns: 14,
+			laLenhKiemTra: (c) => /npm test/.test(c),
+		});
+		loop.registerTool(toolGia("FileWrite", "Written 10 bytes"));
+		loop.registerTool(toolGia("Bash", ketQuaKiem));
+		let n = 0;
+		loop.setLLMCaller(async () => {
+			n++;
+			if (n === 1)
+				return {
+					stopReason: "tool_use",
+					toolCalls: [
+						{ toolUseId: "t1", toolName: "FileWrite", toolInput: { path: "a.js", content: "x" } },
+					],
+				};
+			if (n === 2)
+				return {
+					stopReason: "tool_use",
+					toolCalls: [{ toolUseId: "t2", toolName: "Bash", toolInput: { command: "npm test" } }],
+				};
+			// Từ đây model chỉ muốn kết thúc.
+			return { text: "Da xong roi nhe.", stopReason: "end_turn" };
+		});
+		return loop;
+	}
+
+	it("kiểm HỎNG (mã thoát ≠ 0) → chặn và ép sửa tiếp", async () => {
+		const loop = dungLoop("[mã thoát 1]\n1 test failed");
+		const ev: InnerEvent[] = [];
+		for await (const e of loop.run("sua di")) ev.push(e);
+
+		const chan = ev.filter(
+			(e) =>
+				e.type === "recovery:retry" &&
+				/lenh kiem con HONG/.test(String((e as { reason?: string }).reason)),
+		);
+		expect(chan.length).toBeGreaterThan(0);
+		// Có TRẦN — không được quay vô hạn.
+		expect(chan.length).toBeLessThanOrEqual(4);
+	});
+
+	it("kiểm ĐẠT → cho dừng ngay, không quấy rầy", async () => {
+		const loop = dungLoop("1 passed");
+		const ev: InnerEvent[] = [];
+		for await (const e of loop.run("sua di")) ev.push(e);
+		expect(
+			ev.filter(
+				(e) =>
+					e.type === "recovery:retry" &&
+					/lenh kiem con HONG/.test(String((e as { reason?: string }).reason)),
+			),
+		).toEqual([]);
+	});
+});

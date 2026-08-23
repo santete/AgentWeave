@@ -13,7 +13,7 @@
 
 ## Đợt 2026-08-23 — nhánh `feat/product-grade`
 
-Mười một commit, chia làm ba nhóm: đại tu hệ điều khiển theo
+Mười hai commit, chia làm ba nhóm: đại tu hệ điều khiển theo
 `RA-SOAT-DIEU-KHIEN.md`, dựng tầng vết tích, rồi sửa những lỗi mà chính vết
 tích phơi ra khi chạy thật trên một solution .NET.
 
@@ -32,6 +32,7 @@ tích phơi ra khi chạy thật trên một solution .NET.
 | `887b19b` | Cổng chất lượng "đạt" mà không kiểm gì | §13 |
 | `6133bec` | `.sln` phải CÓ project mới tính là phép kiểm | §13 |
 | `6e4b4e9` | Agent trong pipeline chạy với system prompt RỖNG | §13 |
+| `ca534a7` | Cổng kiểm chứng ②: kiểm HỎNG thì không cho dừng | §3 |
 
 ---
 
@@ -172,6 +173,24 @@ Bài học ghi thẳng vào §12: kiểm tầng hiển thị trước khi đổ 
 
 Cổng vẫn báo `dat=False` — build còn hỏng thật. Đó là báo cáo trung thực, không
 phải thất bại của bản vá.
+
+---
+
+## 12 · `ca534a7` — cổng kiểm chứng ② — *nó có ĐẠT không?*
+
+| Thay đổi | § | Phải kiểm lại nếu đụng |
+|---|---|---|
+| Cổng mới: lệnh kiểm đã chạy và HỎNG → chặn kết thúc, ép sửa tiếp, trần 4 nhịp | §3 | Cổng ① chỉ là boolean "đã chạy chưa" — model chạy một lần dù hỏng là thoả mãn vĩnh viễn |
+| Tín hiệu đạt/hỏng lấy từ tiền tố `[mã thoát N]` của `bash.ts` | §3 §6 | Đổi định dạng output của Bash thì cổng ② mù. `DAU_MA_THOAT`/`DAU_BI_GIET` là hợp đồng giữa hai module |
+| Ghi file thành công → xoá kết cục kiểm cũ | §3 | Sửa xong rồi thì kết quả kiểm trước không còn nói gì về mã hiện tại |
+
+**Số liệu thúc đẩy thay đổi:** 4 phiên, 28 lượt kết thúc — **25 lượt không sửa
+file nào**, và **cả 28 đều ghi `completed`**.
+
+**Giới hạn, nói thẳng:** trần 4 nhịp là lời thú nhận. Không có phương án nào
+cho "chạy tới khi hoàn thiện" theo nghĩa tuyệt đối — mọi vòng lặp đều phải có
+trần. Thay đổi thật nằm ở chỗ trần dựa trên cái gì: "model tự nhận xong" (cũ)
+hay "lệnh kiểm xanh, hoặc 4 lần thử" (nay).
 
 ---
 

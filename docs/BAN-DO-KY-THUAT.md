@@ -139,7 +139,8 @@ LOI (9 luật + FORMATTING)          luôn có
 | 1 | Bắt "tuyên bố rồi dừng" | không tool call + khớp mẫu hứa hẹn + chưa có tiến triển gần đây | 4 lần | `{Write,Edit,Bash,Read}` | 768 |
 | 2 | Bắt "trả lời vẹt" | lặp nguyên văn câu trả lời cũ | 1 lần | — | 724 |
 | 3 | Model tự khai chưa xong | `done=false` trong envelope (chỉ có ở structured) | 3 lần, hết nhịp → **cắt, reason `loop`** | nhịp 1 `{Write,Edit,Bash,Read}`, từ nhịp 2 thêm **BỎ `respond` khỏi enum** | 739 |
-| 4 | **Cổng kiểm chứng** | đã sửa file mà chưa chạy lệnh kiểm nào | 2 nhịp | nhịp 1 `{Write,Edit,Bash,Read}` → nhịp 2 **`{Bash,Read}`** | 797 |
+| 4a | **Cổng kiểm chứng ①** — *đã kiểm chưa?* | đã sửa file mà chưa chạy lệnh kiểm nào | 2 nhịp | nhịp 1 `{Write,Edit,Bash,Read}` → nhịp 2 **`{Bash,Read}`** | 797 |
+| 4b | **Cổng kiểm chứng ②** — *nó có ĐẠT không?* | lệnh kiểm đã chạy và **HỎNG** | 4 nhịp | `{Write,Edit,Bash,Read}` | 1004 |
 | 5 | Ngân sách trinh sát | 6 lệnh đọc liên tiếp không ghi gì | tái kích mỗi 6 | `{Write,Edit,Read}` | 888 |
 | 6 | Lặp Y HỆT (tool+tham số) | cùng tool, cùng tham số — **trừ lệnh kiểm chứng** | nhắc lần 3, **cắt phiên** lần 5 | `{Write,Edit,Bash,Read}` | 943 |
 | 7 | Gọi LIÊN TIẾP cùng tool | cùng tên tool, tham số đổi vặt | nhắc 4 → cảnh cuối 6 → **cắt 8** | ghi→`{Bash,Read}`, đọc→`{Write,Edit,Bash,Read}` | 987 |
@@ -172,6 +173,18 @@ tự thì #6 không bao giờ leo tới ngưỡng đó — đã vấp đúng l�
 - **Không được ghi `completed` khi model nói chưa xong.** Đó là nói dối trong
   chính số liệu của mình: người dùng đọc `turn_end` thấy xanh rồi tin là xong.
   Hết nhịp mà vẫn `done=false` → cắt với `reason: "loop"` kèm lỗi nói rõ.
+- **Hai cổng kiểm chứng là HAI câu hỏi khác nhau.** ① hỏi *"anh đã kiểm chưa"*
+  và nó là một boolean: model chạy `dotnet build` MỘT lần, dù mã thoát 1, là
+  thoả mãn vĩnh viễn. ② hỏi *"nó có đạt không"* — đây là **tiêu chí khách quan
+  duy nhất về 'xong' mà chat có**, và là chỗ chat gần pipeline nhất. Đo trước
+  khi thêm ②: 28 lượt kết thúc, 25 lượt KHÔNG sửa file nào, cả 28 ghi
+  `completed`. Tín hiệu đạt/hỏng lấy từ tiền tố `[mã thoát N]` của `bash.ts`,
+  không cần host báo xuống. Ghi file thành công thì xoá kết cục cũ — sửa xong
+  rồi thì kết quả kiểm trước không còn nói gì về mã hiện tại.
+- **Trần của ② là lời thú nhận, không phải thiếu sót.** Model không đủ sức sửa
+  thì vòng lặp PHẢI thoát; không có phương án nào cho "chạy tới khi hoàn thiện"
+  theo nghĩa tuyệt đối. Câu hỏi thật là trần dựa trên cái gì — "model tự nhận
+  xong" (bản cũ) hay "lệnh kiểm xanh, hoặc 4 lần thử" (nay).
 - **Ngưỡng phải LEO THANG, không nổ phẳng.** #7 từng lặp lại y nguyên bài răn
   ở lần 4, 6, 7, 8, 9 rồi hết lượt: model phớt ở lần 4 thì lần 7 cũng thế, mà
   mỗi lần lặp là một khối chữ nữa chiếm chỗ trong cửa sổ.

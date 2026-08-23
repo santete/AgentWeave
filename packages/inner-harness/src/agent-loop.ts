@@ -39,6 +39,7 @@ import { LOAI_DIEM_CHAM, createEmptyContextUsage, createEmptyTokenUsage } from "
 import type { ContextUsage, TokenUsage } from "@agentweave/types";
 import { nanoid } from "nanoid";
 import { type NguonNhac, bocNhacHeThong, nhacGuard, thuNhac } from "./attachments/index";
+import { DAU_BI_GIET, DAU_MA_THOAT } from "./built-in-tools/bash";
 import { chuanHoaCapTool } from "./cap-tool";
 import {
 	CAC_MUC_NEN,
@@ -249,6 +250,15 @@ const MAT_NA_CHAY = ["Bash", "FileRead"];
 // Ba mốc chứ không một: chặn → cảnh cuối → dừng. Bản trước chỉ có mốc đầu và
 // lặp lại y nguyên bài răn ở mọi lần sau đó, nên "loop biến thể" nghiền hết
 // 50 lượt mà không gì dừng được nó.
+/**
+ * Số nhịp ép sửa khi lệnh kiểm còn HỎNG.
+ *
+ * Bốn: đủ để model thử vài hướng, chưa tới mức một model không đủ sức sửa phải
+ * quay mười phút rồi mới chịu dừng. Đây là trần, và trần thì luôn là lời thú
+ * nhận — ta ép được vài nhịp, không ép được mãi.
+ */
+const EP_SUA_CHO_DAT = 4;
+
 const NHAC_LIEN_TIEP = 4;
 const CANH_CUOI_LIEN_TIEP = 6;
 const CAT_LIEN_TIEP = 8;
@@ -312,6 +322,17 @@ export class AgentLoop implements InnerHarnessProvider {
 	private laLenhKiemTra?: (command: string) => boolean;
 	/** Đã có LỆNH kiểm chứng nào chạy xong trong phiên chưa. */
 	private daChayKiemTra = false;
+	/**
+	 * Lệnh kiểm chứng GẦN NHẤT đạt hay hỏng. `null` = chưa chạy lần nào.
+	 *
+	 * Trước đây chỉ có `daChayKiemTra` — một boolean "đã chạy hay chưa". Nên
+	 * model chạy `dotnet build` MỘT lần, dù mã thoát 1, là cổng thoả mãn vĩnh
+	 * viễn. Chat có cổng "anh đã kiểm chưa?" nhưng KHÔNG có cổng "nó có đạt
+	 * không?" — mà đó mới là câu hỏi đáng giá.
+	 */
+	private kiemTraGanNhatDat: boolean | null = null;
+	/** Số lần đã chặn kết thúc vì lệnh kiểm còn HỎNG. */
+	private soLanEpSuaChoDat = 0;
 	/** Số lần đã chặn kết thúc vì chưa kiểm chứng. */
 	private soLanEpKiemTra = 0;
 	private soLanEpTiepTuc = 0;
@@ -998,6 +1019,46 @@ export class AgentLoop implements InnerHarnessProvider {
 					continue;
 				}
 
+				// ── CỔNG THỨ HAI: kiểm đã chạy nhưng HỎNG ──
+				//
+				// Cổng phía trên chỉ hỏi "anh đã kiểm chưa" — một boolean. Model chạy
+				// `dotnet build` MỘT lần, dù mã thoát 1, là nó thoả mãn vĩnh viễn và
+				// không bao giờ nổ nữa. Đo thật qua 4 phiên: 28 lượt kết thúc, 25 lượt
+				// KHÔNG sửa file nào, và cả 28 đều ghi `completed`.
+				//
+				// Đây là chỗ duy nhất trong chat có TIÊU CHÍ KHÁCH QUAN về "xong":
+				// lệnh kiểm của chính dự án nói đạt hay hỏng. Pipeline dừng khi cổng
+				// xanh; chat trước nay dừng khi model tự nhận xong. Cổng này kéo hai
+				// thứ đó gần lại.
+				//
+				// VẪN CÓ TRẦN, và bắt buộc phải có: model không đủ sức sửa thì vòng
+				// lặp phải thoát, nếu không là đốt token vô hạn. Trần ở đây là lời
+				// thú nhận thẳng thắn — ta ép được vài nhịp, không ép được mãi.
+				if (
+					this.laLenhKiemTra !== undefined &&
+					this.kiemTraGanNhatDat === false &&
+					this.soLanEpSuaChoDat < EP_SUA_CHO_DAT
+				) {
+					this.soLanEpSuaChoDat++;
+					const mnDat = this.thuHepTool(MAT_NA_TIEN_TRIEN);
+					this.vetGuard("kiem-con-hong", this.soLanEpSuaChoDat, EP_SUA_CHO_DAT, mnDat);
+					if (vanBanCuoi) this.messages.appendAssistant(vanBanCuoi);
+					this.bomNhacGuard(
+						`The project's check command RAN and FAILED. The work is NOT done — a red check ` +
+							`is the one fact that overrides anything you believe about your own changes.\n\n` +
+							`Read the failure output above, fix the actual cause, then run the SAME check ` +
+							`command again. Do not re-explain the problem, do not propose a plan, do not ask ` +
+							`the user to run it — change the code and re-run. ` +
+							`(attempt ${this.soLanEpSuaChoDat}/${EP_SUA_CHO_DAT})`,
+					);
+					yield this.makeEvent({
+						type: "recovery:retry",
+						reason: `lenh kiem con HONG — ep sua tiep (${this.soLanEpSuaChoDat}/${EP_SUA_CHO_DAT})${mnDat}`,
+						attempt: this.state.turnIndex,
+					});
+					continue;
+				}
+
 				// Terminal: LLM did not request any tools
 				if (llmResult.text) {
 					// Model cục bộ đôi khi nhả TRỌN câu trả lời cuối dưới dạng JSON
@@ -1345,6 +1406,9 @@ export class AgentLoop implements InnerHarnessProvider {
 									this.demGoiTrung.delete(k);
 							this.soDocTuKhiViet = 0; // viết = tiến triển, cấp lại ngân sách đọc
 							this.nacRepeatPenalty = 0; // hết lặp thì trả sampler về nền
+							// Vừa sửa file thì kết cục kiểm CŨ không còn nói gì về mã
+							// hiện tại — phải chạy lại mới biết.
+							this.kiemTraGanNhatDat = null;
 							this.luotGhiCuoi = this.state.turnIndex;
 							const vao = goiGoc.toolInput as Record<string, unknown>;
 							const p = vao.path ?? vao.file ?? vao.file_path ?? vao.filename;
@@ -1388,6 +1452,12 @@ export class AgentLoop implements InnerHarnessProvider {
 							const lenh = (goiGoc.toolInput as Record<string, unknown>).command;
 							if (typeof lenh === "string" && this.laLenhKiemTra(lenh)) {
 								this.daChayKiemTra = true;
+								// Mã thoát ≠ 0 thì `bash.ts` mở đầu kết quả bằng
+								// `[mã thoát N]` — tín hiệu đạt/hỏng đã nằm sẵn trong
+								// vòng lặp, không cần host báo xuống.
+								const ra = typeof result.result === "string" ? result.result : "";
+								this.kiemTraGanNhatDat =
+									!ra.startsWith(DAU_MA_THOAT) && !ra.startsWith(DAU_BI_GIET);
 							}
 						}
 						// Tín hiệu kích hoạt rule/skill có điều kiện. Ghi cả lệnh ĐỌC:
