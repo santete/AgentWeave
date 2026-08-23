@@ -37,7 +37,7 @@ tích phơi ra khi chạy thật trên một solution .NET.
 | `6133bec` | `.sln` phải CÓ project mới tính là phép kiểm | §13 |
 | `6e4b4e9` | Agent trong pipeline chạy với system prompt RỖNG | §13 |
 | `5aa1bd4` | Cổng kiểm chứng ②: kiểm HỎNG thì không cho dừng | §3 |
-| `b6bc2d6` | Cổng ② tạo cám dỗ gian lận — cấm sửa bài kiểm | §3 |
+| `b6bc2d6` | Cổng ② để ngỏ đường sửa bài kiểm — cảnh báo | §3 |
 | `6fe6624` | Cổng ② quên cấm `respond` — bịt một bên bỏ bên kia | §3 |
 
 ---
@@ -193,9 +193,11 @@ phải thất bại của bản vá.
 **Số liệu thúc đẩy thay đổi:** 4 phiên, 28 lượt kết thúc — **25 lượt không sửa
 file nào**, và **cả 28 đều ghi `completed`**.
 
-**Tác dụng phụ phát hiện khi chạy thử — và bản vá kèm:** ép "cho cổng xanh"
-tạo cám dỗ làm xanh CÁI CỔNG thay vì sửa CÁI MÃ. Ngay lần chạy đầu, model xoá
-`process.exit(1)` khỏi bài kiểm rồi báo đạt. Nên ② cấm thẳng việc sửa bài kiểm,
+**Sơ hở thiết kế phát hiện khi chạy thử — và bản vá kèm:** cổng ② ra mục tiêu
+"cho lệnh kiểm xanh" nhưng vẫn để ngỏ quyền ghi lên chính file mà lệnh kiểm
+đọc. Con đường ngắn nhất tới mục tiêu đó là sửa bài kiểm, và ngay lần chạy đầu
+`process.exit(1)` biến mất khỏi bài kiểm. **Đây là lỗi của tầng điều khiển,
+không phải mưu mẹo của model** — bất kỳ bộ tối ưu nào cũng đi đường ngắn nhất. Nên ② cấm thẳng việc sửa bài kiểm,
 và cảnh báo khi file kiểm bị đụng sau lúc ② nổ. Bộ nhận diện file kiểm viết
 thành hàm có test riêng — bản regex đầu tiên bỏ lọt `test.js` trần ở gốc nên
 cảnh báo im lặng đúng lúc cần nhất.

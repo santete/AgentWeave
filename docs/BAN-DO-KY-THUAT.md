@@ -181,12 +181,18 @@ tự thì #6 không bao giờ leo tới ngưỡng đó — đã vấp đúng l�
   `completed`. Tín hiệu đạt/hỏng lấy từ tiền tố `[mã thoát N]` của `bash.ts`,
   không cần host báo xuống. Ghi file thành công thì xoá kết cục cũ — sửa xong
   rồi thì kết quả kiểm trước không còn nói gì về mã hiện tại.
-- **Cổng ② tạo ra cám dỗ GIAN LẬN, phải chặn kèm.** Ép "cho cổng xanh" thì
-  model có thể làm xanh CÁI CỔNG thay vì sửa CÁI MÃ — đo được ngay lần chạy
-  thử đầu tiên: nó xoá `process.exit(1)` khỏi bài kiểm rồi báo đạt. Nên lời
-  răn của ② cấm thẳng việc sửa bài kiểm, và mọi file kiểm bị đụng SAU khi ②
-  nổ đều sinh cảnh báo lúc kết thúc. Không chặn cứng — đôi khi bài kiểm sai
-  thật — nhưng người dùng phải thấy, vì dấu xanh sau đó không còn nghĩa gì.
+- **Đặt mục tiêu mà không thu hẹp đường tới nó là sơ hở của THIẾT KẾ.** Cổng ②
+  ra mục tiêu "cho lệnh kiểm xanh" nhưng vẫn để ngỏ quyền ghi lên chính file mà
+  lệnh kiểm đọc — con đường ngắn nhất tới mục tiêu đó là sửa bài kiểm, và bất
+  kỳ bộ tối ưu nào cũng đi đường ngắn nhất. Đo thật ngay lần chạy đầu:
+  `process.exit(1)` biến mất khỏi bài kiểm, cổng xanh.
+
+  Đã thử cấm bằng LỜI RĂN trong câu nhắc: **không ăn**, lượt sau vẫn sửa. Nên
+  phải GỠ KHẢ NĂNG — `khoa-ghi-file-kiem` chặn FileWrite/FileEdit lên file kiểm
+  trong lúc cổng ② đang ép. Chỉ khoá lúc ép, không khoá vĩnh viễn: đôi khi bài
+  kiểm sai thật, và một câu hỏi mới của người dùng là cổng hạ xuống. Cảnh báo
+  lúc kết thúc giữ lại làm lưới cuối cho các đường vòng khoá không phủ (sửa
+  bằng Bash, đổi lệnh kiểm).
 - **Trần của ② là lời thú nhận, không phải thiếu sót.** Model không đủ sức sửa
   thì vòng lặp PHẢI thoát; không có phương án nào cho "chạy tới khi hoàn thiện"
   theo nghĩa tuyệt đối. Câu hỏi thật là trần dựa trên cái gì — "model tự nhận

@@ -270,7 +270,7 @@ const TEN_KIEM = new Set(["test", "tests", "spec", "specs", "__tests__", "__test
  * trong những tên phổ biến nhất — và cảnh báo im lặng đúng lúc cần nhất.
  *
  * Cân về phía NHẬN NHẦM: cảnh báo thừa thì người đọc gạt đi trong hai giây;
- * bỏ sót thì một lần gian lận đi qua và người dùng tin vào một dấu xanh rỗng.
+ * bỏ sót thì một lần làm-xanh-cổng đi qua và người dùng tin vào một dấu xanh rỗng.
  */
 export function laFileKiem(duong: string): boolean {
 	const phan = duong.split(/[\\/]/).filter(Boolean);
@@ -361,10 +361,12 @@ export class AgentLoop implements InnerHarnessProvider {
 	/**
 	 * File bị sửa SAU khi cổng ② nổ.
 	 *
-	 * Ép "cho cổng xanh" tạo ra một cám dỗ có thật: làm xanh CÁI CỔNG thay vì
-	 * sửa CÁI MÃ. Đo thật ngay lần chạy thử đầu tiên — model xoá
-	 * `process.exit(1)` khỏi bài kiểm rồi báo đạt. Không chặn cứng (đôi khi bài
-	 * kiểm sai thật), nhưng phải nói to.
+	 * Đặt mục tiêu "cho cổng xanh" mà vẫn để ngỏ quyền ghi lên chính file mà
+	 * lệnh kiểm đọc thì con đường NGẮN NHẤT tới mục tiêu là sửa bài kiểm. Đo
+	 * thật ngay lần chạy đầu: `process.exit(1)` biến mất khỏi bài kiểm, cổng
+	 * xanh. Đó là sơ hở của thiết kế, không phải mưu mẹo của model — bất kỳ bộ
+	 * tối ưu nào cũng đi đường ngắn nhất. Không chặn cứng ở đây (đôi khi bài
+	 * kiểm sai thật) nhưng phải nói to; việc chặn nằm ở `khoa-ghi-file-kiem`.
 	 */
 	private fileSuaSauKhiKiemHong = new Set<string>();
 	/** Số lần đã chặn kết thúc vì chưa kiểm chứng. */
@@ -1131,11 +1133,10 @@ export class AgentLoop implements InnerHarnessProvider {
 					});
 				}
 
-				// ── Cảnh báo GIAN LẬN CỔNG ──
-				// Sửa chính bài kiểm sau khi bị ép cho cổng xanh là cách rẻ nhất để
-				// thoả mãn cơ chế mà không làm việc. Không chặn cứng — đôi khi bài
-				// kiểm sai thật — nhưng người dùng phải thấy, vì dấu xanh sau đó
-				// không còn nghĩa gì.
+				// ── Cảnh báo: cổng xanh nhờ SỬA CHÍNH BÀI KIỂM ──
+				// Lưới cuối, sau `khoa-ghi-file-kiem`. Bắt các đường vòng mà khoá
+				// không phủ: sửa bài kiểm bằng Bash, đổi lệnh kiểm, sửa lúc cổng ②
+				// chưa nổ. Dấu xanh sau một thay đổi như vậy không còn nghĩa gì.
 				const nghiGianLan = [...this.fileSuaSauKhiKiemHong].filter(laFileKiem);
 				if (nghiGianLan.length > 0) {
 					yield this.makeEvent({
@@ -1300,6 +1301,49 @@ export class AgentLoop implements InnerHarnessProvider {
 				//
 				// Đếm theo TÊN tool, đặt lại khi có tool khác chen vào — nên vòng
 				// đọc-sửa-chạy xen kẽ bình thường không bao giờ bị chặn nhầm.
+				// ── KHOÁ GHI LÊN FILE KIỂM khi cổng ② đang ép ──
+				//
+				// Cổng ② đặt mục tiêu "cho lệnh kiểm xanh" rồi vẫn để ngỏ quyền ghi
+				// lên chính file mà lệnh kiểm đọc. Con đường ngắn nhất tới mục tiêu
+				// đó là sửa bài kiểm — không phải mưu mẹo của model, mà là sơ hở của
+				// thiết kế: bất kỳ bộ tối ưu nào cũng đi đường ngắn nhất.
+				//
+				// Đã thử cấm bằng LỜI RĂN trong câu nhắc và nó KHÔNG ăn — model vẫn
+				// sửa `test.js` ngay lượt sau. Nên gỡ hẳn khả năng thay vì xin.
+				//
+				// Chỉ khoá TRONG LÚC ép, không khoá vĩnh viễn: đôi khi bài kiểm sai
+				// thật và phải sửa. Người dùng hỏi lại một câu mới là cổng hạ xuống.
+				if (
+					this.soLanEpSuaChoDat > 0 &&
+					LA_TOOL_GHI.has(tc.toolName) &&
+					laFileKiem(
+						String(
+							(tc.toolInput as Record<string, unknown>).path ??
+								(tc.toolInput as Record<string, unknown>).file ??
+								(tc.toolInput as Record<string, unknown>).file_path ??
+								"",
+						),
+					)
+				) {
+					this.vetGuard("khoa-ghi-file-kiem", this.soLanEpSuaChoDat, EP_SUA_CHO_DAT, "", {
+						tool: tc.toolName,
+					});
+					yield* this.chanLoiGoi(
+						tc.toolUseId,
+						`${tc.toolName} was blocked: writing to the check file while the check is red.`,
+						"You may not modify the test or the check while you are being asked to make it " +
+							"pass — that would make the check green by weakening it, which destroys the " +
+							"only signal anyone has. Fix the SOURCE code instead. If you are convinced the " +
+							"test itself is wrong, stop and say exactly why; do not rewrite it.",
+					);
+					yield this.makeEvent({
+						type: "recovery:retry",
+						reason: `khoa ghi len file kiem trong luc ep sua (${tc.toolName})`,
+						attempt: this.state.turnIndex,
+					});
+					continue;
+				}
+
 				if (this.soToolLienTiep >= NHAC_LIEN_TIEP) {
 					const n = this.soToolLienTiep;
 
