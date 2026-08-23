@@ -139,6 +139,14 @@ Bài học ghi thẳng vào §12: kiểm tầng hiển thị trước khi đổ 
 |---|---|---|
 | Lệnh đoán TRỎ ĐÚNG vào file dự án | §13 | `dotnet build` trần chạy ở gốc workspace in "0 Error(s)" và trả **exit 0** trong 0,15s — cổng xanh trong khi build thật hỏng |
 | `coCongKiem`: không nói "ĐẠT" khi không có phép kiểm nào | §13 | Một phép kiểm không kiểm gì mà vẫn xanh biến cả cơ chế cổng chất lượng thành trang trí |
+| **`.sln` phải CÓ `Project(` bên trong** (vá bổ sung `f4a1c62`) | §13 | Trỏ vào đúng loại file vẫn CHƯA ĐỦ. Đo thật: dự án có hai `.sln` — một cái ở gốc **rỗng** (0 project, 441 byte) build xanh 0,15s, một cái thật 3 project build hỏng `MSB4006`. Bản vá "trỏ vào .sln" vẫn chọn nhầm cái rỗng |
+
+**Kiểm hai chiều trên dự án .NET thật** (bản sao, vì dự án gốc không phải git repo):
+
+| Lệnh kiểm | Kết quả |
+|---|---|
+| `dotnet build "HelpdeskSolution.sln"` (sln rỗng) | `dat=True` — vẫn nói dối |
+| `dotnet build "HelpdeskSolution/HelpdeskSolution.sln.sln"` (3 project) | **`dat=False` · thửLại=1** |
 
 ---
 

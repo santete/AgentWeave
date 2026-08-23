@@ -61,7 +61,28 @@ export function activate(ctx: vscode.ExtensionContext): void {
 					const p = r[0]!.fsPath;
 					return p.startsWith(goc) ? p.slice(goc.length + 1) : p;
 				};
-				const sln = await tim("**/*.sln");
+				// .sln phải CÓ PROJECT bên trong mới tính.
+				//
+				// Đo thật: dự án nọ có hai file .sln — một cái ở gốc RỖNG (0 project,
+				// 441 byte) và một cái thật với 3 project. `dotnet build` trên cái
+				// rỗng in "0 Error(s)" và trả mã thoát 0 trong 0,15 giây, trong khi
+				// build thật hỏng `MSB4006: circular dependency`. Trỏ vào file .sln
+				// vẫn chưa đủ — phải trỏ vào file .sln CÓ NỘI DUNG.
+				const slnCoProject = async (): Promise<string | null> => {
+					const ds = await vscode.workspace.findFiles("**/*.sln", "**/node_modules/**", 20);
+					for (const u of ds) {
+						try {
+							const noi = Buffer.from(await vscode.workspace.fs.readFile(u)).toString("utf-8");
+							if (/^Project\(/m.test(noi)) {
+								return u.fsPath.startsWith(goc) ? u.fsPath.slice(goc.length + 1) : u.fsPath;
+							}
+						} catch {
+							// không đọc được thì bỏ qua, thử file kế tiếp
+						}
+					}
+					return null;
+				};
+				const sln = await slnCoProject();
 				if (sln) return `dotnet build "${sln}"`;
 				const csproj = await tim("**/*.csproj");
 				if (csproj) return `dotnet build "${csproj}"`;
