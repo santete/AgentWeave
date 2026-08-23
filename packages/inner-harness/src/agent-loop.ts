@@ -259,6 +259,31 @@ const MAT_NA_CHAY = ["Bash", "FileRead"];
  */
 const EP_SUA_CHO_DAT = 4;
 
+/** Tên thư mục hoặc tên file (bỏ đuôi) đủ để coi là thuộc bài kiểm. */
+const TEN_KIEM = new Set(["test", "tests", "spec", "specs", "__tests__", "__test__"]);
+
+/**
+ * File này có THUỘC VỀ bài kiểm không.
+ *
+ * Viết thành hàm chứ không một regex khổng lồ: đã vấp đúng vì regex. Bản đầu
+ * chỉ bắt `tests/…` và `*.test.js`, nên bỏ lọt `test.js` trần ở gốc — một
+ * trong những tên phổ biến nhất — và cảnh báo im lặng đúng lúc cần nhất.
+ *
+ * Cân về phía NHẬN NHẦM: cảnh báo thừa thì người đọc gạt đi trong hai giây;
+ * bỏ sót thì một lần gian lận đi qua và người dùng tin vào một dấu xanh rỗng.
+ */
+export function laFileKiem(duong: string): boolean {
+	const phan = duong.split(/[\\/]/).filter(Boolean);
+	// Bất kỳ THƯ MỤC nào trên đường dẫn mang tên kiểm.
+	if (phan.slice(0, -1).some((t) => TEN_KIEM.has(t.toLowerCase()))) return true;
+
+	const ten = phan[phan.length - 1] ?? "";
+	const goc = ten.replace(/\.[^.]+$/, "").toLowerCase();
+	if (TEN_KIEM.has(goc)) return true;
+	// `foo.test.ts`, `foo.spec.js`, và quy ước .NET `FooTests.cs`.
+	return /\.(test|spec)\./i.test(ten) || /tests?\.cs$/i.test(ten);
+}
+
 const NHAC_LIEN_TIEP = 4;
 const CANH_CUOI_LIEN_TIEP = 6;
 const CAT_LIEN_TIEP = 8;
@@ -333,6 +358,15 @@ export class AgentLoop implements InnerHarnessProvider {
 	private kiemTraGanNhatDat: boolean | null = null;
 	/** Số lần đã chặn kết thúc vì lệnh kiểm còn HỎNG. */
 	private soLanEpSuaChoDat = 0;
+	/**
+	 * File bị sửa SAU khi cổng ② nổ.
+	 *
+	 * Ép "cho cổng xanh" tạo ra một cám dỗ có thật: làm xanh CÁI CỔNG thay vì
+	 * sửa CÁI MÃ. Đo thật ngay lần chạy thử đầu tiên — model xoá
+	 * `process.exit(1)` khỏi bài kiểm rồi báo đạt. Không chặn cứng (đôi khi bài
+	 * kiểm sai thật), nhưng phải nói to.
+	 */
+	private fileSuaSauKhiKiemHong = new Set<string>();
 	/** Số lần đã chặn kết thúc vì chưa kiểm chứng. */
 	private soLanEpKiemTra = 0;
 	private soLanEpTiepTuc = 0;
@@ -1048,7 +1082,11 @@ export class AgentLoop implements InnerHarnessProvider {
 							`is the one fact that overrides anything you believe about your own changes.\n\n` +
 							`Read the failure output above, fix the actual cause, then run the SAME check ` +
 							`command again. Do not re-explain the problem, do not propose a plan, do not ask ` +
-							`the user to run it — change the code and re-run. ` +
+							`the user to run it — change the code and re-run.\n\n` +
+							`Do NOT edit the test or the check itself to make it pass. Making the check ` +
+							`green by weakening the check is worse than leaving it red, because it destroys ` +
+							`the only signal anyone has. If you genuinely believe the test is wrong, say so ` +
+							`plainly and stop — do not silently rewrite it. ` +
 							`(attempt ${this.soLanEpSuaChoDat}/${EP_SUA_CHO_DAT})`,
 					);
 					yield this.makeEvent({
@@ -1073,6 +1111,23 @@ export class AgentLoop implements InnerHarnessProvider {
 					yield this.makeEvent({
 						type: "message:assistant",
 						content: [{ type: "text", text: llmResult.text }],
+					});
+				}
+
+				// ── Cảnh báo GIAN LẬN CỔNG ──
+				// Sửa chính bài kiểm sau khi bị ép cho cổng xanh là cách rẻ nhất để
+				// thoả mãn cơ chế mà không làm việc. Không chặn cứng — đôi khi bài
+				// kiểm sai thật — nhưng người dùng phải thấy, vì dấu xanh sau đó
+				// không còn nghĩa gì.
+				const nghiGianLan = [...this.fileSuaSauKhiKiemHong].filter(laFileKiem);
+				if (nghiGianLan.length > 0) {
+					yield this.makeEvent({
+						type: "error",
+						error:
+							`CANH BAO: sau khi lenh kiem bao HONG, agent da sua chinh file kiem — ` +
+							`${nghiGianLan.join(", ")}. Cong xanh sau do CO THE do bai kiem bi lam yeu di, ` +
+							`khong phai do ma nguon da dung. Hay xem diff cua nhung file nay truoc khi tin.`,
+						recoverable: true,
 					});
 				}
 
@@ -1414,6 +1469,7 @@ export class AgentLoop implements InnerHarnessProvider {
 							const p = vao.path ?? vao.file ?? vao.file_path ?? vao.filename;
 							if (typeof p === "string") {
 								this.fileDaSua.add(p);
+								if (this.soLanEpSuaChoDat > 0) this.fileSuaSauKhiKiemHong.add(p);
 								// Trục "làm ĐÚNG hay SAI" — thứ mà mọi cơ chế ghì khác bỏ
 								// trống: chúng đo nhịp điệu của agent, không nhìn thứ nó vừa
 								// ghi ra. Vài chục mili-giây, không bao giờ ném.

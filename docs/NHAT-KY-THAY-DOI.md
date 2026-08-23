@@ -191,6 +191,16 @@ phải thất bại của bản vá.
 **Số liệu thúc đẩy thay đổi:** 4 phiên, 28 lượt kết thúc — **25 lượt không sửa
 file nào**, và **cả 28 đều ghi `completed`**.
 
+**Tác dụng phụ phát hiện khi chạy thử — và bản vá kèm:** ép "cho cổng xanh"
+tạo cám dỗ làm xanh CÁI CỔNG thay vì sửa CÁI MÃ. Ngay lần chạy đầu, model xoá
+`process.exit(1)` khỏi bài kiểm rồi báo đạt. Nên ② cấm thẳng việc sửa bài kiểm,
+và cảnh báo khi file kiểm bị đụng sau lúc ② nổ. Bộ nhận diện file kiểm viết
+thành hàm có test riêng — bản regex đầu tiên bỏ lọt `test.js` trần ở gốc nên
+cảnh báo im lặng đúng lúc cần nhất.
+
+Chạy lại sau bản vá: cổng nổ đủ 4 nhịp, model KHÔNG đụng bài kiểm, kết thúc
+trung thực `ketCuc=hong`.
+
 **Giới hạn, nói thẳng:** trần 4 nhịp là lời thú nhận. Không có phương án nào
 cho "chạy tới khi hoàn thiện" theo nghĩa tuyệt đối — mọi vòng lặp đều phải có
 trần. Thay đổi thật nằm ở chỗ trần dựa trên cái gì: "model tự nhận xong" (cũ)
