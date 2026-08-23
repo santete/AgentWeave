@@ -8,6 +8,10 @@
 > Trước khi chỉnh bất cứ dòng nào ở đây, đọc cột đó trước.
 >
 > Quy ước: một mục = một commit. Số § trỏ tới `BAN-DO-KY-THUAT.md`.
+>
+> **Hash điền ở commit SAU, không điền trước.** Một commit không thể chứa hash
+> của chính nó, và `--amend` thì đổi hash thêm lần nữa. Đã mắc lỗi này ba lần
+> trong một buổi: để trống rồi bổ sung, đừng điền một chuỗi trông giống hash.
 
 ---
 
@@ -32,7 +36,7 @@ tích phơi ra khi chạy thật trên một solution .NET.
 | `887b19b` | Cổng chất lượng "đạt" mà không kiểm gì | §13 |
 | `6133bec` | `.sln` phải CÓ project mới tính là phép kiểm | §13 |
 | `6e4b4e9` | Agent trong pipeline chạy với system prompt RỖNG | §13 |
-| `ca534a7` | Cổng kiểm chứng ②: kiểm HỎNG thì không cho dừng | §3 |
+| `5aa1bd4` | Cổng kiểm chứng ②: kiểm HỎNG thì không cho dừng | §3 |
 
 ---
 
@@ -176,7 +180,7 @@ phải thất bại của bản vá.
 
 ---
 
-## 12 · `ca534a7` — cổng kiểm chứng ② — *nó có ĐẠT không?*
+## 12 · `5aa1bd4` — cổng kiểm chứng ② — *nó có ĐẠT không?*
 
 | Thay đổi | § | Phải kiểm lại nếu đụng |
 |---|---|---|
