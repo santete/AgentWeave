@@ -2,15 +2,17 @@
  * 'run' command — Execute an agent with full governance visibility.
  */
 
-import { createHarness } from "@agentweave/sdk";
 import { BUILT_IN_TOOLS } from "@agentweave/inner-harness";
-import { AGENTWEAVE_VERSION } from "@agentweave/types";
+import { createHarness } from "@agentweave/sdk";
 import type { CreateHarnessOptions, InnerEvent } from "@agentweave/sdk";
-import { redactSecrets, terminalAskPrompt } from "../lib/terminal-ask.js";
-import { napTriThuc } from "../lib/nap-tri-thuc";
-import { dungCoLap } from "../lib/co-lap";
+import { AGENTWEAVE_VERSION, LOAI_DIEM_CHAM } from "@agentweave/types";
 import { docCauHinhAgent } from "../lib/agent-config";
+import { dungCoLap } from "../lib/co-lap";
 import { LUAT_NGUY_HIEM } from "../lib/luat-nguy-hiem.js";
+import { napTriThuc } from "../lib/nap-tri-thuc";
+import { taoIdPhien } from "../lib/session-store.js";
+import { redactSecrets, terminalAskPrompt } from "../lib/terminal-ask.js";
+import { GhiVetTichTep, batVetTich } from "../lib/vet-tich-tep.js";
 
 export interface RunCommandArgs {
 	prompt: string;
@@ -95,7 +97,24 @@ export async function runCommand(args: RunCommandArgs): Promise<void> {
 	}
 	if (coLap.thongBao) console.error(`🔒 ${coLap.thongBao}`);
 
-	const harness = createHarness({ ...options, processSandbox: coLap.binding });
+	// Vết tích cho cả `run` nữa: đây là đường chạy một phát dùng trong script và
+	// CI, đúng chỗ không có ai ngồi nhìn màn hình — nên khi nó hỏng thì tệp vết
+	// tích là thứ DUY NHẤT còn lại để mổ xẻ.
+	const vetTich = batVetTich(cauHinhDuAn.vetTich)
+		? new GhiVetTichTep({
+				goc: process.cwd(),
+				phien: taoIdPhien(new Date()),
+				nhatKy: (m) => console.error(`⚠ ${m}`),
+			})
+		: undefined;
+	vetTich?.ghi({
+		tang: "user",
+		loai: LOAI_DIEM_CHAM.USER_CAU_HOI,
+		chiTiet: { kyTu: args.prompt.length, lenh: "run" },
+		noiDungLon: { "cau-hoi.txt": args.prompt },
+	});
+
+	const harness = createHarness({ ...options, processSandbox: coLap.binding, vetTich });
 
 	// Rule, skill và bộ nhớ của dự án. Thiếu bước này thì `agentweave run` chạy
 	// với một agent KHÔNG biết quy ước nào của dự án — khác hẳn `chat` và `serve`

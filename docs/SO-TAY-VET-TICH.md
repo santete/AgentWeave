@@ -3,13 +3,17 @@
 > Dùng khi agent cho ra kết quả vô lý và ta cần biết **vì sao**, chứ không phải
 > đoán. Chi tiết cơ chế nằm ở §14 `BAN-DO-KY-THUAT.md`; đây là quy trình dùng.
 
-## 0. Bật
+## 0. Bật — không cần làm gì
 
-Đã bật sẵn cho repo này (`.agentweave/agent.json` → `"vetTich": true`).
-Tắt bằng cách đổi thành `false` hoặc xoá tệp. Ép bật ở nơi khác:
-`AGENTWEAVE_TRACE=1`.
+**Vết tích BẬT MẶC ĐỊNH** cho mọi dự án, ở cả ba đường vào (`chat`, `serve`,
+`run`). Đây là lựa chọn có chủ đích cho giai đoạn sản phẩm còn chạy chưa ổn
+định.
 
-Vết tích ghi vào `.agentweave/vet-tich/<phien>/` — đã nằm trong `.gitignore`.
+Tắt khi cần: `"vetTich": false` trong `.agentweave/agent.json`, hoặc
+`AGENTWEAVE_TRACE=0`.
+
+Ghi vào `.agentweave/vet-tich/<phien>/` (đã nằm trong `.gitignore`), giữ **20
+phiên gần nhất** rồi tự dọn.
 
 ## 1. Vì sao cần nó
 
@@ -100,11 +104,23 @@ Một lượt hiện đủ cả năm tầng. Ba câu hỏi:
 
 - **Đường stream ghi ĐẦU VÀO của AI SDK**, không phải JSON cuối trên dây — SDK
   tự dựng phần đó. Đủ để đối chiếu, nhưng không phải bytes tuyệt đối. Đường có
-  ràng buộc (mặc định) thì ghi đúng thân request.
+  ràng buộc (mặc định của `chat`/`serve`) thì ghi đúng thân request.
+- **`tongKyTu` ở đường stream ĐẾM THIẾU.** Nó chỉ tính system prompt cộng lịch
+  sử; schema của các tool do AI SDK ghép thêm thì không. Đo thật: 1.206 ký tự
+  ghi nhận nhưng Ollama báo 1.759 token vào — phần chênh gần như toàn là schema
+  của 7 tool. Muốn con số đúng thì so `tokenVao` ở `llm:nhan`, đó là số Ollama
+  tự đếm. Đường có ràng buộc không có vấn đề này vì tool nằm ngay trong thân
+  request đã ghi.
+  **`agentweave run` chạy đường stream** (không đặt `structuredProtocol`), còn
+  `chat`/`serve` mặc định đi đường có ràng buộc.
 - **Không ghi nội dung file mà tool đọc được** ngoài phần đã nằm trong kết quả
   tool. Muốn xem model đọc thấy gì thì xem `tool:xong` → `ket-qua.txt`.
 - **Tốn đĩa.** Một phiên dài vài chục MB, phần lớn là bản sao chuỗi prompt qua
-  từng lượt. Xoá cả thư mục phiên là an toàn, không gì phụ thuộc vào nó.
+  từng lượt. Giữ 20 phiên gần nhất rồi tự dọn; xoá tay cả thư mục cũng an toàn,
+  không gì phụ thuộc vào nó.
+- **Pipeline SDLC chưa nối.** Nó là đường chạy riêng (§13 bản đồ), gọi
+  `AgentLoop` qua `execution-bridge` mà không đi qua `chat`/`serve`/`run` — nên
+  `agentweave pipeline run` hiện KHÔNG sinh vết tích.
 - **Bộ đếm và vết tích đều theo MỘT CÂU** người dùng, không phải cả buổi —
   `chat`/`serve` dựng harness mới mỗi câu (§3 bản đồ). Bộ ghi thì giữ nguyên
   một thư mục cho cả buổi, nên chỗ nối giữa các câu vẫn đọc liền mạch được.

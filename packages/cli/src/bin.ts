@@ -74,8 +74,9 @@ function printHelp(): void {
       agentweave vet-tich --xem 42           do NGUYEN VEN payload diem cham #42
       --phien <id>                           chon phien cu the
 
-      Bat bang "vetTich": true trong .agentweave/agent.json, hoac
-      AGENTWEAVE_TRACE=1. Ghi vao .agentweave/vet-tich/<phien>/.
+      BAT MAC DINH (giai doan chay chua on dinh). Ghi vao
+      .agentweave/vet-tich/<phien>/, giu 20 phien gan nhat roi tu don.
+      Tat bang "vetTich": false trong agent.json, hoac AGENTWEAVE_TRACE=0.
 
   AUDIT (inspect guard decisions written to .agentweave/audit.log):
     agentweave audit view [options]                  Table view (default: last 50)

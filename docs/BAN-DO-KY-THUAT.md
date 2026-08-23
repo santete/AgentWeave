@@ -305,6 +305,7 @@ Nhưng nó mở mọi thứ khác — đó là lý do sandbox tồn tại (§8).
 | `bashTimeoutMs` | 600.000 | tool Bash |
 | `temperature` `topP` `repeatPenalty` `seed` | **không gửi** | bộ sinh — xem dưới |
 | `maxDurationMs` | **không có trần** | phanh thời gian — xem dưới |
+| `vetTich` | **true** | ghi vết tích §14 — bật mặc định giai đoạn này |
 | `orgSkillsDir` `orgRulesDir` | env · null | tri thức tầng tổ chức |
 | `visionModel` | tự dò | lượt có ảnh |
 
@@ -556,14 +557,25 @@ Chính vì thiếu mảnh thứ ba mà `RA-SOAT-DIEU-KHIEN.md` phải chặn ở
 mới phát hiện được lỗi tầng 0 (model mù về hành động của chính nó). Việc đó
 đáng lẽ phải đọc được từ một tệp.
 
-### Bật
+### Bật — MẶC ĐỊNH BẬT
 
 ```
-.agentweave/agent.json → "vetTich": true        (theo dự án)
-AGENTWEAVE_TRACE=1                              (ép, tiện cho script bọc)
+(không cần khai gì)                             bật sẵn cho MỌI dự án
+.agentweave/agent.json → "vetTich": false       tắt theo dự án
+AGENTWEAVE_TRACE=0                              tắt, ép, tiện cho script bọc
 ```
 
-Mặc định TẮT. Bật thì mỗi phiên sinh `.agentweave/vet-tich/<phien>/`.
+Bật mặc định là lựa chọn **có chủ đích cho giai đoạn sản phẩm còn chạy chưa ổn
+định**: một lần agent hỏng mà không tái hiện được là một buổi phải chạy lại,
+đắt hơn nhiều so với chỗ đĩa. Khi sản phẩm ổn định thì đảo lại trong
+`cli/src/lib/vet-tich-tep.ts` → `batVetTich` (`cauHinh !== false` → `=== true`).
+
+Áp cho cả ba đường vào: `chat`, `serve`, `run`. Pipeline SDLC (§13) **chưa**
+nối — nó là đường chạy riêng.
+
+Mỗi phiên sinh `.agentweave/vet-tich/<phien>/`; **giữ 20 phiên gần nhất** rồi
+tự dọn, cùng con số với `sessions/`. Không dọn thì đĩa Jetson đầy dần trong im
+lặng — kiểu hỏng tệ nhất vì nó không báo gì cho tới lúc mọi thứ cùng hỏng.
 
 ### Ba luật bất biến
 
@@ -598,6 +610,12 @@ Mặc định TẮT. Bật thì mỗi phiên sinh `.agentweave/vet-tich/<phien>/
 Hai nhãn `llm:*` là lý do cả mục này tồn tại. Chúng ghi **nguyên vẹn**, không
 cắt: một chuỗi bị cắt thì không đối chiếu được với thứ model trả lời, mà đối
 chiếu đúng chỗ đó mới là cách tìm ra ngữ cảnh trôi.
+
+**Hai đường ghi không tương đương.** Đường có ràng buộc ghi đúng thân request
+gửi Ollama. Đường stream chỉ ghi được ĐẦU VÀO của AI SDK — schema tool do SDK
+ghép thêm nằm ngoài, nên `tongKyTu` đếm thiếu (đo thật: 1.206 ký tự ghi nhận
+so với 1.759 token Ollama báo). Khi cần con số đúng thì lấy `tokenVao` ở
+`llm:nhan`. `chat`/`serve` mặc định đi đường có ràng buộc; `run` đi stream.
 
 ### Hình dạng trên đĩa
 

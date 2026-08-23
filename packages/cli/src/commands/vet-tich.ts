@@ -154,7 +154,10 @@ export async function chayVetTich(args: VetTichArgs, goc = process.cwd()): Promi
 		}
 		if (ten.length === 0) {
 			console.log(`\n  ${C.yellow}Chưa có vết tích nào.${C.reset}`);
-			console.log(`  ${C.dim}Bật bằng "vetTich": true trong .agentweave/agent.json${C.reset}\n`);
+			console.log(
+				`  ${C.dim}Vết tích BẬT MẶC ĐỊNH — chưa có nghĩa là chưa chạy lượt nào,${C.reset}`,
+			);
+			console.log(`  ${C.dim}hoặc đã tắt bằng "vetTich": false / AGENTWEAVE_TRACE=0.${C.reset}\n`);
 			return 0;
 		}
 		console.log("");
@@ -166,7 +169,8 @@ export async function chayVetTich(args: VetTichArgs, goc = process.cwd()): Promi
 	const phien = args.phien ?? (await phienMoiNhat(goc));
 	if (!phien) {
 		console.log(`\n  ${C.yellow}Chưa có vết tích nào ở ${THU_MUC}.${C.reset}`);
-		console.log(`  ${C.dim}Bật bằng "vetTich": true trong .agentweave/agent.json${C.reset}\n`);
+		console.log(`  ${C.dim}Vết tích BẬT MẶC ĐỊNH — chưa có nghĩa là chưa chạy lượt nào,${C.reset}`);
+		console.log(`  ${C.dim}hoặc đã tắt bằng "vetTich": false / AGENTWEAVE_TRACE=0.${C.reset}\n`);
 		return 1;
 	}
 

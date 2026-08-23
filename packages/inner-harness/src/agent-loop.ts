@@ -1445,11 +1445,31 @@ export class AgentLoop implements InnerHarnessProvider {
 	private async *chayStream(
 		matNa: ReadonlySet<string> | null,
 	): AsyncGenerator<string, LLMCallResult, void> {
+		// Mốc thời gian đặt TRƯỚC mọi thứ có thể ném, để lượt gọi hỏng cũng có số
+		// đo. Hỏng ở giây thứ 0 khác hẳn hỏng sau 90 giây chờ.
+		const batDau = Date.now();
+
 		// Dynamic import — avoids crash if provider SDK not installed
 		const { streamText, tool } = await import("ai");
 
-		// Auto-detect provider from model name
-		const llmModel = await this.resolveModel();
+		// Auto-detect provider from model name.
+		//
+		// Bọc vết tích quanh đây vì bước này ném TRƯỚC mọi điểm chạm khác: model
+		// không phân giải được provider thì lượt chết mà không để lại một dòng
+		// `llm:*` nào — đúng loại sự cố cần soi nhất lại là loại không ghi được.
+		let llmModel: Awaited<ReturnType<typeof this.resolveModel>>;
+		try {
+			llmModel = await this.resolveModel();
+		} catch (e) {
+			this.vet("llm", LOAI_DIEM_CHAM.LLM_HONG, {
+				duong: "stream",
+				giaiDoan: "phan-giai-provider",
+				model: this.model,
+				ms: Date.now() - batDau,
+				loi: e instanceof Error ? e.message : String(e),
+			});
+			throw e;
+		}
 
 		// Mặt nạ ở đường này = LỌC DANH SÁCH TOOL gửi cho model. Không mạnh bằng
 		// enum của format schema (model vẫn có thể nhả tên tool dưới dạng chữ và
@@ -1477,7 +1497,6 @@ export class AgentLoop implements InnerHarnessProvider {
 		// là ĐẦU VÀO của SDK — vẫn đủ để đối chiếu, và là chỗ gần nhất còn thấy
 		// được hình dạng CoreMessage trước khi nó thành JSON trên dây.
 		const tinNhanSdk = mapTinNhanChoSdk(this.messages.getMessages());
-		const batDau = Date.now();
 		this.vet(
 			"llm",
 			LOAI_DIEM_CHAM.LLM_GUI,
@@ -1485,6 +1504,9 @@ export class AgentLoop implements InnerHarnessProvider {
 				duong: "stream",
 				model: this.model,
 				soTinNhan: tinNhanSdk.length,
+				// Cùng đơn vị với đường có ràng buộc để hai đường so được với nhau:
+				// system prompt cộng toàn bộ lịch sử đã tuần tự hoá.
+				tongKyTu: system.length + JSON.stringify(tinNhanSdk).length,
 				toolChoPhep: Object.keys(tools),
 				coMatNa: matNa !== null,
 				// `num_ctx` KHÔNG đi được đường này (endpoint tương thích OpenAI).

@@ -118,14 +118,17 @@ export interface CauHinhAgent {
 	/**
 	 * Ghi VẾT TÍCH: mọi điểm chạm dữ liệu giữa người dùng, agent và model.
 	 *
-	 * Mặc định TẮT. Bật thì mỗi phiên sinh một thư mục
-	 * `.agentweave/vet-tich/<phien>/` chứa dòng thời gian JSONL cộng payload
-	 * NGUYÊN VẸN của từng lượt gọi model — kể cả chuỗi prompt đầy đủ, thứ không
-	 * tồn tại ở bất kỳ tầng log nào khác.
+	 * **MẶC ĐỊNH BẬT** — lựa chọn có chủ đích cho giai đoạn sản phẩm còn chạy
+	 * chưa ổn định. Mỗi phiên sinh `.agentweave/vet-tich/<phien>/` chứa dòng
+	 * thời gian JSONL cộng payload NGUYÊN VẸN của từng lượt gọi model, kể cả
+	 * chuỗi prompt đầy đủ — thứ không tồn tại ở bất kỳ tầng log nào khác.
 	 *
-	 * Tốn đĩa: một phiên dài cỡ vài chục MB. Đổi lại nó là cách duy nhất trả lời
-	 * được "model đã ĐỌC được gì" khi agent cư xử vô lý. Có thể ép bằng biến
-	 * môi trường `AGENTWEAVE_TRACE=1`, tiện khi chạy qua script bọc.
+	 * Tốn đĩa: một phiên dài cỡ vài chục MB, giữ 20 phiên gần nhất rồi tự dọn.
+	 * Đổi lại, một lần agent hỏng mà không tái hiện được là một buổi phải chạy
+	 * lại — đắt hơn nhiều so với chỗ đĩa.
+	 *
+	 * Tắt bằng `false`, hoặc `AGENTWEAVE_TRACE=0`. Khi sản phẩm ổn định thì đảo
+	 * mặc định lại trong `lib/vet-tich-tep.ts` → `batVetTich`.
 	 */
 	vetTich?: boolean;
 }

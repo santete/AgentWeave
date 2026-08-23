@@ -22,7 +22,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BoGhiVetTich, DiemCham } from "@agentweave/types";
 
@@ -38,6 +38,16 @@ const NGUONG_TACH_TEP = 512;
  * dùng bình thường; nó chỉ để một lỗi vòng lặp nào đó không ghi đầy đĩa Jetson.
  */
 const TRAN_MOT_PAYLOAD = 8 * 1024 * 1024;
+
+/**
+ * Giữ tối đa ngần này phiên, cũ hơn thì xoá.
+ *
+ * Bắt buộc phải có kể từ khi vết tích BẬT MẶC ĐỊNH: không dọn thì mỗi buổi làm
+ * việc để lại vài chục MB và đĩa Jetson đầy dần trong im lặng — kiểu hỏng tệ
+ * nhất, vì nó không báo gì cho tới lúc mọi thứ cùng hỏng. Cùng con số và cùng
+ * cách làm với `session-store.ts`, để hai thư mục cạnh nhau không lệch quy tắc.
+ */
+const GIU_TOI_DA_PHIEN = 20;
 
 /** Một dòng trong `vet-tich.jsonl`. */
 export interface DongVetTich {
@@ -86,6 +96,7 @@ export class GhiVetTichTep implements BoGhiVetTich {
 		this.tepJsonl = join(this.thuMuc, "vet-tich.jsonl");
 		try {
 			mkdirSync(this.thuMuc, { recursive: true });
+			donPhienCu(join(tuyChon.goc, THU_MUC));
 		} catch (e) {
 			this.hong(e);
 		}
@@ -161,6 +172,43 @@ export class GhiVetTichTep implements BoGhiVetTich {
 }
 
 /**
+ * Xoá bớt phiên cũ, giữ `GIU_TOI_DA_PHIEN` phiên mới nhất.
+ *
+ * Chạy MỘT lần lúc dựng bộ ghi chứ không chạy sau mỗi dòng: đây là việc quét
+ * thư mục, làm mỗi lần ghi thì tốn hơn chính việc ghi.
+ */
+function donPhienCu(goc: string): void {
+	let ten: string[];
+	try {
+		ten = readdirSync(goc);
+	} catch {
+		return;
+	}
+	if (ten.length <= GIU_TOI_DA_PHIEN) return;
+
+	const theoGio: Array<{ t: string; m: number }> = [];
+	for (const t of ten) {
+		try {
+			theoGio.push({ t, m: statSync(join(goc, t)).mtimeMs });
+		} catch {
+			// thư mục biến mất giữa chừng — bỏ qua
+		}
+	}
+	// Sắp theo mtime, HOÀ thì theo tên. Tiêu chí phụ không thừa: nhiều phiên tạo
+	// trong cùng một mili-giây (chạy loạt, hoặc đĩa có độ phân giải mtime thô)
+	// thì so mtime cho ra thứ tự tuỳ ý và bộ dọn xoá nhầm phiên MỚI. Id phiên
+	// dạng `YYYYMMDD-HHMMSS` nên thứ tự chữ cái đúng bằng thứ tự thời gian.
+	theoGio.sort((a, b) => b.m - a.m || (a.t < b.t ? 1 : a.t > b.t ? -1 : 0));
+	for (const { t } of theoGio.slice(GIU_TOI_DA_PHIEN)) {
+		try {
+			rmSync(join(goc, t), { recursive: true, force: true });
+		} catch {
+			// Dọn hỏng không được làm hỏng việc ghi.
+		}
+	}
+}
+
+/**
  * Bật vết tích không?
  *
  * Ba nguồn, cờ mạnh hơn env, env mạnh hơn cấu hình — cùng thứ tự ưu tiên với
@@ -172,5 +220,10 @@ export function batVetTich(cauHinh: boolean | undefined, co?: boolean): boolean 
 	if (co !== undefined) return co;
 	const env = process.env.AGENTWEAVE_TRACE;
 	if (env !== undefined && env !== "") return env !== "0" && env.toLowerCase() !== "false";
-	return cauHinh === true;
+	// MẶC ĐỊNH BẬT. Chọn có chủ đích cho giai đoạn sản phẩm còn chạy chưa ổn
+	// định: thiếu dữ liệu lúc agent cư xử vô lý đắt hơn nhiều so với tốn đĩa,
+	// và một lần hỏng không tái hiện được là một lần phải chạy lại cả buổi.
+	// Tắt bằng `"vetTich": false` hoặc `AGENTWEAVE_TRACE=0`.
+	// Khi sản phẩm ổn định thì đảo lại thành `cauHinh === true`.
+	return cauHinh !== false;
 }
