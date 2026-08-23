@@ -185,3 +185,7 @@ export {
 	GuardDecisionSchema,
 	GuardConfigSchema,
 } from "./guard";
+
+// Vết tích — ghi nhận mọi điểm chạm dữ liệu (xem vet-tich.ts)
+export type { TangVetTich, DiemCham, BoGhiVetTich } from "./vet-tich";
+export { LOAI_DIEM_CHAM } from "./vet-tich";

@@ -14,6 +14,7 @@ import type {
 	AgentMessage,
 	AgentMessageType,
 	AgentSpawnConfig,
+	BoGhiVetTich,
 	ContentBlock,
 	InnerEvent,
 	InnerState,
@@ -71,6 +72,8 @@ export interface CreateHarnessOptions {
 	structuredProtocol?: boolean;
 	/** Tham số bộ sinh (temperature/topP/repeatPenalty/seed). Xem `ThamSoSinh`. */
 	thamSoSinh?: ThamSoSinh;
+	/** Nơi nhận vết tích mọi điểm chạm dữ liệu. Bỏ trống = không ghi gì. */
+	vetTich?: BoGhiVetTich;
 
 	/** Tools to register */
 	tools?: ToolDefinition[];
@@ -256,6 +259,7 @@ export function createHarness(options: CreateHarnessOptions): HarnessInstance {
 		thinkingEnabled: options.thinkingEnabled,
 		structuredProtocol: options.structuredProtocol,
 		thamSoSinh: options.thamSoSinh,
+		vetTich: options.vetTich,
 		contextWindow: options.contextWindow,
 		processSandbox: options.processSandbox,
 		laLenhKiemTra: options.laLenhKiemTra,

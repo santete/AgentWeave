@@ -12,28 +12,29 @@
  * Reference (demoted):    run, monitor, session   // agent-loop, not production
  */
 
+import type { PolicyLevel, PolicyPaths } from "@agentweave/outer-harness";
 import { AGENTWEAVE_VERSION } from "@agentweave/types";
-import { runCommand } from "./commands/run.js";
+import { auditReplayCommand, auditViewCommand } from "./commands/audit.js";
 import { chatCommand, lietKePhienCommand } from "./commands/chat.js";
-import { serveCommand } from "./commands/serve.js";
-import { monitorCommand, monitorExportCommand, monitorServeCommand } from "./commands/monitor.js";
-import { sessionCommand } from "./commands/session.js";
-import { taskCommand } from "./commands/task.js";
+import { credentialsCommand } from "./commands/credentials.js";
+import { type GuardPhase, runGuard } from "./commands/guard.js";
+import { mcpPrintCommand, mcpStartCommand } from "./commands/mcp.js";
 import { metricsCommand } from "./commands/metrics.js";
-import {
-	pipelineRunCommand,
-	pipelineShowCommand,
-	pipelineAgentsCommand,
-} from "./commands/pipeline.js";
+import { monitorCommand, monitorExportCommand, monitorServeCommand } from "./commands/monitor.js";
+import { pipelineConfigCommand } from "./commands/pipeline-config.js";
 import { pipelineSetupCommand } from "./commands/pipeline-setup.js";
 import { pipelineStatusCommand } from "./commands/pipeline-status.js";
-import { pipelineConfigCommand } from "./commands/pipeline-config.js";
-import { credentialsCommand } from "./commands/credentials.js";
-import { mcpStartCommand, mcpPrintCommand } from "./commands/mcp.js";
-import { runGuard, type GuardPhase } from "./commands/guard.js";
-import { auditReplayCommand, auditViewCommand } from "./commands/audit.js";
-import { policyShowCommand, policyLintCommand } from "./commands/policy.js";
-import type { PolicyLevel, PolicyPaths } from "@agentweave/outer-harness";
+import {
+	pipelineAgentsCommand,
+	pipelineRunCommand,
+	pipelineShowCommand,
+} from "./commands/pipeline.js";
+import { policyLintCommand, policyShowCommand } from "./commands/policy.js";
+import { runCommand } from "./commands/run.js";
+import { serveCommand } from "./commands/serve.js";
+import { sessionCommand } from "./commands/session.js";
+import { taskCommand } from "./commands/task.js";
+import { chayVetTich } from "./commands/vet-tich.js";
 
 const args = process.argv.slice(2);
 
@@ -64,6 +65,17 @@ function printHelp(): void {
       --policy-user <path>     Override user-level file
       --format <table|json>    Output format (default: table)
     agentweave policy lint <file> [--as org|team|user]   Validate a single file
+
+  VET-TICH (doc lai moi diem cham du lieu giua nguoi dung, agent va model):
+      agentweave vet-tich                    dong thoi gian phien moi nhat
+      agentweave vet-tich --danh-sach        liet ke cac phien co vet tich
+      agentweave vet-tich --luot 3           chi luot 3
+      agentweave vet-tich --tang llm         chi ranh gioi goi model
+      agentweave vet-tich --xem 42           do NGUYEN VEN payload diem cham #42
+      --phien <id>                           chon phien cu the
+
+      Bat bang "vetTich": true trong .agentweave/agent.json, hoac
+      AGENTWEAVE_TRACE=1. Ghi vao .agentweave/vet-tich/<phien>/.
 
   AUDIT (inspect guard decisions written to .agentweave/audit.log):
     agentweave audit view [options]                  Table view (default: last 50)
@@ -337,7 +349,7 @@ async function main(): Promise<void> {
 				pipelineShowCommand({
 					checks: checksRaw ? checksRaw.split(",").map((s) => s.trim()) : undefined,
 					retries: getFlag(args, "--retries")
-						? parseInt(getFlag(args, "--retries")!, 10)
+						? Number.parseInt(getFlag(args, "--retries")!, 10)
 						: undefined,
 					agent: getFlag(args, "--agent"),
 				});
@@ -367,7 +379,7 @@ async function main(): Promise<void> {
 					agentArgs: agentArgsRaw ? agentArgsRaw.split(",").map((s) => s.trim()) : undefined,
 					model: getFlag(args, "--model") ?? parsed.model,
 					checks: checksRaw ? checksRaw.split(",").map((s) => s.trim()) : undefined,
-					retries: retriesRaw ? parseInt(retriesRaw, 10) : undefined,
+					retries: retriesRaw ? Number.parseInt(retriesRaw, 10) : undefined,
 					metricsDir: getFlag(args, "--metrics-dir"),
 					policyPaths: collectPolicyPaths(args),
 					noPolicy: hasFlag(args, "--no-policy"),
@@ -393,7 +405,7 @@ async function main(): Promise<void> {
 				agentArgs: agentArgsRaw ? agentArgsRaw.split(",").map((s) => s.trim()) : undefined,
 				model: getFlag(args, "--model") ?? parsed.model,
 				checks: checksRaw ? checksRaw.split(",").map((s) => s.trim()) : undefined,
-				retries: retriesRaw ? parseInt(retriesRaw, 10) : undefined,
+				retries: retriesRaw ? Number.parseInt(retriesRaw, 10) : undefined,
 				plan: hasFlag(args, "--plan"),
 				metricsDir: getFlag(args, "--metrics-dir"),
 			});
@@ -432,6 +444,23 @@ async function main(): Promise<void> {
 			process.exit(code);
 		}
 
+		case "vet-tich": {
+			const soCo = (ten: string): number | undefined => {
+				const v = getFlag(args, ten);
+				if (v === undefined) return undefined;
+				const n = Number.parseInt(v, 10);
+				return Number.isFinite(n) ? n : undefined;
+			};
+			const code = await chayVetTich({
+				phien: getFlag(args, "--phien"),
+				luot: soCo("--luot"),
+				xem: soCo("--xem"),
+				tang: getFlag(args, "--tang"),
+				danhSach: hasFlag(args, "--danh-sach"),
+			});
+			process.exit(code);
+		}
+
 		case "audit": {
 			const auditIdx = args.indexOf("audit");
 			const sub = args[auditIdx + 1];
@@ -445,7 +474,7 @@ async function main(): Promise<void> {
 					since: getFlag(args, "--since"),
 					tool: getFlag(args, "--tool"),
 					decision: getFlag(args, "--decision"),
-					limit: limitRaw ? parseInt(limitRaw, 10) : undefined,
+					limit: limitRaw ? Number.parseInt(limitRaw, 10) : undefined,
 					format,
 					tail: hasFlag(args, "--tail"),
 				});

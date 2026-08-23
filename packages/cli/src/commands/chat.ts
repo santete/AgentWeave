@@ -18,7 +18,7 @@ import {
 } from "@agentweave/inner-harness";
 import { createHarness } from "@agentweave/sdk";
 import type { CreateHarnessOptions, HarnessInstance } from "@agentweave/sdk";
-import { AGENTWEAVE_VERSION } from "@agentweave/types";
+import { AGENTWEAVE_VERSION, LOAI_DIEM_CHAM } from "@agentweave/types";
 import type { InnerEvent, Message } from "@agentweave/types";
 import type { ProcessSandboxBinding } from "@agentweave/types";
 import type { CauHinhAgent, LuatQuyen } from "../lib/agent-config.js";
@@ -41,6 +41,7 @@ import {
 import { doanLenhKiemTra, dungCauDanHeThong } from "../lib/system-prompt.js";
 import { redactSecrets, terminalAskPrompt } from "../lib/terminal-ask.js";
 import { TheoDoiKiemTra, canhBaoKiemTra, laLenhKiemTra } from "../lib/theo-doi-kiem-tra.js";
+import { GhiVetTichTep, batVetTich } from "../lib/vet-tich-tep.js";
 
 export interface ChatCommandArgs {
 	model: string;
@@ -141,6 +142,19 @@ export async function chatCommand(args: ChatCommandArgs): Promise<void> {
 	let soLuot = 0;
 	let idPhien = taoIdPhien(new Date());
 	let tomTat = "";
+
+	// ── Vết tích ──
+	// Đặt tên theo phiên đầu; `resume` đổi `idPhien` nhưng bộ ghi giữ nguyên chỗ
+	// — một buổi mổ xẻ thường trải qua vài lần resume, cắt nhỏ ra thì mất chính
+	// chỗ nối giữa chúng.
+	const vetTich = batVetTich(cauHinh.vetTich)
+		? new GhiVetTichTep({
+				goc,
+				phien: idPhien,
+				nhatKy: (m) => console.log(`  ${C.yellow}⚠ ${m}${C.reset}`),
+			})
+		: undefined;
+	if (vetTich) console.log(`  ${C.dim}vết tích: ${vetTich.duong}${C.reset}`);
 
 	// ── Khôi phục phiên cũ ──
 	if (args.resume) {
@@ -285,7 +299,28 @@ export async function chatCommand(args: ChatCommandArgs): Promise<void> {
 			console.log(`  ${C.yellow}⚠ @${f.duong}: ${f.lyDo}${C.reset}`);
 		}
 
-		const harness = createHarness(taoCauHinh(hieuLuc, cauHinh, cauDan, coLap.binding));
+		// Hai điểm chạm RIÊNG, cố ý: câu người dùng GÕ, và câu host thật sự GỬI
+		// vào agent sau khi chèn nội dung file. Gộp làm một thì mất đúng chỗ cần
+		// soi — phần chữ agent nhận thêm mà người dùng không hề thấy.
+		vetTich?.ghi({
+			tang: "user",
+			loai: LOAI_DIEM_CHAM.USER_CAU_HOI,
+			chiTiet: { kyTu: cau.length, soLuot },
+			noiDungLon: { "cau-hoi.txt": cau },
+		});
+		if (cauDayDu !== cau) {
+			vetTich?.ghi({
+				tang: "host",
+				loai: LOAI_DIEM_CHAM.HOST_CAU_DAY_DU,
+				chiTiet: {
+					kyTu: cauDayDu.length,
+					fileDaChen: daChen,
+					themKyTu: cauDayDu.length - cau.length,
+				},
+				noiDungLon: { "cau-day-du.txt": cauDayDu },
+			});
+		}
+		const harness = createHarness(taoCauHinh(hieuLuc, cauHinh, cauDan, coLap.binding, vetTich));
 		// Rule + skill: rule vô điều kiện và chỉ mục skill vào system prompt, rule
 		// và skill CÓ ĐIỀU KIỆN đăng ký làm nguồn nhắc để chỉ bơm khi model chạm
 		// đúng đường dẫn. Nạp lại mỗi lượt để thứ thêm giữa chừng có hiệu lực ngay.
@@ -324,6 +359,16 @@ export async function chatCommand(args: ChatCommandArgs): Promise<void> {
 			for (;;) {
 				const { value, done } = await gen.next();
 				if (done) {
+					vetTich?.ghi({
+						tang: "host",
+						loai: LOAI_DIEM_CHAM.HOST_CHOT_LUOT,
+						chiTiet: {
+							reason: value.reason,
+							tokenVao: value.usage?.inputTokens,
+							tokenRa: value.usage?.outputTokens,
+							fileDaSua: [...daSua],
+						},
+					});
 					if (value.reason !== "completed") {
 						console.log(`  ${C.yellow}⚠ kết thúc: ${value.reason}${C.reset}`);
 					}
@@ -420,6 +465,7 @@ function taoCauHinh(
 	duAn: CauHinhAgent = {},
 	cauDan = "",
 	processSandbox?: ProcessSandboxBinding,
+	vetTich?: GhiVetTichTep,
 ): CreateHarnessOptions {
 	return {
 		model: args.model,
@@ -439,6 +485,7 @@ function taoCauHinh(
 			seed: duAn.seed,
 		},
 		processSandbox,
+		vetTich,
 		laLenhKiemTra,
 		permissions: {
 			mode: args.permissionMode ?? "default",

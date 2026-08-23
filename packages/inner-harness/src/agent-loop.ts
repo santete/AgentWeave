@@ -19,6 +19,7 @@
 
 import { isAbsolute, resolve } from "node:path";
 import type {
+	BoGhiVetTich,
 	ContentBlock,
 	ControlPlane,
 	InjectableMessage,
@@ -34,7 +35,7 @@ import type {
 	ToolDecision,
 	ToolDefinition,
 } from "@agentweave/types";
-import { createEmptyContextUsage, createEmptyTokenUsage } from "@agentweave/types";
+import { LOAI_DIEM_CHAM, createEmptyContextUsage, createEmptyTokenUsage } from "@agentweave/types";
 import type { ContextUsage, TokenUsage } from "@agentweave/types";
 import { nanoid } from "nanoid";
 import { type NguonNhac, bocNhacHeThong, nhacGuard, thuNhac } from "./attachments/index";
@@ -118,6 +119,12 @@ export interface AgentLoopConfig {
 	laLenhKiemTra?: (command: string) => boolean;
 	/** Tham số bộ sinh của model. Xem `ThamSoSinh`. */
 	thamSoSinh?: ThamSoSinh;
+	/**
+	 * Nơi nhận vết tích. Không truyền = không ghi gì, không tốn gì.
+	 *
+	 * CHỈ QUAN SÁT: bật nó lên không được đổi một quyết định nào của vòng lặp.
+	 */
+	vetTich?: BoGhiVetTich;
 }
 
 /**
@@ -311,6 +318,7 @@ export class AgentLoop implements InnerHarnessProvider {
 	 */
 	private matNaTool: ReadonlySet<string> | null = null;
 	private thamSoSinh?: ThamSoSinh;
+	private vetTich?: BoGhiVetTich;
 	/**
 	 * Số nấc đã leo của `repeat_penalty`.
 	 *
@@ -365,6 +373,7 @@ export class AgentLoop implements InnerHarnessProvider {
 		this.processSandbox = config.processSandbox;
 		this.laLenhKiemTra = config.laLenhKiemTra;
 		this.thamSoSinh = config.thamSoSinh;
+		this.vetTich = config.vetTich;
 		this.agentId = `agent_${nanoid(8)}`;
 		this.state.model = this.model;
 		// Cửa sổ ngữ cảnh THẬT của model. Mặc định cũ là 200.000 — cửa sổ của
@@ -542,6 +551,14 @@ export class AgentLoop implements InnerHarnessProvider {
 					};
 					this.state.messageCount = this.messages.getMessageCount();
 
+					this.vet("agent", LOAI_DIEM_CHAM.AGENT_NEN, {
+						muc: this.mucNenHienTai - 1,
+						cach: kq.cach,
+						kyTuBoDi: kq.kyTuBoDi,
+						tinNhanBoDi: truoc - kq.messages.length,
+						doDay: this.state.contextUsage.usedTokens,
+						cuaSo: this.state.contextUsage.maxTokens,
+					});
 					yield this.makeEvent({
 						type: "context:compacted",
 						// ~4 ký tự một token — ước lượng thô, đủ để người vận hành
@@ -601,6 +618,12 @@ export class AgentLoop implements InnerHarnessProvider {
 					for (const n of kqNhac.nhac) if (n.khoa) this.daBomNhac.add(n.khoa);
 					this.messages.append(tinNhac);
 					this.state.messageCount = this.messages.getMessageCount();
+					this.vet(
+						"agent",
+						LOAI_DIEM_CHAM.AGENT_NHAC,
+						{ nguon: "tri-thuc", loai: kqNhac.nhac.map((n) => n.loai) },
+						{ "nhac.txt": tinNhac.content as string },
+					);
 					yield this.makeEvent({
 						type: "context:reminder",
 						loai: kqNhac.nhac.map((n) => n.loai),
@@ -630,6 +653,7 @@ export class AgentLoop implements InnerHarnessProvider {
 			{
 				const kqCap = chuanHoaCapTool(this.messages.getMessages());
 				if (kqCap.daSua) {
+					this.vet("agent", LOAI_DIEM_CHAM.AGENT_CHUAN_HOA_CAP, { sua: kqCap.changes });
 					this.messages.setMessages(kqCap.messages);
 					this.state.messageCount = this.messages.getMessageCount();
 					yield this.makeEvent({
@@ -742,6 +766,14 @@ export class AgentLoop implements InnerHarnessProvider {
 					(tc) => !this.demGoiTrung.has(`${tc.toolName}:${JSON.stringify(tc.toolInput)}`),
 				);
 				const boDiViNhaiLai = cuu.toolCalls.length - cuuThat.length;
+				if (cuu.toolCalls.length > 0) {
+					this.vet("agent", LOAI_DIEM_CHAM.AGENT_CUU_TOOL_CALL, {
+						khuon: cuu.khuon,
+						cuuDuoc: cuu.toolCalls.length,
+						boViNhaiLai: boDiViNhaiLai,
+						tenTool: cuuThat.map((t) => t.toolName),
+					});
+				}
 				if (boDiViNhaiLai > 0) {
 					yield this.makeEvent({
 						type: "recovery:retry",
@@ -791,6 +823,7 @@ export class AgentLoop implements InnerHarnessProvider {
 					chuan(vanBanCuoi) === chuan(this.traLoiTruocDo)
 				) {
 					this.daNhacVet = true;
+					this.vetGuard("tra-loi-vet", 1, 1, "", { chu: vanBanCuoi.slice(0, 400) });
 					this.bomNhacGuard(
 						"You just repeated your PREVIOUS answer word-for-word. That answer was about earlier work and does NOT address the CURRENT request. Re-read the latest user message (and any attached file content above), then do THAT work now — with tools if needed. Do not repeat old text again.",
 					);
@@ -807,6 +840,7 @@ export class AgentLoop implements InnerHarnessProvider {
 					this.soLanEpTiepTuc++;
 					// Lì tới nhịp 2 thì thôi khuyên — thu hẹp lựa chọn còn "làm gì đó".
 					const mnTiep = this.soLanEpTiepTuc >= 2 ? this.thuHepTool(MAT_NA_TIEN_TRIEN) : "";
+					this.vetGuard("tu-khai-chua-xong", this.soLanEpTiepTuc, 3, mnTiep);
 					if (vanBanCuoi) this.messages.appendAssistant(vanBanCuoi);
 					this.bomNhacGuard(
 						"You declared done=false — the request is NOT finished. Do NOT stop, do NOT promise, do NOT ask the user to wait. Call the next tool NOW and keep working until you can honestly respond with done=true.",
@@ -835,6 +869,9 @@ export class AgentLoop implements InnerHarnessProvider {
 				if (this.soLanNhacHanhDong < 4 && chuaCoTienTrien && MAU_TUYEN_BO.test(vanBanCuoi)) {
 					this.soLanNhacHanhDong++;
 					const mnHanhDong = this.thuHepTool(MAT_NA_TIEN_TRIEN);
+					this.vetGuard("tuyen-bo-roi-dung", this.soLanNhacHanhDong, 4, mnHanhDong, {
+						chu: vanBanCuoi.slice(0, 400),
+					});
 					this.messages.appendAssistant(vanBanCuoi);
 					this.bomNhacGuard(NHAC_HANH_DONG);
 					yield this.makeEvent({
@@ -871,6 +908,9 @@ export class AgentLoop implements InnerHarnessProvider {
 					const mnKiem = this.thuHepTool(
 						this.soLanEpKiemTra >= 2 ? MAT_NA_CHAY : MAT_NA_TIEN_TRIEN,
 					);
+					this.vetGuard("cong-kiem-chung", this.soLanEpKiemTra, 2, mnKiem, {
+						fileDaSua: [...this.fileDaSua],
+					});
 					if (vanBanCuoi) this.messages.appendAssistant(vanBanCuoi);
 					this.bomNhacGuard(
 						`You changed ${this.fileDaSua.size} file(s) but have not run ANY check — ` +
@@ -955,6 +995,7 @@ export class AgentLoop implements InnerHarnessProvider {
 				if (this.soDocTuKhiViet >= 6 && tc.toolName !== "FileWrite" && tc.toolName !== "FileEdit") {
 					this.soDocTuKhiViet = 0; // tái kích sau mỗi 6 lệnh đọc chay
 					const mnTrinhSat = this.thuHepTool(MAT_NA_VIET);
+					this.vetGuard("ngan-sach-trinh-sat", 6, 6, mnTrinhSat, { toolBiChan: tc.toolName });
 					// tool_result giữ NGẮN và chỉ nêu SỰ KIỆN. Bản trước nhét cả bài
 					// răn vào đây, mà kết quả này mượn id của một tool nằm trong
 					// `TOOL_NEN_DUOC` nên nén mức 2 cắt còn 80 ký tự — lời cấm đứt
@@ -1017,6 +1058,11 @@ export class AgentLoop implements InnerHarnessProvider {
 					const mnLoop = this.thuHepTool(MAT_NA_TIEN_TRIEN);
 					// Vặn đúng tầng sinh ra cái lặp, không chỉ tiêm thêm chữ.
 					this.nacRepeatPenalty++;
+					this.vetGuard("lap-y-het", soLan, 5, mnLoop, {
+						toolBiChan: tc.toolName,
+						nacRepeatPenalty: this.nacRepeatPenalty,
+						seCatPhien: soLan >= 5,
+					});
 					yield* this.chanLoiGoi(
 						tc.toolUseId,
 						`${tc.toolName} was blocked: identical call already made ${soLan} times.`,
@@ -1077,6 +1123,10 @@ export class AgentLoop implements InnerHarnessProvider {
 					const ghi = LA_TOOL_GHI.has(tc.toolName);
 					const mnLienTiep = this.thuHepTool(ghi ? MAT_NA_CHAY : MAT_NA_TIEN_TRIEN);
 					this.nacRepeatPenalty++;
+					this.vetGuard("goi-lien-tiep", n, CAT_LIEN_TIEP, mnLienTiep, {
+						toolBiChan: tc.toolName,
+						nacRepeatPenalty: this.nacRepeatPenalty,
+					});
 
 					// LEO THANG, không nổ phẳng. Bản trước lặp lại y nguyên bài răn ở
 					// mỗi lần từ 4 trở đi; model đã phớt nó ở lần 4 thì lần 7 cũng thế,
@@ -1119,6 +1169,7 @@ export class AgentLoop implements InnerHarnessProvider {
 				});
 
 				// Permission check via Control Plane
+				const mocXinQuyen = Date.now();
 				const tool = this.registry.get(tc.toolName);
 				const decision: ToolDecision = await this.controlPlane.intercept(
 					"tool_request",
@@ -1132,6 +1183,14 @@ export class AgentLoop implements InnerHarnessProvider {
 					},
 					{ timeoutMs: this.toolRequestTimeoutMs },
 				);
+
+				this.vet("agent", LOAI_DIEM_CHAM.AGENT_QUYEN, {
+					tool: tc.toolName,
+					quyetDinh: decision.behavior,
+					nguon: decision.source,
+					lyDo: decision.reason,
+					msChoQuyetDinh: Date.now() - mocXinQuyen,
+				});
 
 				if (decision.behavior === "deny") {
 					// ── HOÀN LẠI bộ đếm ──
@@ -1188,6 +1247,15 @@ export class AgentLoop implements InnerHarnessProvider {
 					// sai chỗ về sau.
 					let kemTheo = "";
 					if (result.isError) {
+						this.vet(
+							"tool",
+							LOAI_DIEM_CHAM.TOOL_HONG,
+							{
+								tool: permittedCalls.find((c) => c.toolUseId === result.toolUseId)?.toolName,
+								ms: result.durationMs,
+							},
+							{ "ket-qua.txt": String(result.result) },
+						);
 						yield this.makeEvent({
 							type: "tool:failed",
 							toolUseId: result.toolUseId,
@@ -1222,6 +1290,18 @@ export class AgentLoop implements InnerHarnessProvider {
 						} else {
 							this.soDocTuKhiViet++;
 						}
+						this.vet(
+							"tool",
+							LOAI_DIEM_CHAM.TOOL_XONG,
+							{ tool: goiGoc?.toolName, ms: result.durationMs, kiemCuPhap: kemTheo.trim() || null },
+							{
+								"vao.json": JSON.stringify(goiGoc?.toolInput ?? {}, null, 2),
+								"ket-qua.txt":
+									typeof result.result === "string"
+										? result.result
+										: JSON.stringify(result.result, null, 2),
+							},
+						);
 						yield this.makeEvent({
 							type: "tool:completed",
 							toolUseId: result.toolUseId,
@@ -1270,6 +1350,14 @@ export class AgentLoop implements InnerHarnessProvider {
 				if (tin) {
 					this.messages.append(tin);
 					this.state.messageCount = this.messages.getMessageCount();
+					this.vet(
+						"agent",
+						LOAI_DIEM_CHAM.AGENT_NHAC,
+						{ nguon: "guard" },
+						{
+							"nhac.txt": tin.content as string,
+						},
+					);
 					yield this.makeEvent({
 						type: "context:reminder",
 						loai: ["guard"],
@@ -1384,6 +1472,35 @@ export class AgentLoop implements InnerHarnessProvider {
 		// `await Promise.all([...])` bên dưới treo vĩnh viễn. Đã đo: request trả
 		// 400 trong 0,14s nhưng agent treo 200s+ không một dấu hiệu. Bắt qua
 		// onError rồi ném ngay sau vòng chảy, biến cái treo im thành lỗi rõ.
+		// ── ĐIỂM CHẠM: bytes THẬT gửi cho model, đường stream ──
+		// Đường này đi qua AI SDK nên payload cuối cùng do SDK dựng; thứ ghi ở đây
+		// là ĐẦU VÀO của SDK — vẫn đủ để đối chiếu, và là chỗ gần nhất còn thấy
+		// được hình dạng CoreMessage trước khi nó thành JSON trên dây.
+		const tinNhanSdk = mapTinNhanChoSdk(this.messages.getMessages());
+		const batDau = Date.now();
+		this.vet(
+			"llm",
+			LOAI_DIEM_CHAM.LLM_GUI,
+			{
+				duong: "stream",
+				model: this.model,
+				soTinNhan: tinNhanSdk.length,
+				toolChoPhep: Object.keys(tools),
+				coMatNa: matNa !== null,
+				// `num_ctx` KHÔNG đi được đường này (endpoint tương thích OpenAI).
+				thamSoSinh: {
+					temperature: this.thamSoSinh?.temperature,
+					topP: this.thamSoSinh?.topP,
+					seed: this.thamSoSinh?.seed,
+					repeatPenalty: this.repeatPenaltyHieuLuc(),
+				},
+			},
+			{
+				"gui-system.txt": system,
+				"gui-messages.json": JSON.stringify(tinNhanSdk, null, 2),
+			},
+		);
+
 		let loiStream: unknown = null;
 		const result = streamText({
 			model: llmModel,
@@ -1394,9 +1511,7 @@ export class AgentLoop implements InnerHarnessProvider {
 			// Dựng ảnh thành "parts" đa phương thức cho tin nhắn người dùng; phần
 			// còn lại giữ nguyên cách cũ. Kiểu của AI SDK cho content khá lỏng
 			// (chuỗi hoặc mảng part), nên ép qua đây là an toàn.
-			messages: mapTinNhanChoSdk(this.messages.getMessages()) as Parameters<
-				typeof streamText
-			>[0]["messages"],
+			messages: tinNhanSdk as Parameters<typeof streamText>[0]["messages"],
 			tools: tools as Parameters<typeof streamText>[0]["tools"],
 			// Tham số sinh. `num_ctx` KHÔNG có đường đi ở đây: endpoint tương thích
 			// OpenAI của Ollama không nhận nó, cửa sổ do server quyết
@@ -1424,6 +1539,11 @@ export class AgentLoop implements InnerHarnessProvider {
 		}
 
 		if (loiStream !== null) {
+			this.vet("llm", LOAI_DIEM_CHAM.LLM_HONG, {
+				duong: "stream",
+				ms: Date.now() - batDau,
+				loi: String((loiStream as { message?: string })?.message ?? loiStream),
+			});
 			const g = loiStream as { message?: string };
 			throw loiStream instanceof Error
 				? loiStream
@@ -1449,6 +1569,23 @@ export class AgentLoop implements InnerHarnessProvider {
 			toolName: tc.toolName,
 			toolInput: tc.args as Record<string, unknown>,
 		}));
+
+		// ── ĐIỂM CHẠM: model trả về gì, đường stream ──
+		this.vet(
+			"llm",
+			LOAI_DIEM_CHAM.LLM_NHAN,
+			{
+				duong: "stream",
+				ms: Date.now() - batDau,
+				kyTu: text.length,
+				soToolCall: toolCalls.length,
+				tenTool: toolCalls.map((t) => t.toolName),
+				stopReason: finishReason,
+				tokenVao: usage?.promptTokens,
+				tokenRa: usage?.completionTokens,
+			},
+			{ "nhan.txt": text, "nhan-toolcalls.json": JSON.stringify(toolCalls, null, 2) },
+		);
 
 		return {
 			text,
@@ -1583,6 +1720,50 @@ export class AgentLoop implements InnerHarnessProvider {
 		});
 	}
 
+	/**
+	 * Ghi một điểm chạm. Nuốt mọi lỗi — xem luật ② ở `types/vet-tich.ts`.
+	 *
+	 * Bọc trong hàm riêng thay vì gọi thẳng để nơi dùng chỉ còn một dòng, và để
+	 * cái `try` nằm đúng MỘT chỗ chứ không rải ra hai chục chỗ gọi.
+	 */
+	private vet(
+		tang: "user" | "host" | "agent" | "llm" | "tool",
+		loai: string,
+		chiTiet?: Record<string, unknown>,
+		noiDungLon?: Record<string, string>,
+	): void {
+		if (!this.vetTich) return;
+		try {
+			this.vetTich.ghi({ tang, loai, luot: this.state.turnIndex, chiTiet, noiDungLon });
+		} catch {
+			// Ghi nhận hỏng KHÔNG được làm hỏng lượt trả lời.
+		}
+	}
+
+	/**
+	 * Ghi một lần NỔ của cơ chế ghì.
+	 *
+	 * Gom về một hàm vì đây là thứ đọc lại nhiều nhất khi mổ xẻ một phiên hỏng:
+	 * cơ chế nào nổ, ở nhịp mấy trên mấy, và nó đặt mặt nạ gì cho lượt sau. Ba
+	 * con số đó cạnh nhau mới trả lời được "guard có tới được model không".
+	 */
+	private vetGuard(
+		coChe: string,
+		nhip: number,
+		tran: number,
+		moTaMatNa: string,
+		them?: Record<string, unknown>,
+	): void {
+		this.vet("agent", LOAI_DIEM_CHAM.AGENT_GUARD, {
+			coChe,
+			nhip,
+			tran,
+			matNa: this.matNaTool ? [...this.matNaTool] : null,
+			daThuHep: moTaMatNa !== "",
+			...them,
+		});
+	}
+
 	/** `repeat_penalty` đang có hiệu lực, tính cả nấc leo thang. */
 	private repeatPenaltyHieuLuc(): number | undefined {
 		const goc = this.thamSoSinh?.repeatPenalty;
@@ -1679,26 +1860,80 @@ Khi da HOAN THANH yeu cau, dung {"tool":"respond","message":"..."} de KET THUC �
 			// (guard tiêm qua `appendToolResult`) — hệ ghì nói chuyện với người điếc.
 			...renderChoOllama(this.messages.getMessages()),
 		];
-		const r = await fetch(`${base}/api/chat`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({
-				model: this.model.replace(/^ollama\//, ""),
-				stream: false,
-				think: false,
-				messages,
-				format: envelope,
-				options: this.tuyChonOllama(),
-			}),
-			signal: this.abortController?.signal,
-		});
-		if (!r.ok) throw new Error(`Ollama /api/chat tra ma ${r.status}`);
+		const than = {
+			model: this.model.replace(/^ollama\//, ""),
+			stream: false,
+			think: false,
+			messages,
+			format: envelope,
+			options: this.tuyChonOllama(),
+		};
+
+		// ── ĐIỂM CHẠM: bytes THẬT gửi cho model ──
+		// Đây là thứ trước nay không tồn tại ở bất kỳ tầng nào. `llm:request_start`
+		// chỉ mang {model, estimatedInputTokens}, nên khi model cư xử lạ thì không
+		// có cách nào biết nó đã ĐỌC được gì — phải chặn ở tầng mạng mới thấy.
+		const batDau = Date.now();
+		this.vet(
+			"llm",
+			LOAI_DIEM_CHAM.LLM_GUI,
+			{
+				duong: "co-rang-buoc",
+				model: than.model,
+				soTinNhan: messages.length,
+				// Danh sách tool SAU mặt nạ — đối chiếu với `agent:guard` để thấy
+				// đòn bẩy cưỡng chế có thật sự tới được sampler không.
+				toolChoPhep: [...ten, "respond"],
+				coMatNa: matNa !== null,
+				options: than.options,
+				tongKyTu: messages.reduce((n, m) => n + m.content.length, 0),
+			},
+			{ "gui.json": JSON.stringify(than, null, 2) },
+		);
+
+		let r: Response;
+		try {
+			r = await fetch(`${base}/api/chat`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(than),
+				signal: this.abortController?.signal,
+			});
+		} catch (e) {
+			this.vet("llm", LOAI_DIEM_CHAM.LLM_HONG, {
+				duong: "co-rang-buoc",
+				loi: e instanceof Error ? e.message : String(e),
+				ms: Date.now() - batDau,
+			});
+			throw e;
+		}
+		if (!r.ok) {
+			this.vet("llm", LOAI_DIEM_CHAM.LLM_HONG, {
+				duong: "co-rang-buoc",
+				ma: r.status,
+				ms: Date.now() - batDau,
+			});
+			throw new Error(`Ollama /api/chat tra ma ${r.status}`);
+		}
 		const j = (await r.json()) as {
 			message?: { content?: string };
 			prompt_eval_count?: number;
 			eval_count?: number;
 		};
 		const raw = j.message?.content ?? "";
+		// ── ĐIỂM CHẠM: bytes THẬT model trả về, TRƯỚC mọi bước diễn giải ──
+		this.vet(
+			"llm",
+			LOAI_DIEM_CHAM.LLM_NHAN,
+			{
+				duong: "co-rang-buoc",
+				ms: Date.now() - batDau,
+				kyTu: raw.length,
+				tokenVao: j.prompt_eval_count,
+				tokenRa: j.eval_count,
+			},
+			{ "nhan.json": raw },
+		);
 		const usage = {
 			inputTokens: typeof j.prompt_eval_count === "number" ? j.prompt_eval_count : 0,
 			outputTokens: typeof j.eval_count === "number" ? j.eval_count : 0,

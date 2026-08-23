@@ -115,6 +115,19 @@ export interface CauHinhAgent {
 	 * việc của `bashTimeoutMs`). Trần này chặn phần TÍCH LUỸ.
 	 */
 	maxDurationMs?: number;
+	/**
+	 * Ghi VẾT TÍCH: mọi điểm chạm dữ liệu giữa người dùng, agent và model.
+	 *
+	 * Mặc định TẮT. Bật thì mỗi phiên sinh một thư mục
+	 * `.agentweave/vet-tich/<phien>/` chứa dòng thời gian JSONL cộng payload
+	 * NGUYÊN VẸN của từng lượt gọi model — kể cả chuỗi prompt đầy đủ, thứ không
+	 * tồn tại ở bất kỳ tầng log nào khác.
+	 *
+	 * Tốn đĩa: một phiên dài cỡ vài chục MB. Đổi lại nó là cách duy nhất trả lời
+	 * được "model đã ĐỌC được gì" khi agent cư xử vô lý. Có thể ép bằng biến
+	 * môi trường `AGENTWEAVE_TRACE=1`, tiện khi chạy qua script bọc.
+	 */
+	vetTich?: boolean;
 }
 
 const CHE_DO = ["default", "strict", "permissive", "plan"] as const;
@@ -200,6 +213,7 @@ function kiemTra(x: unknown): { ok: true; giaTri: CauHinhAgent } | { ok: false; 
 	// Trần 8 giờ: quá đó thì vấn đề nằm ở cách chia việc chứ không ở hạn giờ.
 	so("maxDurationMs", 10_000, 28_800_000);
 	bool("offline");
+	bool("vetTich");
 
 	if (o.permissionMode !== undefined) {
 		if (!CHE_DO.includes(o.permissionMode as (typeof CHE_DO)[number])) {

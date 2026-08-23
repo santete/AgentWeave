@@ -34,10 +34,10 @@ inner-harness chỉ tồn tại khi có lượt chạy.
 
 | Gói | Dòng | Trách nhiệm |
 |---|---:|---|
-| `inner-harness` | 12.174 | vòng lặp agent, tool, ngữ cảnh, rule/skill/memory |
-| `cli` | 8.734 | lệnh người dùng, phiên, đồng hồ, cấu hình |
+| `inner-harness` | 12.479 | vòng lặp agent, tool, ngữ cảnh, rule/skill/memory |
+| `cli` | 9.327 | lệnh người dùng, phiên, đồng hồ, cấu hình |
 | `outer-harness` | 5.335 | quyền, ngân sách, lọc, kiểm toán |
-| `types` | 1.779 | hợp đồng dùng chung — đổi ở đây là đụng tất cả |
+| `types` | 1.914 | hợp đồng dùng chung — đổi ở đây là đụng tất cả |
 | `adapters` | 1.055 | nối tới Claude Code / agent ngoài |
 | `gateway` `sdk` `protocol` `mcp-server` `control-plane` | 2.685 | vận chuyển và lắp ráp |
 
@@ -346,6 +346,9 @@ lệnh Bash đang chạy sẽ để lại tiến trình mồ côi và file ghi d
 ├─ memory/{MEMORY.md,<slug>.md}
 ├─ sessions/<id>.json             hội thoại đã lưu
 │  └─ <id>/tool-results/*.txt     kết quả tool quá lớn
+├─ vet-tich/<phien>/               VẾT TÍCH — xem §14
+│  ├─ vet-tich.jsonl              một dòng một điểm chạm
+│  └─ noi-dung/<stt>-<ten>        payload lớn, NGUYÊN VẸN
 ├─ audit.log · metrics/ · credentials
 AGENTS.md · AGENTS.local.md       rule ở gốc dự án
 ```
@@ -373,6 +376,8 @@ AGENTS.md · AGENTS.local.md       rule ở gốc dự án
 | tham số sinh (§9) | truyền ở CẢ HAI đường; `num_ctx` chỉ có ở đường có ràng buộc |
 | `tool-call-recovery.ts` | §1 ⑥ — lời gọi CỨU được phải qua cổng đối chiếu `demGoiTrung`, nếu không văn xuôi nhại lại lịch sử sẽ chạy thành lệnh thật |
 | trần thời gian / `timeoutMs` | §9 bảng phanh — đổi chỗ kiểm ra giữa lượt là để lại tiến trình mồ côi |
+| điểm chạm vết tích (`this.vet(...)`) | §14 — **chỉ quan sát**, thêm chỗ gọi không được đổi một quyết định nào. Test `vet-tich` khoá điều này |
+| `LOAI_DIEM_CHAM` | §14 — bộ đọc khớp đúng chuỗi nhãn. Thêm nhãn thì an toàn, ĐỔI tên thì bộ đọc mất dấu |
 | bất cứ gì ở inner-harness | `npm run build` inner → sdk → cli, nếu không CLI vẫn chạy bản cũ |
 
 **Thứ tự build bắt buộc:** `types → control-plane → inner-harness → sdk → cli`.
@@ -440,6 +445,11 @@ hai thứ chỉ host mới biết.
 `turn:start` `turn:end` `llm:request_start` `llm:stream_end` `tool:started`
 `message:assistant` `message:tool_result` `permission:allowed` `permission:asking`
 `recovery:fallback` `terminal` `sdlc:*` `agent:*`.
+
+**Vết tích KHÔNG đi qua đường này.** `InnerEvent` là kênh cho NGƯỜI DÙNG xem
+lúc chạy, nên nó cố tình gọn. Vết tích (§14) là kênh cho người MỔ XẺ về sau,
+nên nó giữ nguyên payload. Hai mục đích khác nhau, đừng gộp: nhồi trọn chuỗi
+prompt vào `InnerEvent` thì webview phải tải vài trăm KB mỗi lượt.
 
 Muốn thêm thứ hiện lên editor thì **chọn một trong hai**:
 - Việc hiếm, chỉ cần một dòng chữ → dùng lại `notice`, **không phải đổi giao thức**
@@ -525,3 +535,94 @@ Nhưng nó **không** dùng `napTriThuc`, nên rule/skill/memory/hẹn giờ **k
 có** trong pipeline — muốn có thì phải nối riêng.
 
 Lệnh liên quan: `agentweave pipeline setup|run|status|config` · `agentweave metrics`.
+
+---
+
+## 14. Vết tích — soi mọi điểm chạm dữ liệu
+
+Trả lời một câu hỏi mà ba tầng log cũ đều không trả lời được: **model thật sự
+ĐỌC được gì?**
+
+Trước đợt này, thứ gần nhất với một bản ghi là ba mảnh rời và không mảnh nào
+đủ:
+
+| Có sẵn | Vì sao không dùng được |
+|---|---|
+| `AuditLogger` (outer-harness) | chỉ nằm trong RAM, trần 10.000 mục, **không bao giờ ghi đĩa** |
+| `.agentweave/audit.log` | chỉ lệnh `guard` ghi vào; đường chat/serve không đụng tới |
+| `InnerEvent` (31 loại) | `llm:request_start` chỉ mang `{model, estimatedInputTokens}` — **nội dung gửi model không tồn tại ở đâu cả** |
+
+Chính vì thiếu mảnh thứ ba mà `RA-SOAT-DIEU-KHIEN.md` phải chặn ở tầng mạng
+mới phát hiện được lỗi tầng 0 (model mù về hành động của chính nó). Việc đó
+đáng lẽ phải đọc được từ một tệp.
+
+### Bật
+
+```
+.agentweave/agent.json → "vetTich": true        (theo dự án)
+AGENTWEAVE_TRACE=1                              (ép, tiện cho script bọc)
+```
+
+Mặc định TẮT. Bật thì mỗi phiên sinh `.agentweave/vet-tich/<phien>/`.
+
+### Ba luật bất biến
+
+- **Chỉ QUAN SÁT.** Bật vết tích không được đổi một quyết định nào của agent —
+  ghi nhận mà làm đổi hành vi thì cái ghi được là hành vi khác. Có test khoá.
+- **Không bao giờ ném, không bao giờ chặn.** Ghi hỏng thì mất vết tích, không
+  được mất lượt trả lời. Hỏng một lần là ngưng hẳn, khỏi bơm nghìn dòng lỗi.
+- **Tầng trong KHÔNG chạm đĩa.** `inner-harness` phát `DiemCham`, host quyết
+  định ghi đi đâu — cùng ranh giới với đồng hồ hẹn giờ và bộ đo hiệu năng (§0).
+
+### Bảng điểm chạm
+
+| Tầng | Nhãn | Bắt được gì |
+|---|---|---|
+| user | `user:cau-hoi` | câu người dùng GÕ, nguyên văn |
+| user | `user:duyet-quyen` | bấm cho phép hay từ chối, tool nào, có "luôn cho phép" không |
+| user | `user:lenh` | abort/reset/undo/set_model |
+| host | `host:cau-day-du` | câu sau khi host chèn nội dung file — **phần agent nhận thêm mà người dùng không thấy** |
+| host | `host:chot-luot` | reason, token, file đã sửa, đã kiểm chứng chưa, số đo |
+| agent | `agent:nen` | mức nén, bỏ bao nhiêu, độ đầy trước đó |
+| agent | `agent:nhac` | nhắc bơm vào, nguyên văn |
+| agent | `agent:chuan-hoa-cap` | cặp tool nào bị lệch và sửa ra sao |
+| agent | `agent:guard` | **cơ chế nào nổ, nhịp mấy trên mấy, mặt nạ đặt cho lượt sau** |
+| agent | `agent:cuu-tool-call` | cứu mấy lời gọi, bỏ mấy vì nhại lại lịch sử |
+| agent | `agent:quyen` | quyết định quyền, nguồn, thời gian chờ người |
+| **llm** | **`llm:gui`** | **TRỌN chuỗi gửi model**: system prompt, mọi tin nhắn, tool sau mặt nạ, `options` |
+| **llm** | **`llm:nhan`** | **raw trả về**, chưa qua một bước diễn giải nào |
+| llm | `llm:hong` | mã lỗi, thông báo, thời lượng |
+| tool | `tool:xong` / `tool:hong` | tham số VÀO và kết quả RA, thời lượng |
+| tool | `tool:kiem-cu-phap` | đạt/không đạt sau khi ghi file |
+
+Hai nhãn `llm:*` là lý do cả mục này tồn tại. Chúng ghi **nguyên vẹn**, không
+cắt: một chuỗi bị cắt thì không đối chiếu được với thứ model trả lời, mà đối
+chiếu đúng chỗ đó mới là cách tìm ra ngữ cảnh trôi.
+
+### Hình dạng trên đĩa
+
+Payload nhỏ (≤512B) nằm thẳng trong JSONL; lớn hơn thì tách ra
+`noi-dung/<stt>-<ten>` kèm số byte và sha. Nhờ vậy `vet-tich.jsonl` luôn mở
+được bằng `head`, còn payload thì `diff` được giữa hai lượt.
+
+Ghi bằng I/O **đồng bộ**, có chủ đích: lượt đáng giá nhất là lượt cuối trước
+khi mọi thứ hỏng, và đó đúng là lượt dễ mất nhất nếu còn nằm trong bộ đệm lúc
+tiến trình bị giết. Một dòng vài trăm byte tốn vài chục micro-giây, không đáng
+kể so với một lượt sinh của model 30B tính bằng giây.
+
+### Đọc lại
+
+```
+agentweave vet-tich                 dòng thời gian phiên mới nhất
+agentweave vet-tich --danh-sach     liệt kê các phiên
+agentweave vet-tich --luot 3        chỉ lượt 3
+agentweave vet-tich --tang llm      chỉ ranh giới gọi model
+agentweave vet-tich --xem 42        đổ NGUYÊN VẸN payload điểm chạm #42
+```
+
+Quy trình mổ xẻ đầy đủ + bảng chẩn đoán nhanh: `docs/SO-TAY-VET-TICH.md`.
+
+**Cách dùng khi agent cư xử vô lý:** chạy `--tang llm` trước để xem model nhận
+được bao nhiêu và trả về gì; thấy lượt nào lạ thì `--xem <stt>` đổ trọn chuỗi
+ra rồi đối chiếu với `agent:guard` cùng lượt — ba thứ đó cạnh nhau trả lời
+được "guard có tới được model không, hay nó nổ trong im lặng".

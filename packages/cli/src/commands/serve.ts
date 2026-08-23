@@ -44,7 +44,7 @@ import {
 } from "@agentweave/inner-harness";
 import { createHarness } from "@agentweave/sdk";
 import type { HarnessInstance } from "@agentweave/sdk";
-import { AGENTWEAVE_VERSION } from "@agentweave/types";
+import { AGENTWEAVE_VERSION, LOAI_DIEM_CHAM } from "@agentweave/types";
 import type { ContentBlock, InnerEvent, Message } from "@agentweave/types";
 import type { ProcessSandboxBinding } from "@agentweave/types";
 import { type CauHinhAgent, type LuatQuyen, docCauHinhAgent } from "../lib/agent-config.js";
@@ -67,6 +67,7 @@ import {
 } from "../lib/session-store.js";
 import { doanLenhKiemTra, dungCauDanHeThong } from "../lib/system-prompt.js";
 import { TheoDoiKiemTra, laLenhKiemTra } from "../lib/theo-doi-kiem-tra.js";
+import { GhiVetTichTep, batVetTich } from "../lib/vet-tich-tep.js";
 
 export interface ServeArgs {
 	model: string;
@@ -263,6 +264,17 @@ export async function serveCommand(args: ServeArgs): Promise<void> {
 	// phiên dài là hàng chục nghìn token đã tính — lưu lại để mở editor sau còn
 	// tiếp được. Ghi sau MỖI lượt, thay thế nguyên tử, giống REPL.
 	let idPhien = taoIdPhien(new Date());
+
+	// ── Vết tích ──
+	// Một bộ ghi cho cả tiến trình serve, đặt tên theo phiên ĐẦU tiên. Không
+	// tạo lại khi `reset` sang phiên mới: mục đích của nó là mổ xẻ một buổi làm
+	// việc, mà một buổi thường gồm vài lần reset — cắt nhỏ ra thì mất đúng chỗ
+	// nối giữa các lần đó.
+	const vetTich = batVetTich(cauHinh.vetTich)
+		? new GhiVetTichTep({ goc, phien: idPhien, nhatKy })
+		: undefined;
+	if (vetTich) nhatKy(`vet tich: ghi vao ${vetTich.duong}`);
+
 	let tomTat = "";
 	let soLuot = 0;
 	let tongVao = 0;
@@ -334,6 +346,12 @@ export async function serveCommand(args: ServeArgs): Promise<void> {
 		// trọn lượt nghĩa là lời "permission" của editor không bao giờ đọc tới,
 		// agent xin quyền rồi treo cho đến khi interceptor hết giờ. Đã vấp đúng
 		// lỗi này: editor trả allow=true mà tool vẫn bị từ chối.
+		vetTich?.ghi({
+			tang: "user",
+			loai: LOAI_DIEM_CHAM.USER_CAU_HOI,
+			chiTiet: { kyTu: text.length, coAnh: anh.length > 0, soAnh: anh.length, soLuot },
+			noiDungLon: { "cau-hoi.txt": text },
+		});
 		void chayMotLuot({
 			text,
 			goc,
@@ -341,6 +359,7 @@ export async function serveCommand(args: ServeArgs): Promise<void> {
 			cheDoQuyen,
 			maxTurns,
 			cauHinh,
+			vetTich,
 			lichSu,
 			dangCho,
 			luonChoPhep,
@@ -441,6 +460,13 @@ export async function serveCommand(args: ServeArgs): Promise<void> {
 					dangCho.delete(id);
 					const luon = msg.alwaysAllow === true;
 					const tenTool = typeof msg.tool === "string" ? msg.tool : "";
+					// Điểm chạm CON NGƯỜI: bấm gì, cho tool nào. Thời gian ngồi nghĩ
+					// được đo ở `onAsk` vì chỉ chỗ đó biết lúc bắt đầu chờ.
+					vetTich?.ghi({
+						tang: "user",
+						loai: LOAI_DIEM_CHAM.USER_DUYET_QUYEN,
+						chiTiet: { id, tool: tenTool, choPhep: msg.allow === true, luonChoPhep: luon },
+					});
 					if (luon && tenTool) {
 						luonChoPhep.add(tenTool);
 						phat({ type: "always_allowed", tool: tenTool });
@@ -451,6 +477,7 @@ export async function serveCommand(args: ServeArgs): Promise<void> {
 			}
 
 			case "abort":
+				vetTich?.ghi({ tang: "user", loai: LOAI_DIEM_CHAM.USER_LENH, chiTiet: { lenh: "abort" } });
 				chay.hien?.abort("editor huy");
 				break;
 
@@ -638,6 +665,8 @@ interface ThamSoLuot {
 	cheDoQuyen: "default" | "strict" | "permissive" | "plan";
 	maxTurns: number;
 	cauHinh: CauHinhAgent;
+	/** Bộ ghi vết tích của phiên, nếu bật. Xem lib/vet-tich-tep.ts. */
+	vetTich?: GhiVetTichTep;
 	lichSu: ReadonlyArray<Message>;
 	dangCho: Map<string, (kq: { allow: boolean; alwaysAllow?: boolean }) => void>;
 	/** Tool người dùng đã bấm "Luôn cho phép" ở các lượt trước. */
@@ -717,6 +746,7 @@ async function chayMotLuot(t: ThamSoLuot): Promise<ReadonlyArray<Message>> {
 			seed: t.cauHinh.seed,
 		},
 		processSandbox: t.coLap,
+		vetTich: t.vetTich,
 		laLenhKiemTra,
 		permissions: {
 			mode: t.cheDoQuyen,
@@ -849,6 +879,19 @@ ${moTaAnhChen}`;
 				const hieu = doHieu.chot(Date.now(), dung.outputTokens, t.dongHoChoNguoi.ms);
 				t.ketQua.usage = dung;
 				t.ketQua.reason = value.reason;
+				t.vetTich?.ghi({
+					tang: "host",
+					loai: LOAI_DIEM_CHAM.HOST_CHOT_LUOT,
+					chiTiet: {
+						reason: value.reason,
+						tokenVao: dung.inputTokens,
+						tokenRa: dung.outputTokens,
+						fileDaSua: [...daSua],
+						daKiemChung: kiemTra.daKiemChung,
+						ketCucKiem: kiemTra.ketCuc,
+						perf: hieu,
+					},
+				});
 				phat({
 					type: "turn_end",
 					reason: value.reason,
