@@ -13,7 +13,7 @@
 
 ## Đợt 2026-08-23 — nhánh `feat/product-grade`
 
-Chín commit, chia làm ba nhóm: đại tu hệ điều khiển theo
+Mười commit, chia làm ba nhóm: đại tu hệ điều khiển theo
 `RA-SOAT-DIEU-KHIEN.md`, dựng tầng vết tích, rồi sửa những lỗi mà chính vết
 tích phơi ra khi chạy thật trên một solution .NET.
 
@@ -30,6 +30,7 @@ tích phơi ra khi chạy thật trên một solution .NET.
 | `73034c5` | `respond` luôn ở trong enum → mặt nạ bất lực | §3 |
 | `a372524` | Pipeline treo giao diện + mọi bước báo xanh | §12 §13 |
 | `887b19b` | Cổng chất lượng "đạt" mà không kiểm gì | §13 |
+| `6133bec` | `.sln` phải CÓ project mới tính là phép kiểm | §13 |
 
 ---
 
@@ -139,7 +140,7 @@ Bài học ghi thẳng vào §12: kiểm tầng hiển thị trước khi đổ 
 |---|---|---|
 | Lệnh đoán TRỎ ĐÚNG vào file dự án | §13 | `dotnet build` trần chạy ở gốc workspace in "0 Error(s)" và trả **exit 0** trong 0,15s — cổng xanh trong khi build thật hỏng |
 | `coCongKiem`: không nói "ĐẠT" khi không có phép kiểm nào | §13 | Một phép kiểm không kiểm gì mà vẫn xanh biến cả cơ chế cổng chất lượng thành trang trí |
-| **`.sln` phải CÓ `Project(` bên trong** (vá bổ sung `f4a1c62`) | §13 | Trỏ vào đúng loại file vẫn CHƯA ĐỦ. Đo thật: dự án có hai `.sln` — một cái ở gốc **rỗng** (0 project, 441 byte) build xanh 0,15s, một cái thật 3 project build hỏng `MSB4006`. Bản vá "trỏ vào .sln" vẫn chọn nhầm cái rỗng |
+| **`.sln` phải CÓ `Project(` bên trong** (vá bổ sung `6133bec`) | §13 | Trỏ vào đúng loại file vẫn CHƯA ĐỦ. Đo thật: dự án có hai `.sln` — một cái ở gốc **rỗng** (0 project, 441 byte) build xanh 0,15s, một cái thật 3 project build hỏng `MSB4006`. Bản vá "trỏ vào .sln" vẫn chọn nhầm cái rỗng |
 
 **Kiểm hai chiều trên dự án .NET thật** (bản sao, vì dự án gốc không phải git repo):
 
