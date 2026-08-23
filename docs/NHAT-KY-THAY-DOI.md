@@ -17,7 +17,7 @@
 
 ## Đợt 2026-08-23 — nhánh `feat/product-grade`
 
-Mười hai commit, chia làm ba nhóm: đại tu hệ điều khiển theo
+Mười ba commit, chia làm ba nhóm: đại tu hệ điều khiển theo
 `RA-SOAT-DIEU-KHIEN.md`, dựng tầng vết tích, rồi sửa những lỗi mà chính vết
 tích phơi ra khi chạy thật trên một solution .NET.
 
@@ -37,6 +37,7 @@ tích phơi ra khi chạy thật trên một solution .NET.
 | `6133bec` | `.sln` phải CÓ project mới tính là phép kiểm | §13 |
 | `6e4b4e9` | Agent trong pipeline chạy với system prompt RỖNG | §13 |
 | `5aa1bd4` | Cổng kiểm chứng ②: kiểm HỎNG thì không cho dừng | §3 |
+| `b6bc2d6` | Cổng ② tạo cám dỗ gian lận — cấm sửa bài kiểm | §3 |
 
 ---
 
