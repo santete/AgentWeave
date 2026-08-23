@@ -460,6 +460,7 @@ window.addEventListener("message", (ev) => {
 				`⚙ Pipeline SDLC · ${e.model}` +
 				(e.checks && e.checks.length ? ` · kiểm: ${e.checks.join(", ")}` : " · không có cổng kiểm");
 			khoiPipeline.appendChild(dau);
+			datBan(true);
 			datViec("Pipeline đang chạy");
 			break;
 		}
@@ -473,13 +474,31 @@ window.addEventListener("message", (ev) => {
 				khoiPipeline.appendChild(dong);
 				buocPipeline.set(e.stage, dong);
 			}
+			// Đếm số LẦN bước này chạy. Cập nhật tại chỗ để vòng thử lại không đẻ
+			// ra một bức tường dòng, nhưng phải HIỆN số lần — nếu không thì ba
+			// vòng thử lại trông y hệt một vòng, và người xem tưởng retryEngine
+			// chẳng làm gì.
 			if (e.status === "start") {
-				dong.textContent = `⏳ ${e.stage}`;
-				datViec(`Pipeline: ${e.stage}`);
+				dong._lan = (dong._lan || 0) + 1;
+				dong.textContent = `⏳ ${e.stage}${dong._lan > 1 ? ` (lần ${dong._lan})` : ""}`;
+				datViec(`Pipeline: ${e.stage}${dong._lan > 1 ? ` lần ${dong._lan}` : ""}`);
 			} else {
 				const ms = typeof e.durationMs === "number" ? ` ${Math.round(e.durationMs)}ms` : "";
-				dong.textContent = `${e.ok ? "✓" : "✗"} ${e.stage}${ms}`;
-				dong.classList.toggle("hong", e.ok === false);
+				const lan = dong._lan > 1 ? ` (${dong._lan} lần)` : "";
+				// Đọc `ketCuc` chứ KHÔNG đoán từ một trường không tồn tại. Bản trước
+				// đọc `e.ok` — sự kiện không hề có trường đó — nên bước nào cũng ✓,
+				// kể cả cổng chất lượng vừa đỏ. Không biết kết cục thì hiện "?",
+				// đừng bịa một dấu tích.
+				const dau =
+					e.ketCuc === "success"
+						? "✓"
+						: e.ketCuc === "failure"
+							? "✗"
+							: e.ketCuc === "skipped"
+								? "⊘"
+								: "?";
+				dong.textContent = `${dau} ${e.stage}${lan}${ms}`;
+				dong.classList.toggle("hong", e.ketCuc === "failure");
 			}
 			break;
 		}
@@ -487,12 +506,31 @@ window.addEventListener("message", (ev) => {
 		case "pipeline_end": {
 			if (khoiPipeline) {
 				const cuoi = document.createElement("div");
-				cuoi.className = "nhan";
-				cuoi.textContent = `⚙ Pipeline kết thúc — ${e.reason}`;
+				// Kết cục THẬT là cổng chất lượng có đạt không, không phải `reason`
+				// của vòng lặp — `reason` là "completed" kể cả khi build đỏ.
+				const dat = e.dat;
+				cuoi.className = dat === false ? "nhan hong" : "nhan";
+				const phan = [
+					dat === true
+						? "⚙ Pipeline ĐẠT"
+						: dat === false
+							? "⚙ Pipeline KHÔNG ĐẠT"
+							: "⚙ Pipeline kết thúc",
+				];
+				if (typeof e.tyLeTestDat === "number")
+					phan.push(`kiểm ${Math.round(e.tyLeTestDat * 100)}%`);
+				if (e.soLanThuLai) phan.push(`thử lại ${e.soLanThuLai} lần`);
+				phan.push(e.reason);
+				cuoi.textContent = phan.join(" · ");
 				khoiPipeline.appendChild(cuoi);
 			}
 			khoiPipeline = null;
 			buocPipeline = new Map();
+			// Trả UI về trạng thái RẢNH. Thiếu hai dòng này thì spinner quay mãi và
+			// ô nhập khoá vĩnh viễn — nhìn y hệt TREO, dù pipeline đã xong. Đường
+			// chat được `turn_end` lo việc này; đường pipeline không đi qua đó.
+			ngungChay();
+			datBan(false);
 			datViec("");
 			break;
 		}

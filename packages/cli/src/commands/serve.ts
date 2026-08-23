@@ -1159,7 +1159,12 @@ async function chayPipeline(t: ThamSoPipeline): Promise<void> {
 				const e = ev as unknown as {
 					stage: string;
 					phase?: number;
-					ok?: boolean;
+					// `sdlc:stage_end` mang `status`, KHÔNG mang `ok`. Đọc nhầm tên
+					// trường thì mọi bước đều xanh bất kể kết cục — đúng kiểu "báo
+					// xanh mà sai" mà cả sản phẩm này sinh ra để chặn. Đã vấp: cổng
+					// chất lượng HỎNG (chạy `npm test` trong thư mục .NET) mà giao
+					// diện vẫn vẽ ✓, chỉ có ba vòng thử lại lặng lẽ tố cáo.
+					status?: "success" | "failure" | "skipped";
 					durationMs?: number;
 				};
 				phat({
@@ -1167,7 +1172,7 @@ async function chayPipeline(t: ThamSoPipeline): Promise<void> {
 					stage: e.stage,
 					phase: e.phase ?? 0,
 					status: ev.type === "sdlc:stage_start" ? "start" : "end",
-					ok: e.ok !== false,
+					ketCuc: e.status ?? null,
 					durationMs: e.durationMs ?? null,
 				});
 			}
@@ -1215,7 +1220,22 @@ async function chayPipeline(t: ThamSoPipeline): Promise<void> {
 		for (;;) {
 			const { value, done } = await gen.next();
 			if (done) {
-				phat({ type: "pipeline_end", reason: value.reason, usage: value.usage ?? null });
+				// KẾT CỤC THẬT lấy từ số đo, không lấy từ `reason`.
+				//
+				// `sdlc:stage_end.status` chỉ nói "module chạy xong", KHÔNG nói "cổng
+				// đạt": đo thật với lệnh kiểm `exit 1`, qualityGate vẫn báo
+				// `success` trong khi retryEngine quay đủ ba vòng. Và `reason` của
+				// pipeline là `completed` kể cả khi build đỏ. Chốt lượt bằng hai thứ
+				// đó là dựng lại đúng kiểu "báo xanh mà sai".
+				const sd = pipeline.getLastMetrics();
+				phat({
+					type: "pipeline_end",
+					reason: value.reason,
+					usage: value.usage ?? null,
+					dat: sd ? sd.m1_firstPassSuccess : null,
+					tyLeTestDat: sd ? sd.m2_testPassRate : null,
+					soLanThuLai: sd ? sd.m4_retryCount : null,
+				});
 				break;
 			}
 			switch (value.type) {

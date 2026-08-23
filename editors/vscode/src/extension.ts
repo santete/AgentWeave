@@ -41,11 +41,28 @@ export function activate(ctx: vscode.ExtensionContext): void {
 			});
 			if (!viec?.trim()) return;
 
+			// Đoán lệnh kiểm THEO DỰ ÁN. Điền sẵn `npm test` cho mọi thứ là bẫy:
+			// trên một solution .NET nó chạy trong thư mục không có package.json,
+			// hỏng ngay, cổng chất lượng đỏ, retryEngine quay đủ 3 vòng vô ích —
+			// và người dùng tưởng agent làm sai. Đoán sai vẫn hơn bịa, nhưng đoán
+			// theo thứ có thật trên đĩa thì hầu như không sai.
+			const doanLenhKiem = async (): Promise<string> => {
+				const co = async (mau: string) =>
+					(await vscode.workspace.findFiles(mau, "**/node_modules/**", 1)).length > 0;
+				if (await co("**/*.sln")) return "dotnet build";
+				if (await co("**/*.csproj")) return "dotnet build";
+				if (await co("package.json")) return "npm test";
+				if (await co("**/pom.xml")) return "mvn -q test";
+				if (await co("**/Cargo.toml")) return "cargo test";
+				if (await co("**/go.mod")) return "go test ./...";
+				return "";
+			};
+
 			const lenhKiem = await vscode.window.showInputBox({
 				title: "Lệnh kiểm chất lượng",
 				prompt: "Ngăn cách bằng dấu phẩy. Bỏ trống = không có cổng chất lượng.",
-				placeHolder: "npm test, npm run typecheck",
-				value: "npm test",
+				placeHolder: "vd: dotnet build, npm test",
+				value: await doanLenhKiem(),
 			});
 			// `undefined` = người dùng bấm Esc ở bước này → huỷ cả lệnh.
 			if (lenhKiem === undefined) return;
@@ -226,7 +243,7 @@ function moKhungChat(ctx: vscode.ExtensionContext): void {
 async function chonAnhTuFile(): Promise<{ data: string; mimeType: string; ten: string } | null> {
 	const chon = await vscode.window.showOpenDialog({
 		canSelectMany: false,
-		filters: { "Ảnh": ["png", "jpg", "jpeg", "gif", "webp", "bmp"] },
+		filters: { Ảnh: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] },
 		openLabel: "Đính ảnh vào chat",
 	});
 	if (!chon || !chon[0]) return null;
@@ -235,7 +252,11 @@ async function chonAnhTuFile(): Promise<{ data: string; mimeType: string; ten: s
 	const duoi = (uri.path.split(".").pop() ?? "png").toLowerCase();
 	const mimeType = duoi === "jpg" ? "image/jpeg" : `image/${duoi}`;
 	const b64 = Buffer.from(bytes).toString("base64");
-	return { data: `data:${mimeType};base64,${b64}`, mimeType, ten: uri.path.split("/").pop() ?? "anh" };
+	return {
+		data: `data:${mimeType};base64,${b64}`,
+		mimeType,
+		ten: uri.path.split("/").pop() ?? "anh",
+	};
 }
 
 async function timFileGoiY(q: string): Promise<string[]> {
@@ -244,9 +265,7 @@ async function timFileGoiY(q: string): Promise<string[]> {
 	const uris = await vscode.workspace.findFiles(glob, loai, 2000);
 	const goc = vscode.workspace.workspaceFolders?.[0]?.uri;
 	const rel = uris.map((u) => (goc ? vscode.workspace.asRelativePath(u, false) : u.fsPath));
-	const kq = q.trim()
-		? rel.filter((r) => r.toLowerCase().includes(q.toLowerCase()))
-		: rel;
+	const kq = q.trim() ? rel.filter((r) => r.toLowerCase().includes(q.toLowerCase())) : rel;
 	// Ngắn trước cho những đường dẫn nông nổi lên đầu — thường là thứ cần.
 	return kq.sort((a, b) => a.length - b.length).slice(0, 20);
 }
