@@ -1075,7 +1075,20 @@ export class AgentLoop implements InnerHarnessProvider {
 				) {
 					this.soLanEpSuaChoDat++;
 					const mnDat = this.thuHepTool(MAT_NA_TIEN_TRIEN);
-					this.vetGuard("kiem-con-hong", this.soLanEpSuaChoDat, EP_SUA_CHO_DAT, mnDat);
+
+					// ── CẤM `respond` TỪ NHỊP 2 — cùng luật với cổng done=false ──
+					//
+					// Thu hẹp tool KHÔNG đủ, vì `respond` vẫn nằm trong enum. Đo thật
+					// trên dự án .NET (`vet-tich/20260823-205850`): cổng ② nổ đủ 4
+					// nhịp, và cả 4 lượt model đều chọn `respond`, KHÔNG một tool nào.
+					// Hai trong số đó còn trùng sha — lặp nguyên văn cùng một câu.
+					//
+					// Tôi đã bịt lỗ này ở cổng done=false rồi bỏ quên đúng cổng anh em.
+					this.camRespond = this.soLanEpSuaChoDat >= 2;
+
+					this.vetGuard("kiem-con-hong", this.soLanEpSuaChoDat, EP_SUA_CHO_DAT, mnDat, {
+						camRespond: this.camRespond,
+					});
 					if (vanBanCuoi) this.messages.appendAssistant(vanBanCuoi);
 					this.bomNhacGuard(
 						`The project's check command RAN and FAILED. The work is NOT done — a red check ` +
@@ -1086,12 +1099,16 @@ export class AgentLoop implements InnerHarnessProvider {
 							`Do NOT edit the test or the check itself to make it pass. Making the check ` +
 							`green by weakening the check is worse than leaving it red, because it destroys ` +
 							`the only signal anyone has. If you genuinely believe the test is wrong, say so ` +
-							`plainly and stop — do not silently rewrite it. ` +
-							`(attempt ${this.soLanEpSuaChoDat}/${EP_SUA_CHO_DAT})`,
+							`plainly and stop — do not silently rewrite it.` +
+							(this.camRespond
+								? "\n\nTalking is no longer an option this turn — the respond action has been " +
+									"REMOVED from your choices. Call a tool."
+								: "") +
+							` (attempt ${this.soLanEpSuaChoDat}/${EP_SUA_CHO_DAT})`,
 					);
 					yield this.makeEvent({
 						type: "recovery:retry",
-						reason: `lenh kiem con HONG — ep sua tiep (${this.soLanEpSuaChoDat}/${EP_SUA_CHO_DAT})${mnDat}`,
+						reason: `lenh kiem con HONG — ep sua tiep (${this.soLanEpSuaChoDat}/${EP_SUA_CHO_DAT})${mnDat}${this.camRespond ? " — CAM respond" : ""}`,
 						attempt: this.state.turnIndex,
 					});
 					continue;

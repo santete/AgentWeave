@@ -202,6 +202,16 @@ cảnh báo im lặng đúng lúc cần nhất.
 Chạy lại sau bản vá: cổng nổ đủ 4 nhịp, model KHÔNG đụng bài kiểm, kết thúc
 trung thực `ketCuc=hong`.
 
+**Nhưng trên dự án .NET thật thì lộ tiếp một lỗ** (`vet-tich/20260823-205850`):
+cổng ② nổ đủ 4 nhịp và cả 4 lượt model đều chọn `respond`, KHÔNG một tool nào
+— hai trong số đó còn trùng sha, tức lặp nguyên văn. Lý do: `respond` bị cấm ở
+cổng `done=false` nhưng **quên cấm ở cổng ②**. Cùng một lỗ, bịt một bên bỏ một
+bên. Đã bịt nốt; chạy lại thì model buộc phải gọi tool.
+
+**Bài học đắt nhất của cả đợt:** cấm bằng LỜI RĂN không ăn — model vẫn sửa bài
+kiểm dù prompt cấm thẳng. Thứ ăn là bộ PHÁT HIỆN. Lời răn để giải thích, cơ
+chế để thi hành.
+
 **Giới hạn, nói thẳng:** trần 4 nhịp là lời thú nhận. Không có phương án nào
 cho "chạy tới khi hoàn thiện" theo nghĩa tuyệt đối — mọi vòng lặp đều phải có
 trần. Thay đổi thật nằm ở chỗ trần dựa trên cái gì: "model tự nhận xong" (cũ)
