@@ -259,6 +259,14 @@ const MAT_NA_CHAY = ["Bash", "FileRead"];
  */
 const EP_SUA_CHO_DAT = 4;
 
+/**
+ * Lệnh cấm `respond` bám bao nhiêu lượt trước khi tự hạ.
+ *
+ * Ba: đủ để model không thoát bằng một lượt `FileRead`, chưa tới mức nhốt nó
+ * khi nó thật sự bí. Hạ ngay lập tức nếu có tiến triển (ghi file / chạy kiểm).
+ */
+const LUOT_CAM_RESPOND = 3;
+
 /** Tên thư mục hoặc tên file (bỏ đuôi) đủ để coi là thuộc bài kiểm. */
 const TEN_KIEM = new Set(["test", "tests", "spec", "specs", "__tests__", "__test__"]);
 
@@ -398,6 +406,22 @@ export class AgentLoop implements InnerHarnessProvider {
 	 * chính nó loại khỏi tập nước đi hợp lệ, ta chỉ đang thi hành điều đó.
 	 */
 	private camRespond = false;
+	/**
+	 * Số lượt lệnh cấm `respond` còn hiệu lực.
+	 *
+	 * Cấm MỘT lượt là không đủ. Đo thật (`vet-tich/20260823-213020`): lệnh cấm
+	 * buộc model gọi tool, nó gọi `FileRead` — nước đi hợp lệ RẺ NHẤT — rồi lượt
+	 * sau lệnh cấm hết hạn và nó quay lại `respond`. Lặp y hệt ba lần, không một
+	 * file nào được sửa.
+	 *
+	 * `FileRead` là cửa thoát chính tôi mở ra khi đưa nó vào mọi mặt nạ (để model
+	 * khỏi phải đoán nội dung file — xem `MAT_NA_*`). Cần cả hai: đọc phải được
+	 * phép, nhưng đọc KHÔNG được tính là đã tiến triển.
+	 *
+	 * Nên lệnh cấm bám qua nhiều lượt và chỉ hạ khi có TIẾN TRIỂN THẬT: ghi được
+	 * file, hoặc chạy được lệnh kiểm. Vẫn có trần để model không bị nhốt.
+	 */
+	private luotConCamRespond = 0;
 	private thamSoSinh?: ThamSoSinh;
 	private vetTich?: BoGhiVetTich;
 	/**
@@ -1087,6 +1111,8 @@ export class AgentLoop implements InnerHarnessProvider {
 					//
 					// Tôi đã bịt lỗ này ở cổng done=false rồi bỏ quên đúng cổng anh em.
 					this.camRespond = this.soLanEpSuaChoDat >= 2;
+					// Bám qua nhiều lượt, chỉ hạ khi có tiến triển thật.
+					if (this.camRespond) this.luotConCamRespond = LUOT_CAM_RESPOND;
 
 					this.vetGuard("kiem-con-hong", this.soLanEpSuaChoDat, EP_SUA_CHO_DAT, mnDat, {
 						camRespond: this.camRespond,
@@ -1525,6 +1551,8 @@ export class AgentLoop implements InnerHarnessProvider {
 							// Vừa sửa file thì kết cục kiểm CŨ không còn nói gì về mã
 							// hiện tại — phải chạy lại mới biết.
 							this.kiemTraGanNhatDat = null;
+							// Ghi được file = tiến triển thật → hạ lệnh cấm.
+							this.luotConCamRespond = 0;
 							this.luotGhiCuoi = this.state.turnIndex;
 							const vao = goiGoc.toolInput as Record<string, unknown>;
 							const p = vao.path ?? vao.file ?? vao.file_path ?? vao.filename;
@@ -1569,6 +1597,7 @@ export class AgentLoop implements InnerHarnessProvider {
 							const lenh = (goiGoc.toolInput as Record<string, unknown>).command;
 							if (typeof lenh === "string" && this.laLenhKiemTra(lenh)) {
 								this.daChayKiemTra = true;
+								this.luotConCamRespond = 0; // chạy được lệnh kiểm cũng là tiến triển
 								// Mã thoát ≠ 0 thì `bash.ts` mở đầu kết quả bằng
 								// `[mã thoát N]` — tín hiệu đạt/hỏng đã nằm sẵn trong
 								// vòng lặp, không cần host báo xuống.
@@ -1954,9 +1983,13 @@ export class AgentLoop implements InnerHarnessProvider {
 
 	/** Lấy mặt nạ của lượt này rồi XOÁ. Cả hai đường gọi đều đi qua đây. */
 	private layMatNa(): { ten: ReadonlySet<string> | null; camRespond: boolean } {
-		const m = { ten: this.matNaTool, camRespond: this.camRespond };
+		const cam = this.camRespond || this.luotConCamRespond > 0;
+		const m = { ten: this.matNaTool, camRespond: cam };
 		this.matNaTool = null;
 		this.camRespond = false;
+		// Trừ dần thay vì xoá sạch: lệnh cấm phải sống qua một lượt `FileRead`,
+		// nếu không model chỉ cần đọc một file là thoát.
+		if (this.luotConCamRespond > 0) this.luotConCamRespond--;
 		return m;
 	}
 
