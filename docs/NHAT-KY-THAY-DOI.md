@@ -17,7 +17,7 @@
 
 ## Đợt 2026-08-23 — nhánh `feat/product-grade`
 
-Mười lăm commit, chia làm ba nhóm: đại tu hệ điều khiển theo
+Mười bảy commit, chia làm ba nhóm: đại tu hệ điều khiển theo
 `RA-SOAT-DIEU-KHIEN.md`, dựng tầng vết tích, rồi sửa những lỗi mà chính vết
 tích phơi ra khi chạy thật trên một solution .NET.
 
@@ -40,6 +40,8 @@ tích phơi ra khi chạy thật trên một solution .NET.
 | `b6bc2d6` | Cổng ② để ngỏ đường sửa bài kiểm — cảnh báo | §3 |
 | `6fe6624` | Cổng ② quên cấm `respond` — bịt một bên bỏ bên kia | §3 |
 | `017a248` | Khoá ghi lên file kiểm — gỡ khả năng thay vì răn | §3 |
+| `844ee2c` | Trần bề ngang cột đọc — hết tường chữ | §12 |
+| `e1b5dfd` | Lệnh cấm `respond` bám nhiều lượt — `FileRead` không còn là cửa thoát | §3 |
 
 ---
 
