@@ -130,13 +130,13 @@ LOI (9 luật + FORMATTING)          luôn có
 
 | # | Cơ chế | Kích hoạt khi | Ngưỡng | Mặt nạ đặt cho lượt sau | Dòng |
 |---|---|---|---|---|---|
-| 1 | Bắt "tuyên bố rồi dừng" | không tool call + khớp mẫu hứa hẹn + chưa có tiến triển gần đây | 4 lần | `{Write,Edit,Bash}` | 768 |
+| 1 | Bắt "tuyên bố rồi dừng" | không tool call + khớp mẫu hứa hẹn + chưa có tiến triển gần đây | 4 lần | `{Write,Edit,Bash,Read}` | 768 |
 | 2 | Bắt "trả lời vẹt" | lặp nguyên văn câu trả lời cũ | 1 lần | — | 724 |
-| 3 | Model tự khai chưa xong | `done=false` trong envelope (chỉ có ở structured) | 3 lần | từ nhịp 2: `{Write,Edit,Bash}` | 739 |
-| 4 | **Cổng kiểm chứng** | đã sửa file mà chưa chạy lệnh kiểm nào | 2 nhịp | nhịp 1 `{Write,Edit,Bash}` → nhịp 2 **`{Bash}`** | 797 |
-| 5 | Ngân sách trinh sát | 6 lệnh đọc liên tiếp không ghi gì | tái kích mỗi 6 | `{Write,Edit}` | 888 |
-| 6 | Lặp Y HỆT (tool+tham số) | cùng tool, cùng tham số — **trừ lệnh kiểm chứng** | nhắc lần 3, **cắt phiên** lần 5 | `{Write,Edit,Bash}` | 943 |
-| 7 | Gọi LIÊN TIẾP cùng tool | cùng tên tool, tham số đổi vặt | nhắc 4 → cảnh cuối 6 → **cắt 8** | ghi→`{Bash}`, đọc→`{Write,Edit,Bash}` | 987 |
+| 3 | Model tự khai chưa xong | `done=false` trong envelope (chỉ có ở structured) | 3 lần | từ nhịp 2: `{Write,Edit,Bash,Read}` | 739 |
+| 4 | **Cổng kiểm chứng** | đã sửa file mà chưa chạy lệnh kiểm nào | 2 nhịp | nhịp 1 `{Write,Edit,Bash,Read}` → nhịp 2 **`{Bash,Read}`** | 797 |
+| 5 | Ngân sách trinh sát | 6 lệnh đọc liên tiếp không ghi gì | tái kích mỗi 6 | `{Write,Edit,Read}` | 888 |
+| 6 | Lặp Y HỆT (tool+tham số) | cùng tool, cùng tham số — **trừ lệnh kiểm chứng** | nhắc lần 3, **cắt phiên** lần 5 | `{Write,Edit,Bash,Read}` | 943 |
+| 7 | Gọi LIÊN TIẾP cùng tool | cùng tên tool, tham số đổi vặt | nhắc 4 → cảnh cuối 6 → **cắt 8** | ghi→`{Bash,Read}`, đọc→`{Write,Edit,Bash,Read}` | 987 |
 | 8 | **Kiểm cú pháp sau ghi** | FileWrite/FileEdit xong, đuôi có bộ kiểm | mỗi lần ghi | — (gắn vào `tool_result`) | 1151 |
 
 **Quan hệ #6 và #7:** #6 chạy trước và có đường cắt hẳn phiên ở lần 5. Đảo thứ
@@ -150,6 +150,12 @@ tự thì #6 không bao giờ leo tới ngưỡng đó — đã vấp đúng l�
   `recovery:retry`, nên nhìn nhật ký là đối chiếu được.
 - **Mặt nạ không bao giờ rỗng.** `thuHepTool()` lọc theo registry trước; giao
   rỗng thì KHÔNG thu hẹp. Thà mất đòn bẩy còn hơn nhốt model.
+- **`FileRead` có mặt trong MỌI mặt nạ.** Đọc không bao giờ là hành động giả.
+  Đo thật: mặt nạ loại FileRead ra, model bị ép ghi nhưng không còn cách lấy
+  đúng nội dung file, nên nó dựng `old_string` từ trí nhớ và sửa trượt — rồi
+  đổ cho thiếu quyền. Cấm đọc thì ta không ép model làm việc, ta ép nó ĐOÁN.
+  Thứ cần chặn là trinh sát LAN MAN (Grep/Glob quét mò), không phải việc đọc
+  đúng một file model sắp sửa.
 - **Ngưỡng phải LEO THANG, không nổ phẳng.** #7 từng lặp lại y nguyên bài răn
   ở lần 4, 6, 7, 8, 9 rồi hết lượt: model phớt ở lần 4 thì lần 7 cũng thế, mà
   mỗi lần lặp là một khối chữ nữa chiếm chỗ trong cửa sổ.
@@ -228,6 +234,28 @@ tục giữ khoá `bin/obj`. Lượt sau `FileEdit` lên đúng tệp đó nhậ
 another process"* — **do chính agent để lại ở lượt trước**, không phải người
 dùng mở IDE. Đã tái hiện và có test hồi quy (đo bằng PID chứ không bằng
 `pgrep -f` — khớp chuỗi thì lệnh đo tự khớp chính nó).
+
+**`FileEdit` và định dạng vô hình** — so khớp BỎ QUA khác biệt BOM và CRLF/LF,
+rồi ghi lại đúng định dạng gốc (file TRỘN dòng kết thúc thì giữ LF, không quy
+cả file).
+
+Vì sao bắt buộc: `\r` và BOM **vô hình** với model — không LLM nào tái tạo
+được thứ nó không nhìn thấy. Đo thật trên một solution .NET
+(`vet-tich/20260823-171947`): cả buổi 9 câu hỏi chỉ sửa nổi ĐÚNG MỘT file, và
+biến số duy nhất phân biệt là dòng kết thúc — file LF sửa được, hai file CRLF
+thì `String not found` mọi lần.
+
+Hai luật đi kèm, cả hai đều rút từ chính phiên đó:
+
+- **Thông báo lỗi phải CHẨN ĐOÁN.** Nói khác ở đâu (khoảng trắng? dòng nào sai?
+  lắp khối sai?), và LUÔN kết bằng *"This is NOT a permissions problem — the
+  file was NOT changed"*. Bản cũ chỉ có `String not found in <path>`; model
+  không hiểu vì sao trượt nên **bịa** ra "tôi không có quyền truy cập đầy đủ",
+  trong khi vết tích ghi 16 quyết định quyền và KHÔNG một lần từ chối. Người
+  dùng đọc câu đó rồi cấp thêm quyền — vô ích.
+- **Sửa RỖNG bị từ chối.** `old_string === new_string` là thao tác không đổi gì
+  nhưng vẫn báo "Edited … replaced 205 chars" — một thành công GIẢ đánh lừa cả
+  bộ đếm tiến triển lẫn người dùng.
 
 **Lỗi hệ thống tệp** (`built-in-tools/loi-tep.ts`): `FileEdit`/`FileWrite` bọc
 mọi thao tác đĩa, dịch mã lỗi OS sang câu nêu **hành động đúng** — bị khoá

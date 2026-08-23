@@ -102,6 +102,46 @@ describe("cổng kiểm chứng — leo thang tới {Bash}", () => {
 	});
 });
 
+describe("FileRead KHÔNG BAO GIỜ bị loại khỏi mặt nạ", () => {
+	it("cổng kiểm chứng vẫn cho đọc ở cả hai nhịp", async () => {
+		// Đo thật (`vet-tich/20260823-171947`): mặt nạ loại FileRead ra, model bị
+		// ép ghi nhưng không còn cách lấy đúng nội dung file, nên nó dựng
+		// `old_string` từ trí nhớ — thiếu BOM, thiếu `\r` — và sửa trượt. Rồi vì
+		// không hiểu vì sao trượt, nó kết luận "không có quyền".
+		//
+		// Đọc không bao giờ là hành động giả. Cấm đọc thì ta không ép model làm
+		// việc, ta ép nó ĐOÁN.
+		const loop = new AgentLoop({
+			model: "mock",
+			maxTurns: 8,
+			laLenhKiemTra: (c) => /npm test/.test(c),
+		});
+		loop.registerTool(toolGia("FileWrite", "Written 100 bytes"));
+		loop.registerTool(toolGia("FileRead", "noi dung"));
+		loop.registerTool(toolGia("Bash"));
+
+		let n = 0;
+		loop.setLLMCaller(async () => {
+			n++;
+			if (n === 1)
+				return {
+					stopReason: "tool_use",
+					toolCalls: [
+						{ toolUseId: "t1", toolName: "FileWrite", toolInput: { path: "a.js", content: "x" } },
+					],
+				};
+			return { text: "Da tao a.js xong roi.", stopReason: "end_turn" };
+		});
+
+		const ev: InnerEvent[] = [];
+		for await (const e of loop.run("lam di")) ev.push(e);
+
+		const mn = matNaDaAp(ev);
+		expect(mn.length).toBeGreaterThan(0);
+		for (const m of mn) expect(m.split(",")).toContain("FileRead");
+	});
+});
+
 describe("gọi liên tiếp cùng một tool", () => {
 	it("ghi mãi không chạy → mặt nạ về đúng {Bash}, khớp với câu nhắc", async () => {
 		// Bản cũ: `epChiViet = !LA_TOOL_GHI.has(...)` nên ghi-lặp KHÔNG thu hẹp gì

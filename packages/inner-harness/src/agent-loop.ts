@@ -228,12 +228,22 @@ const LA_TOOL_GHI: ReadonlySet<string> = new Set(["FileWrite", "FileEdit"]);
 // thật kiểu hỏng ngược lại: cảnh báo bảo "run the check command with Bash"
 // trong khi enum vừa loại Bash — model không có nước đi hợp lệ nào.
 
+// `FileRead` CÓ MẶT TRONG MỌI MẶT NẠ — không có ngoại lệ.
+//
+// Đo thật (`docs/SO-TAY-VET-TICH.md`, phiên 20260823-171947): mặt nạ loại
+// FileRead ra, model bị ép phải ghi nhưng không còn cách nào lấy đúng nội dung
+// file, nên nó dựng `old_string` từ trí nhớ — thiếu BOM, thiếu `\r` — và lượt
+// sửa trượt. Rồi vì không hiểu vì sao trượt, nó kết luận "không có quyền".
+//
+// Nguyên tắc: đọc KHÔNG BAO GIỜ là hành động giả. Thứ mặt nạ cần chặn là việc
+// trinh sát LAN MAN (Grep/Glob quét mò), không phải việc đọc đúng một file mà
+// model sắp sửa. Cấm đọc thì ta không ép model làm việc — ta ép nó đoán.
 /** Chỉ được VIẾT: khi model trinh sát mãi mà không sản xuất gì. */
-const MAT_NA_VIET = ["FileWrite", "FileEdit"];
+const MAT_NA_VIET = ["FileWrite", "FileEdit", "FileRead"];
 /** Phải TIẾN TRIỂN: tạo ra thứ gì đó, hoặc chạy thứ gì đó. */
-const MAT_NA_TIEN_TRIEN = ["FileWrite", "FileEdit", "Bash"];
+const MAT_NA_TIEN_TRIEN = ["FileWrite", "FileEdit", "Bash", "FileRead"];
 /** Chỉ được CHẠY: cổng kiểm chứng nhịp 2 — đã sửa file, giờ phải chạy kiểm. */
-const MAT_NA_CHAY = ["Bash"];
+const MAT_NA_CHAY = ["Bash", "FileRead"];
 
 // ── Ngưỡng của bộ đếm gọi-LIÊN-TIẾP (cùng tool, tham số đổi vặt) ──
 // Ba mốc chứ không một: chặn → cảnh cuối → dừng. Bản trước chỉ có mốc đầu và
@@ -1004,7 +1014,7 @@ export class AgentLoop implements InnerHarnessProvider {
 					yield* this.chanLoiGoi(
 						tc.toolUseId,
 						`${tc.toolName} was blocked: exploration budget exhausted.`,
-						`You keep exploring without producing anything new. You know enough. STOP searching — your NEXT call must be FileWrite or FileEdit that implements the task. If something is genuinely unknown, make your best reasonable choice and note it in a comment.`,
+						`You keep exploring without producing anything new. You know enough. STOP searching — no more Grep/Glob. Your next call must implement the task with FileWrite/FileEdit (FileRead is still available if you need the exact current content of a file you are about to change). If something is genuinely unknown, make your best reasonable choice and note it in a comment.`,
 					);
 					yield this.makeEvent({
 						type: "recovery:retry",
