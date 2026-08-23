@@ -46,15 +46,35 @@ export function activate(ctx: vscode.ExtensionContext): void {
 			// hỏng ngay, cổng chất lượng đỏ, retryEngine quay đủ 3 vòng vô ích —
 			// và người dùng tưởng agent làm sai. Đoán sai vẫn hơn bịa, nhưng đoán
 			// theo thứ có thật trên đĩa thì hầu như không sai.
+			// TRỎ ĐÚNG VÀO FILE DỰ ÁN, không phát một lệnh trần.
+			//
+			// Mất một vòng chạy mới thấy: `dotnet build` trần chạy ở gốc workspace,
+			// nơi KHÔNG có project nào — nó in "0 Error(s)" và trả mã thoát 0 trong
+			// 0,15 giây. Cổng chất lượng xanh, pipeline báo ĐẠT, trong khi build
+			// thật trong HelpdeskSolution/ đang hỏng mã thoát 1. Một phép kiểm
+			// không kiểm gì mà vẫn xanh là thứ nguy hiểm nhất trong cả pipeline.
 			const doanLenhKiem = async (): Promise<string> => {
-				const co = async (mau: string) =>
-					(await vscode.workspace.findFiles(mau, "**/node_modules/**", 1)).length > 0;
-				if (await co("**/*.sln")) return "dotnet build";
-				if (await co("**/*.csproj")) return "dotnet build";
-				if (await co("package.json")) return "npm test";
-				if (await co("**/pom.xml")) return "mvn -q test";
-				if (await co("**/Cargo.toml")) return "cargo test";
-				if (await co("**/go.mod")) return "go test ./...";
+				const goc = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+				const tim = async (mau: string): Promise<string | null> => {
+					const r = await vscode.workspace.findFiles(mau, "**/node_modules/**", 1);
+					if (r.length === 0) return null;
+					const p = r[0]!.fsPath;
+					return p.startsWith(goc) ? p.slice(goc.length + 1) : p;
+				};
+				const sln = await tim("**/*.sln");
+				if (sln) return `dotnet build "${sln}"`;
+				const csproj = await tim("**/*.csproj");
+				if (csproj) return `dotnet build "${csproj}"`;
+				const pkg = await tim("**/package.json");
+				if (pkg) {
+					const thuMuc = pkg.replace(/package\.json$/, "").replace(/\/$/, "");
+					return thuMuc === "" ? "npm test" : `npm --prefix "${thuMuc}" test`;
+				}
+				const pom = await tim("**/pom.xml");
+				if (pom) return `mvn -q -f "${pom}" test`;
+				const cargo = await tim("**/Cargo.toml");
+				if (cargo) return `cargo test --manifest-path "${cargo}"`;
+				if (await tim("**/go.mod")) return "go test ./...";
 				return "";
 			};
 

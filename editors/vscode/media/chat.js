@@ -509,13 +509,18 @@ window.addEventListener("message", (ev) => {
 				// Kết cục THẬT là cổng chất lượng có đạt không, không phải `reason`
 				// của vòng lặp — `reason` là "completed" kể cả khi build đỏ.
 				const dat = e.dat;
-				cuoi.className = dat === false ? "nhan hong" : "nhan";
+				cuoi.className = dat === false || e.coCongKiem === false ? "nhan hong" : "nhan";
+				// "ĐẠT" chỉ được nói khi THẬT SỰ có phép kiểm chạy qua. Không có cổng
+				// kiểm mà vẫn hô ĐẠT là dựng lại đúng cái bẫy vừa mắc: một lệnh
+				// không kiểm gì trả mã thoát 0, và người dùng tin là xong việc.
 				const phan = [
-					dat === true
-						? "⚙ Pipeline ĐẠT"
-						: dat === false
-							? "⚙ Pipeline KHÔNG ĐẠT"
-							: "⚙ Pipeline kết thúc",
+					e.coCongKiem === false
+						? "⚙ Pipeline chạy xong — CHƯA KIỂM CHỨNG (không có cổng kiểm)"
+						: dat === true
+							? "⚙ Pipeline ĐẠT"
+							: dat === false
+								? "⚙ Pipeline KHÔNG ĐẠT"
+								: "⚙ Pipeline kết thúc",
 				];
 				if (typeof e.tyLeTestDat === "number")
 					phan.push(`kiểm ${Math.round(e.tyLeTestDat * 100)}%`);

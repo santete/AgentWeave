@@ -1235,6 +1235,10 @@ async function chayPipeline(t: ThamSoPipeline): Promise<void> {
 					dat: sd ? sd.m1_firstPassSuccess : null,
 					tyLeTestDat: sd ? sd.m2_testPassRate : null,
 					soLanThuLai: sd ? sd.m4_retryCount : null,
+					// Có PHÉP KIỂM nào được cấu hình không. Không có thì "đạt" chỉ
+					// nghĩa là không có gì phản đối — khác hẳn "đã kiểm và đúng", và
+					// giao diện phải nói khác đi.
+					coCongKiem: checks.length > 0,
 				});
 				break;
 			}
