@@ -488,6 +488,25 @@ lúc chạy, nên nó cố tình gọn. Vết tích (§14) là kênh cho ngườ
 nên nó giữ nguyên payload. Hai mục đích khác nhau, đừng gộp: nhồi trọn chuỗi
 prompt vào `InnerEvent` thì webview phải tải vài trăm KB mỗi lượt.
 
+### Bộ vẽ markdown của webview — hai bẫy đã vấp
+
+`veDoanChu` trong `media/chat.js` tự dựng markdown theo DÒNG. Hai luật rút từ
+lỗi thật ("model toàn đánh số 1, không có số 2"):
+
+- **Dòng trống giữa hai mục KHÔNG được đóng danh sách.** Model viết danh sách
+  "thoáng" — mỗi mục cách nhau một dòng trống, rất hay gặp khi mục có dẫn đề
+  in đậm. Bản trước đóng danh sách ở bất kỳ dòng nào không phải mục, nên mỗi
+  mục thành một `<ol>` riêng chứa đúng một `<li>`, và `<ol>` nào cũng bắt đầu
+  từ 1. Phải nhìn TỚI dòng không trống kế tiếp mới quyết định đóng hay không.
+- **Giữ số bắt đầu thật** (`ol.start`). Danh sách bị ngắt giữa chừng (vd mục
+  có danh sách con thụt lề) thì phần sau vẫn phải nối đúng số, không được để
+  trình duyệt đánh lại từ 1 — đánh lại là bịa ra một thứ tự khác với thứ tự
+  model nói, và người đọc sẽ trích dẫn nhầm mục.
+
+Vết tích chứng minh model KHÔNG sai: `llm:nhan` cho thấy nó nhả ra đúng
+`1. 2. 3. 4.` ở cả 8 câu trả lời của phiên bị than phiền. Đây là bài học về
+việc đổ lỗi cho model trước khi kiểm tầng hiển thị.
+
 Muốn thêm thứ hiện lên editor thì **chọn một trong hai**:
 - Việc hiếm, chỉ cần một dòng chữ → dùng lại `notice`, **không phải đổi giao thức**
 - Việc cần giao diện riêng → thêm loại mới; webview không có nhánh `default`
