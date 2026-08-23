@@ -142,6 +142,65 @@ describe("FileRead KHÔNG BAO GIỜ bị loại khỏi mặt nạ", () => {
 	});
 });
 
+describe("tự khai chưa xong — CẤM respond", () => {
+	/**
+	 * Đo thật (`vet-tich/20260823-180443`): mặt nạ thu về
+	 * {FileWrite,FileEdit,Bash,FileRead} nhưng `respond` vẫn nằm trong enum ở
+	 * MỌI lượt, nên model cứ nộp thêm một bài văn "tôi cần thêm thời gian".
+	 * Nó khai done=false ba lần rồi vẫn kết thúc với 0 file được sửa, và
+	 * harness ghi `reason: completed`.
+	 */
+	function loopKeLe(): { loop: AgentLoop; soLanGoi: () => number } {
+		const loop = new AgentLoop({ model: "mock", maxTurns: 10 });
+		loop.registerTool(toolGia("FileWrite", "Written 10 bytes"));
+		loop.registerTool(toolGia("Bash"));
+		let n = 0;
+		// Model LÌ: lượt nào cũng chỉ nói, và lượt nào cũng tự khai chưa xong.
+		loop.setLLMCaller(async () => {
+			n++;
+			return { text: "Toi se tiep tuc sua chua...", stopReason: "end_turn", chuaXong: true };
+		});
+		return { loop, soLanGoi: () => n };
+	}
+
+	it("nhịp 2 trở đi thì cờ cấm respond được bật", async () => {
+		const { loop } = loopKeLe();
+		const ev: InnerEvent[] = [];
+		for await (const e of loop.run("sua di")) ev.push(e);
+
+		const camm = ev.filter(
+			(e) =>
+				e.type === "recovery:retry" &&
+				/CAM respond/.test(String((e as { reason?: string }).reason)),
+		);
+		expect(camm.length).toBeGreaterThan(0);
+	});
+
+	it("thu hẹp NGAY nhịp 1, không nhắc suông một lượt", async () => {
+		const { loop } = loopKeLe();
+		const ev: InnerEvent[] = [];
+		for await (const e of loop.run("sua di")) ev.push(e);
+		// Mọi nhịp đều phải có mặt nạ — kể cả nhịp đầu.
+		expect(matNaDaAp(ev).length).toBeGreaterThanOrEqual(3);
+	});
+
+	it("hết nhịp mà vẫn khai chưa xong thì KHÔNG được ghi completed", async () => {
+		// Model tự nói chưa xong mà ta chốt "completed" là nói dối trong chính
+		// số liệu của mình — người dùng đọc turn_end thấy xanh rồi tin là xong.
+		const { loop } = loopKeLe();
+		let kq: { reason: string } | undefined;
+		const g = loop.run("sua di");
+		for (;;) {
+			const b = await g.next();
+			if (b.done) {
+				kq = b.value as { reason: string };
+				break;
+			}
+		}
+		expect(kq!.reason).not.toBe("completed");
+	});
+});
+
 describe("gọi liên tiếp cùng một tool", () => {
 	it("ghi mãi không chạy → mặt nạ về đúng {Bash}, khớp với câu nhắc", async () => {
 		// Bản cũ: `epChiViet = !LA_TOOL_GHI.has(...)` nên ghi-lặp KHÔNG thu hẹp gì

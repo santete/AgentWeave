@@ -132,7 +132,7 @@ LOI (9 luật + FORMATTING)          luôn có
 |---|---|---|---|---|---|
 | 1 | Bắt "tuyên bố rồi dừng" | không tool call + khớp mẫu hứa hẹn + chưa có tiến triển gần đây | 4 lần | `{Write,Edit,Bash,Read}` | 768 |
 | 2 | Bắt "trả lời vẹt" | lặp nguyên văn câu trả lời cũ | 1 lần | — | 724 |
-| 3 | Model tự khai chưa xong | `done=false` trong envelope (chỉ có ở structured) | 3 lần | từ nhịp 2: `{Write,Edit,Bash,Read}` | 739 |
+| 3 | Model tự khai chưa xong | `done=false` trong envelope (chỉ có ở structured) | 3 lần, hết nhịp → **cắt, reason `loop`** | nhịp 1 `{Write,Edit,Bash,Read}`, từ nhịp 2 thêm **BỎ `respond` khỏi enum** | 739 |
 | 4 | **Cổng kiểm chứng** | đã sửa file mà chưa chạy lệnh kiểm nào | 2 nhịp | nhịp 1 `{Write,Edit,Bash,Read}` → nhịp 2 **`{Bash,Read}`** | 797 |
 | 5 | Ngân sách trinh sát | 6 lệnh đọc liên tiếp không ghi gì | tái kích mỗi 6 | `{Write,Edit,Read}` | 888 |
 | 6 | Lặp Y HỆT (tool+tham số) | cùng tool, cùng tham số — **trừ lệnh kiểm chứng** | nhắc lần 3, **cắt phiên** lần 5 | `{Write,Edit,Bash,Read}` | 943 |
@@ -156,6 +156,16 @@ tự thì #6 không bao giờ leo tới ngưỡng đó — đã vấp đúng l�
   đổ cho thiếu quyền. Cấm đọc thì ta không ép model làm việc, ta ép nó ĐOÁN.
   Thứ cần chặn là trinh sát LAN MAN (Grep/Glob quét mò), không phải việc đọc
   đúng một file model sắp sửa.
+- **`respond` KHÔNG phải bất khả xâm phạm.** Nó nằm trong enum ở mọi lượt, nên
+  với một model chỉ muốn nói thì mặt nạ tool hoàn toàn bất lực — thu hẹp còn
+  `{Write,Edit,Bash,Read}` mà nó vẫn nộp thêm một bài văn. Đo thật
+  (`vet-tich/20260823-180443`): tự khai `done=false` ba lần rồi vẫn kết thúc
+  với 0 file được sửa, harness ghi `reason: completed`. Khi model TỰ KHAI chưa
+  xong thì bỏ hẳn `respond` — không phải ép nó làm điều nó không muốn, mà là
+  thi hành đúng lời khai của nó. Không bao giờ bỏ khi enum sẽ rỗng.
+- **Không được ghi `completed` khi model nói chưa xong.** Đó là nói dối trong
+  chính số liệu của mình: người dùng đọc `turn_end` thấy xanh rồi tin là xong.
+  Hết nhịp mà vẫn `done=false` → cắt với `reason: "loop"` kèm lỗi nói rõ.
 - **Ngưỡng phải LEO THANG, không nổ phẳng.** #7 từng lặp lại y nguyên bài răn
   ở lần 4, 6, 7, 8, 9 rồi hết lượt: model phớt ở lần 4 thì lần 7 cũng thế, mà
   mỗi lần lặp là một khối chữ nữa chiếm chỗ trong cửa sổ.

@@ -327,6 +327,20 @@ export class AgentLoop implements InnerHarnessProvider {
 	 * chạy cấu hình stream là cờ bật vĩnh viễn mà không ai tiêu thụ.
 	 */
 	private matNaTool: ReadonlySet<string> | null = null;
+	/**
+	 * Bỏ `respond` khỏi enum ở lượt gọi kế tiếp — sampler KHÔNG SINH NỔI một câu
+	 * trả lời bằng chữ, buộc phải gọi tool.
+	 *
+	 * Đây là lỗ đã đo được (`vet-tich/20260823-180443`): mặt nạ thu về
+	 * {FileWrite,FileEdit,Bash,FileRead} nhưng `respond` vẫn nằm trong enum ở
+	 * MỌI lượt, nên với một model chỉ muốn nói thì mặt nạ hoàn toàn bất lực. Nó
+	 * tự khai `done=false` ba lần — tự nói "tôi chưa xong" — rồi vẫn kết thúc
+	 * lượt với 0 file được sửa, và harness ghi `reason: completed`.
+	 *
+	 * Chỉ dùng khi model TỰ KHAI chưa xong: lúc đó "trả lời bằng chữ" đã bị
+	 * chính nó loại khỏi tập nước đi hợp lệ, ta chỉ đang thi hành điều đó.
+	 */
+	private camRespond = false;
 	private thamSoSinh?: ThamSoSinh;
 	private vetTich?: BoGhiVetTich;
 	/**
@@ -848,19 +862,65 @@ export class AgentLoop implements InnerHarnessProvider {
 				// Tin cậy hơn dò mẫu câu; giới hạn 3 nhịp để không thành vòng vô hạn.
 				if (llmResult.chuaXong && this.soLanEpTiepTuc < 3) {
 					this.soLanEpTiepTuc++;
-					// Lì tới nhịp 2 thì thôi khuyên — thu hẹp lựa chọn còn "làm gì đó".
-					const mnTiep = this.soLanEpTiepTuc >= 2 ? this.thuHepTool(MAT_NA_TIEN_TRIEN) : "";
-					this.vetGuard("tu-khai-chua-xong", this.soLanEpTiepTuc, 3, mnTiep);
+					// Thu hẹp NGAY TỪ NHỊP 1. Bản trước nhịp 1 chỉ nhắc suông rồi mới
+					// thu hẹp từ nhịp 2 — mà một model đã quyết định kể lể thì nhắc
+					// suông không đổi được gì, chỉ tốn một lượt sinh.
+					const mnTiep = this.thuHepTool(MAT_NA_TIEN_TRIEN);
+
+					// ── ĐÒN CƯỠNG CHẾ THẬT ──
+					// Từ nhịp 2 trở đi, BỎ HẲN `respond` khỏi enum. Đo thật
+					// (`vet-tich/20260823-180443`): mặt nạ thu về
+					// {FileWrite,FileEdit,Bash,FileRead} nhưng `respond` vẫn ở trong
+					// enum mọi lượt, nên model cứ nộp thêm một bài văn "tôi cần thêm
+					// thời gian" và mặt nạ hoàn toàn bất lực. Nó tự khai done=false ba
+					// lần rồi vẫn kết thúc với 0 file được sửa.
+					//
+					// Đây không phải ép model làm điều nó không muốn: chính nó vừa
+					// khai chưa xong, ta chỉ thi hành lời khai đó.
+					this.camRespond = this.soLanEpTiepTuc >= 2;
+
+					this.vetGuard("tu-khai-chua-xong", this.soLanEpTiepTuc, 3, mnTiep, {
+						camRespond: this.camRespond,
+					});
 					if (vanBanCuoi) this.messages.appendAssistant(vanBanCuoi);
 					this.bomNhacGuard(
-						"You declared done=false — the request is NOT finished. Do NOT stop, do NOT promise, do NOT ask the user to wait. Call the next tool NOW and keep working until you can honestly respond with done=true.",
+						this.camRespond
+							? "You declared done=false again. Talking is no longer an option this turn — the respond action has been REMOVED from your choices. Call a tool that changes something: FileEdit/FileWrite to make the change, or Bash to run the check. Do the smallest concrete next step, not a plan."
+							: "You declared done=false — the request is NOT finished. Do NOT stop, do NOT promise, do NOT ask the user to wait. Call the next tool NOW and keep working until you can honestly respond with done=true.",
 					);
 					yield this.makeEvent({
 						type: "recovery:retry",
-						reason: `model tu khai chua xong (done=false) — ep lam tiep (${this.soLanEpTiepTuc}/3)${mnTiep}`,
+						reason: `model tu khai chua xong (done=false) — ep lam tiep (${this.soLanEpTiepTuc}/3)${mnTiep}${this.camRespond ? " — CAM respond" : ""}`,
 						attempt: this.state.turnIndex,
 					});
 					continue;
+				}
+
+				// ── Hết nhịp mà VẪN tự khai chưa xong ──
+				// Bản trước rơi thẳng xuống nhánh kết thúc và ghi `reason:
+				// "completed"`. Đó là nói dối trong chính số liệu của mình: model vừa
+				// khai chưa xong, ta không được chốt là xong. Kết thúc thì vẫn phải
+				// kết thúc (nếu không là vòng vô hạn), nhưng gọi đúng tên.
+				if (llmResult.chuaXong) {
+					if (vanBanCuoi) {
+						this.messages.appendAssistant(vanBanCuoi);
+						yield this.makeEvent({
+							type: "message:assistant",
+							content: [{ type: "text", text: vanBanCuoi }],
+						});
+					}
+					this.vetGuard("tu-khai-chua-xong-het-nhip", this.soLanEpTiepTuc, 3, "");
+					this.state.status = "completed";
+					const usage = this.tokenCounter.getUsage();
+					yield this.makeEvent({
+						type: "error",
+						error:
+							`Agent tu khai CHUA XONG sau ${this.soLanEpTiepTuc} lan bi ep lam tiep, ` +
+							"va van khong goi tool nao. Viec CHUA hoan thanh — dung tin phan tra loi cuoi.",
+						recoverable: true,
+					});
+					yield this.makeEvent({ type: "terminal", reason: "loop", usage });
+					return { reason: "loop", usage };
 				}
 				// Điều kiện theo TIẾN TRIỂN thật (chưa GHI file nào) chứ không phải
 				// "chưa chạy tool nào" — đo thật sau reload: model đọc 2-3 tool rồi
@@ -1447,9 +1507,9 @@ export class AgentLoop implements InnerHarnessProvider {
 		// Giao thức có ràng buộc: chỉ khi bật cờ và không có ảnh (đường này phẳng
 		// ảnh thành chữ). Xem chayCoRangBuoc.
 		if (this.structuredProtocol && this.laModelCucBo() && !this.coAnhTrongLichSu()) {
-			return yield* this.chayCoRangBuoc(matNa);
+			return yield* this.chayCoRangBuoc(matNa.ten, matNa.camRespond);
 		}
-		return yield* this.chayStream(matNa);
+		return yield* this.chayStream(matNa.ten);
 	}
 
 	private async *chayStream(
@@ -1706,9 +1766,10 @@ export class AgentLoop implements InnerHarnessProvider {
 	}
 
 	/** Lấy mặt nạ của lượt này rồi XOÁ. Cả hai đường gọi đều đi qua đây. */
-	private layMatNa(): ReadonlySet<string> | null {
-		const m = this.matNaTool;
+	private layMatNa(): { ten: ReadonlySet<string> | null; camRespond: boolean } {
+		const m = { ten: this.matNaTool, camRespond: this.camRespond };
 		this.matNaTool = null;
+		this.camRespond = false;
 		return m;
 	}
 
@@ -1865,6 +1926,7 @@ Khi da HOAN THANH yeu cau, dung {"tool":"respond","message":"..."} de KET THUC �
 	 */
 	private async *chayCoRangBuoc(
 		matNa: ReadonlySet<string> | null,
+		camRespond = false,
 	): AsyncGenerator<string, LLMCallResult, void> {
 		// Nudge bằng chữ thì model 30B phớt được; enum trong format schema thì
 		// KHÔNG — sampler không sinh nổi tên tool ngoài danh sách. Đây là đòn bẩy
@@ -1875,7 +1937,10 @@ Khi da HOAN THANH yeu cau, dung {"tool":"respond","message":"..."} de KET THUC �
 			type: "object",
 			properties: {
 				reasoning: { type: "string" },
-				tool: { type: "string", enum: [...ten, "respond"] },
+				// Bỏ `respond` khi model TỰ KHAI chưa xong: nó không sinh nổi tên
+				// ngoài enum, nên một câu trả lời bằng chữ trở thành nước đi bất
+				// khả. Không bao giờ bỏ khi enum sẽ rỗng — lúc đó model kẹt cứng.
+				tool: { type: "string", enum: camRespond && ten.length > 0 ? ten : [...ten, "respond"] },
 				input: { type: "object" },
 				message: { type: "string" },
 				// Bắt buộc TỰ KHAI: yêu cầu của người dùng đã xong chưa. Schema ép
@@ -1915,7 +1980,8 @@ Khi da HOAN THANH yeu cau, dung {"tool":"respond","message":"..."} de KET THUC �
 				soTinNhan: messages.length,
 				// Danh sách tool SAU mặt nạ — đối chiếu với `agent:guard` để thấy
 				// đòn bẩy cưỡng chế có thật sự tới được sampler không.
-				toolChoPhep: [...ten, "respond"],
+				toolChoPhep: camRespond && ten.length > 0 ? ten : [...ten, "respond"],
+				camRespond,
 				coMatNa: matNa !== null,
 				options: than.options,
 				tongKyTu: messages.reduce((n, m) => n + m.content.length, 0),
