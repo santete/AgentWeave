@@ -138,9 +138,9 @@ LOI (9 luật + FORMATTING)          luôn có
 |---|---|---|---|---|---|
 | 1 | Bắt "tuyên bố rồi dừng" | không tool call + khớp mẫu hứa hẹn + chưa có tiến triển gần đây | 4 lần | `{Write,Edit,Bash,Read}` | 768 |
 | 2 | Bắt "trả lời vẹt" | lặp nguyên văn câu trả lời cũ | 1 lần | — | 724 |
-| 3 | Model tự khai chưa xong | `done=false` trong envelope (chỉ có ở structured) | 3 lần, hết nhịp → **cắt, reason `loop`** | nhịp 1 `{Write,Edit,Bash,Read}`, từ nhịp 2 thêm **BỎ `respond` khỏi enum** | 739 |
+| 3 | Model tự khai chưa xong | `done=false` trong envelope (chỉ có ở structured) | 3 lần **LIÊN TIẾP không tiến triển** → cắt | nhịp 1 `{Write,Edit,Bash,Read}`, từ nhịp 2 thêm **BỎ `respond` khỏi enum** | 739 |
 | 4a | **Cổng kiểm chứng ①** — *đã kiểm chưa?* | đã sửa file mà chưa chạy lệnh kiểm nào | 2 nhịp | nhịp 1 `{Write,Edit,Bash,Read}` → nhịp 2 **`{Bash,Read}`** | 797 |
-| 4b | **Cổng kiểm chứng ②** — *nó có ĐẠT không?* | lệnh kiểm đã chạy và **HỎNG** | 4 nhịp | `{Write,Edit,Bash,Read}` | 1004 |
+| 4b | **Cổng kiểm chứng ②** — *nó có ĐẠT không?* | lệnh kiểm đã chạy và **HỎNG** | đi tiếp chừng nào đầu ra còn ĐỔI; dừng khi 3 lần y hệt, hoặc 3 lần không chạy lại kiểm | `{Write,Edit,Bash,Read}` | 1004 |
 | 5 | Ngân sách trinh sát | 6 lệnh đọc liên tiếp không ghi gì | tái kích mỗi 6 | `{Write,Edit,Read}` | 888 |
 | 6 | Lặp Y HỆT (tool+tham số) | cùng tool, cùng tham số — **trừ lệnh kiểm chứng** | nhắc lần 3, **cắt phiên** lần 5 | `{Write,Edit,Bash,Read}` | 943 |
 | 7 | Gọi LIÊN TIẾP cùng tool | cùng tên tool, tham số đổi vặt | nhắc 4 → cảnh cuối 6 → **cắt 8** | ghi→`{Bash,Read}`, đọc→`{Write,Edit,Bash,Read}` | 987 |
@@ -193,6 +193,16 @@ tự thì #6 không bao giờ leo tới ngưỡng đó — đã vấp đúng l�
   kiểm sai thật, và một câu hỏi mới của người dùng là cổng hạ xuống. Cảnh báo
   lúc kết thúc giữ lại làm lưới cuối cho các đường vòng khoá không phủ (sửa
   bằng Bash, đổi lệnh kiểm).
+- **ĐẾM SỐ LẦN THỬ LÀ THƯỚC ĐO SAI — luật chung cho MỌI cơ chế ở bảng này.**
+  Một refactor thật cần hai chục vòng; chặn ở lần thứ tư là con số bịa ra không
+  liên quan gì tới mục tiêu. Thước đo đúng là TIẾN TRIỂN, và mọi bộ đếm phải
+  ĐẶT LẠI khi có tiến triển (ghi được file, hoặc chạy được lệnh kiểm).
+
+  Đã vấp ba lần vì quên luật này: ② chặn ở lần thứ tư; #3 đếm cộng dồn
+  `done=false` rồi cắt phiên `reason: "loop"` một agent vừa chạy 11 tool và sửa
+  `TicketService.cs` — nó khai chưa xong ba lần vì nó THÀNH THẬT, và bị phạt
+  đúng vì thế. Điểm dừng phải là "ba lần liên tiếp KHÔNG tiến triển", không bao
+  giờ là "đã thử đủ số lần".
 - **Trần của ② là lời thú nhận, không phải thiếu sót.** Model không đủ sức sửa
   thì vòng lặp PHẢI thoát; không có phương án nào cho "chạy tới khi hoàn thiện"
   theo nghĩa tuyệt đối. Câu hỏi thật là trần dựa trên cái gì — "model tự nhận

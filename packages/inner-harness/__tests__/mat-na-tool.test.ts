@@ -364,3 +364,50 @@ describe("cổng ② dừng theo TIẾN TRIỂN, không theo số lần thử", 
 		expect(demChan(ev)).toBeLessThanOrEqual(5);
 	});
 });
+
+describe("done=false: bộ đếm phải ĐẶT LẠI khi có tiến triển", () => {
+	/**
+	 * Một việc nhiều bước thì model khai `done=false` hàng chục lần là chuyện
+	 * ĐÚNG — nó đang thành thật. Đếm cộng dồn rồi cắt phiên là phạt đúng cái
+	 * tính thành thật đó.
+	 *
+	 * Đo thật (`vet-tich/20260823-215734`): agent chạy 11 tool, sửa
+	 * TicketService.cs, rồi bị cắt `reason: "loop"` vì đã khai done=false ba
+	 * lần rải khắp lượt — trong khi nó đang làm việc.
+	 */
+	it("xen kẽ ghi file thì KHÔNG bị cắt dù khai done=false nhiều lần", async () => {
+		const loop = new AgentLoop({ model: "mock", maxTurns: 30 });
+		loop.registerTool(toolGia("FileWrite", "Written 10 bytes"));
+
+		let n = 0;
+		loop.setLLMCaller(async () => {
+			n++;
+			// Cứ hai lượt: một lần ghi file thật, một lần khai chưa xong.
+			if (n % 2 === 1)
+				return {
+					stopReason: "tool_use",
+					toolCalls: [
+						{
+							toolUseId: `t${n}`,
+							toolName: "FileWrite",
+							toolInput: { path: `f${n}.js`, content: "x" },
+						},
+					],
+				};
+			if (n < 12) return { text: "dang lam tiep", stopReason: "end_turn", chuaXong: true };
+			return { text: "xong", stopReason: "end_turn" };
+		});
+
+		let kq: { reason: string } | undefined;
+		const g = loop.run("lam viec nhieu buoc");
+		for (;;) {
+			const b = await g.next();
+			if (b.done) {
+				kq = b.value as { reason: string };
+				break;
+			}
+		}
+		// Khai done=false 5 lần nhưng lần nào cũng có ghi file xen giữa → không cắt.
+		expect(kq!.reason).toBe("completed");
+	});
+});

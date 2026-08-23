@@ -1028,9 +1028,14 @@ export class AgentLoop implements InnerHarnessProvider {
 					const usage = this.tokenCounter.getUsage();
 					yield this.makeEvent({
 						type: "error",
+						// Nói ĐÚNG những gì đã xảy ra. Bản trước khẳng định "van khong goi
+						// tool nao" — sai sự thật khi agent vừa chạy 11 tool và sửa file
+						// thật. Một thông báo đổ lỗi sai làm người đọc đi tìm nhầm chỗ.
 						error:
-							`Agent tu khai CHUA XONG sau ${this.soLanEpTiepTuc} lan bi ep lam tiep, ` +
-							"va van khong goi tool nao. Viec CHUA hoan thanh — dung tin phan tra loi cuoi.",
+							`Agent van tu khai CHUA XONG sau ${this.soLanEpTiepTuc} lan bi ep lam tiep ` +
+							`ma khong tao them tien trien nao (da chay ${this.soToolThucThi} tool, ` +
+							`sua ${this.fileDaSua.size} file trong luot nay). ` +
+							"Viec CHUA hoan thanh — dung tin phan tra loi cuoi.",
 						recoverable: true,
 					});
 					yield this.makeEvent({ type: "terminal", reason: "loop", usage });
@@ -1589,8 +1594,15 @@ export class AgentLoop implements InnerHarnessProvider {
 							// Vừa sửa file thì kết cục kiểm CŨ không còn nói gì về mã
 							// hiện tại — phải chạy lại mới biết.
 							this.kiemTraGanNhatDat = null;
-							// Ghi được file = tiến triển thật → hạ lệnh cấm.
+							// Ghi được file = tiến triển thật → hạ lệnh cấm VÀ đặt lại bộ
+							// đếm `done=false`. Một việc nhiều bước thì model khai chưa xong
+							// hàng chục lần là chuyện ĐÚNG — nó đang thành thật. Đếm cộng dồn
+							// rồi cắt phiên là phạt đúng cái tính thành thật đó. Đo thật
+							// (`vet-tich/20260823-215734`): agent chạy 11 tool, sửa
+							// TicketService.cs, rồi bị cắt vì đã khai `done=false` ba lần rải
+							// khắp lượt.
 							this.luotConCamRespond = 0;
+							this.soLanEpTiepTuc = 0;
 							this.luotGhiCuoi = this.state.turnIndex;
 							const vao = goiGoc.toolInput as Record<string, unknown>;
 							const p = vao.path ?? vao.file ?? vao.file_path ?? vao.filename;
@@ -1637,6 +1649,7 @@ export class AgentLoop implements InnerHarnessProvider {
 								this.daChayKiemTra = true;
 								this.luotConCamRespond = 0; // chạy được lệnh kiểm cũng là tiến triển
 								this.soLanEpMaKhongChayKiem = 0;
+								this.soLanEpTiepTuc = 0; // chạy được lệnh kiểm cũng là tiến triển
 								// Mã thoát ≠ 0 thì `bash.ts` mở đầu kết quả bằng
 								// `[mã thoát N]` — tín hiệu đạt/hỏng đã nằm sẵn trong
 								// vòng lặp, không cần host báo xuống.
