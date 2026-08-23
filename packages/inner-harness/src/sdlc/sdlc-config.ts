@@ -2,8 +2,8 @@
  * SDLC Config — defaults and validation.
  */
 
-import { z } from "zod";
 import type { SDLCConfig } from "@agentweave/types";
+import { z } from "zod";
 
 // ─── Defaults ────────────────────────────────────────────────────
 
@@ -43,7 +43,12 @@ export function getDefaultSDLCConfig(): SDLCConfig {
 		},
 		execution: {
 			mode: "agent-loop",
-			agentLoop: { model: "claude-sonnet-4-6", maxTurns: 50 },
+			// Mặc định là model CỤC BỘ, không phải model đám mây: sản phẩm này sinh
+			// ra cho khu cô lập, nên mặc định phải là trạng thái ở đó. Đoán sai
+			// theo hướng đám mây thì `pipeline run` chết ngay ở bước phân giải
+			// provider — và thông báo lỗi không hề gợi ý rằng nguyên nhân chỉ là
+			// một giá trị mặc định.
+			agentLoop: { model: "qwen3-coder:30b", maxTurns: 50 },
 		},
 		metrics: {
 			enabled: true,
@@ -54,10 +59,12 @@ export function getDefaultSDLCConfig(): SDLCConfig {
 
 // ─── Zod Validation ──────────────────────────────────────────────
 
-const ModuleConfigSchema = z.object({
-	enabled: z.boolean(),
-	custom: z.string().optional(),
-}).passthrough();
+const ModuleConfigSchema = z
+	.object({
+		enabled: z.boolean(),
+		custom: z.string().optional(),
+	})
+	.passthrough();
 
 const QualityGateCheckSchema = z.object({
 	type: z.enum(["compile", "test", "lint", "typecheck", "custom"]),
@@ -103,22 +110,34 @@ export const SDLCConfigSchema = z.object({
 	}),
 	execution: z.object({
 		mode: z.enum(["agent-loop", "process-adapter", "api-direct"]),
-		agentLoop: z.object({
-			model: z.string(),
-			fallbackModel: z.string().optional(),
-			maxTurns: z.number().optional(),
-			systemPrompt: z.string().optional(),
-			tools: z.array(z.string()).optional(),
-		}).optional(),
-		processAdapter: z.object({
-			command: z.string(),
-			args: z.array(z.string()).optional(),
-			cwd: z.string().optional(),
-			promptMode: z.enum(["stdin", "arg"]).optional(),
-		}).optional(),
-		apiDirect: z.object({
-			model: z.string(),
-		}).optional(),
+		agentLoop: z
+			.object({
+				model: z.string(),
+				fallbackModel: z.string().optional(),
+				maxTurns: z.number().optional(),
+				systemPrompt: z.string().optional(),
+				tools: z.array(z.string()).optional(),
+				structuredProtocol: z.boolean().optional(),
+				contextWindow: z.number().optional(),
+				temperature: z.number().optional(),
+				topP: z.number().optional(),
+				repeatPenalty: z.number().optional(),
+				seed: z.number().optional(),
+			})
+			.optional(),
+		processAdapter: z
+			.object({
+				command: z.string(),
+				args: z.array(z.string()).optional(),
+				cwd: z.string().optional(),
+				promptMode: z.enum(["stdin", "arg"]).optional(),
+			})
+			.optional(),
+		apiDirect: z
+			.object({
+				model: z.string(),
+			})
+			.optional(),
 	}),
 	metrics: z.object({
 		enabled: z.boolean(),

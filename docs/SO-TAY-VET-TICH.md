@@ -118,9 +118,10 @@ Một lượt hiện đủ cả năm tầng. Ba câu hỏi:
 - **Tốn đĩa.** Một phiên dài vài chục MB, phần lớn là bản sao chuỗi prompt qua
   từng lượt. Giữ 20 phiên gần nhất rồi tự dọn; xoá tay cả thư mục cũng an toàn,
   không gì phụ thuộc vào nó.
-- **Pipeline SDLC chưa nối.** Nó là đường chạy riêng (§13 bản đồ), gọi
-  `AgentLoop` qua `execution-bridge` mà không đi qua `chat`/`serve`/`run` — nên
-  `agentweave pipeline run` hiện KHÔNG sinh vết tích.
+- **Pipeline SDLC đã nối** (§13 bản đồ): `pipeline run` và lệnh pipeline gọi
+  từ VS Code đều sinh vết tích. Nhưng nhịp của nó là 8 BƯỚC, còn vết tích ghi
+  theo LƯỢT của `AgentLoop` bên trong — muốn thấy ranh giới bước thì đọc
+  `pipeline_stage` ở editor hoặc dòng `[SDLC]` trên terminal.
 - **Bộ đếm và vết tích đều theo MỘT CÂU** người dùng, không phải cả buổi —
   `chat`/`serve` dựng harness mới mỗi câu (§3 bản đồ). Bộ ghi thì giữ nguyên
   một thư mục cho cả buổi, nên chỗ nối giữa các câu vẫn đọc liền mạch được.

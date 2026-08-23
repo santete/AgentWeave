@@ -416,6 +416,13 @@ InnerEvent      ──►    thông điệp     ──►    khối giao diện
 | `error` | `error` | khối lỗi + gợi ý sửa |
 | — (host tự phát) | `notice` `turn_start` `model_switched` `attached` `undone` … | |
 | — (host chốt cuối lượt) | **`turn_end`** | dãy ô số đo + cảnh báo kiểm tra |
+| `sdlc:stage_start/end` ¹ | `pipeline_stage` | dòng `⏳/✓/✗ <bước>` trong khối pipeline |
+| — (host phát) | `pipeline_start` `pipeline_end` | mở/đóng khối 8 bước |
+
+¹ **Không đi qua luồng generator.** `module-runner` bắn thẳng vào
+`governance.onEvent`, nên `serve` phải BỌC `GovernanceHandle` để thấy chúng —
+nối theo `value.type` trong vòng lặp sự kiện thì không nhận được gì. Đã vấp
+đúng lỗi này: pipeline chạy xong mà editor chỉ thấy start rồi end.
 
 ### `turn_end` — thông điệp giàu nhất, và nó KHÔNG đến từ InnerEvent
 
@@ -445,7 +452,8 @@ hai thứ chỉ host mới biết.
 **Sự kiện KHÔNG được chuyển tiếp** (chỉ dùng nội bộ hoặc cho `run`/kiểm toán):
 `turn:start` `turn:end` `llm:request_start` `llm:stream_end` `tool:started`
 `message:assistant` `message:tool_result` `permission:allowed` `permission:asking`
-`recovery:fallback` `terminal` `sdlc:*` `agent:*`.
+`recovery:fallback` `terminal` `agent:*` (riêng `sdlc:stage_*` NAY có chuyển
+tiếp — xem bảng trên).
 
 **Vết tích KHÔNG đi qua đường này.** `InnerEvent` là kênh cho NGƯỜI DÙNG xem
 lúc chạy, nên nó cố tình gọn. Vết tích (§14) là kênh cho người MỔ XẺ về sau,
@@ -460,7 +468,7 @@ Muốn thêm thứ hiện lên editor thì **chọn một trong hai**:
 ### Chiều ngược: editor → serve
 
 `prompt` · `permission` · `abort` · `reset` · `resume` · `undo` · `set_model` ·
-`list_models` · `list_sessions`
+`list_models` · `list_sessions` · **`pipeline`**
 
 Gõ sai tên ở chiều này thì serve trả `{"type":"error","message":"khong hieu type=…"}`
 — đã vấp khi em thử gửi `hoi` (tên nội bộ của webview) thay vì `prompt`.
@@ -533,7 +541,39 @@ thử lại. Không có mốc đầu thì mọi test đỏ sẵn đều bị quy
 **Quan hệ với phần còn lại của bản đồ:** SDLC gọi `AgentLoop` qua
 `execution-bridge`, nên **mọi cơ chế ở §3 và §4 vẫn có hiệu lực bên trong**.
 Nhưng nó **không** dùng `napTriThuc`, nên rule/skill/memory/hẹn giờ **không tự
-có** trong pipeline — muốn có thì phải nối riêng.
+có** trong pipeline — muốn có thì phải nối riêng. Vết tích (§14) thì ĐÃ nối.
+
+### Model và cách chạy — theo ĐÚNG chuỗi ưu tiên của chat/serve
+
+```
+--model  >  agentweave.yaml execution.agentLoop.model  >  .agentweave/agent.json model  >  qwen3-coder:30b
+```
+
+Dùng `||` chứ không `??`: `parseArgs` trả `model = ""` khi không có cờ (cố ý,
+để `agent.json` còn cửa thắng). Chuỗi rỗng lọt qua `??` và đi thẳng tới Ollama,
+nhận về **400** mà thông báo không nói gì về model — đã đo đúng ca đó.
+
+`execution-bridge` truyền xuống `AgentLoop` đủ bộ như chat/serve:
+`structuredProtocol` (mặc định BẬT), `contextWindow`, tham số sinh, và vết
+tích. Thiếu chúng thì cùng một model chạy trong pipeline lại tệ hơn chạy trong
+chat mà không có gì báo: rơi về đường stream (mất đòn bẩy enum), cửa sổ ngữ
+cảnh là số đoán, `num_ctx` không tới Ollama.
+
+**Cạm bẫy:** không có `agentweave.yaml` và KHÔNG truyền `--agent` thì
+`pipeline run` **tự dò CLI agent đã cài** (claude, cursor, aider) và chuyển
+sang `process-adapter` — không dùng model cục bộ. Muốn chắc chắn chạy
+`agent-loop` thì khai `execution.mode` trong `agentweave.yaml`.
+
+### Gọi từ VS Code
+
+Lệnh **"AgentWeave: Chạy pipeline SDLC"** hỏi hai thứ (việc cần làm, lệnh
+kiểm) rồi gửi `{"type":"pipeline",...}` cho `serve`. Quyền dùng CHUNG cơ chế
+với chat (`permission_request` + hàng chờ), nên người dùng thấy đúng hộp thoại
+quen thuộc.
+
+Khi gọi từ editor, ba bước đầu (`taskNormalizer`, `contextBuilder`,
+`planGenerator`) **được BẬT** — khác mặc định dòng lệnh, vì ở đây không có
+agent CLI nào lo hộ.
 
 Lệnh liên quan: `agentweave pipeline setup|run|status|config` · `agentweave metrics`.
 

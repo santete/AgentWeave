@@ -8,43 +8,44 @@
 
 import { randomUUID } from "node:crypto";
 import type {
+	BoGhiVetTich,
+	ContentBlock,
 	ControlPlane,
 	GovernanceHandle,
-	InnerHarnessProvider,
-	RunOptions,
+	InjectableMessage,
+	InnerConfig,
 	InnerEvent,
 	InnerEventPayload,
+	InnerHarnessProvider,
 	InnerState,
-	InnerConfig,
+	LLMCallerFn,
+	Message,
+	RunOptions,
+	SDLCBaselineComparison,
+	SDLCConfig,
+	SDLCExecutionResult,
+	SDLCMetricsSnapshot,
+	SDLCModuleContext,
+	SDLCPlan,
+	SDLCTask,
+	SDLCValidationResult,
+	SessionInfo,
 	TerminalResult,
 	ToolDefinition,
-	ContentBlock,
-	InjectableMessage,
-	Message,
-	SDLCConfig,
-	SDLCTask,
-	SDLCPlan,
-	SDLCExecutionResult,
-	SDLCValidationResult,
-	SDLCModuleContext,
-	SDLCMetricsSnapshot,
-	SDLCBaselineComparison,
-	LLMCallerFn,
-	SessionInfo,
 } from "@agentweave/types";
-import { createEmptyTokenUsage, createEmptyContextUsage } from "@agentweave/types";
+import { createEmptyContextUsage, createEmptyTokenUsage } from "@agentweave/types";
 import type { ContextUsage, TokenUsage } from "@agentweave/types";
-import { getDefaultSDLCConfig } from "./sdlc-config";
 import { MetricsCollector } from "./metrics-collector";
 import { runModule } from "./module-runner";
-import { TaskNormalizerModule } from "./modules/task-normalizer";
 import { ContextBuilderModule } from "./modules/context-builder";
-import { PlanGeneratorModule } from "./modules/plan-generator";
 import { ExecutionBridgeModule } from "./modules/execution-bridge";
+import { OutputStandardizerModule } from "./modules/output-standardizer";
 import { PatchValidatorModule } from "./modules/patch-validator";
+import { PlanGeneratorModule } from "./modules/plan-generator";
 import { QualityGateModule } from "./modules/quality-gate";
 import { RetryEngineModule } from "./modules/retry-engine";
-import { OutputStandardizerModule } from "./modules/output-standardizer";
+import { TaskNormalizerModule } from "./modules/task-normalizer";
+import { getDefaultSDLCConfig } from "./sdlc-config";
 
 export interface SDLCOrchestratorConfig {
 	sdlcConfig?: Partial<SDLCConfig>;
@@ -53,6 +54,8 @@ export interface SDLCOrchestratorConfig {
 	governance?: GovernanceHandle;
 	/** Optional ControlPlane — propagated to AgentLoop for tool-call gating. */
 	controlPlane?: ControlPlane;
+	/** Nơi nhận vết tích — truyền tiếp xuống AgentLoop qua execution-bridge. */
+	vetTich?: BoGhiVetTich;
 }
 
 export class SDLCOrchestrator implements InnerHarnessProvider {
@@ -60,6 +63,7 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 	private llmCaller?: LLMCallerFn;
 	private governance?: GovernanceHandle;
 	private controlPlane?: ControlPlane;
+	private vetTich?: BoGhiVetTich;
 	private state: InnerState;
 	private sessionId = "";
 	private agentId: string;
@@ -82,12 +86,11 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 
 	constructor(config?: SDLCOrchestratorConfig) {
 		const defaults = getDefaultSDLCConfig();
-		this.config = config?.sdlcConfig
-			? mergeConfig(defaults, config.sdlcConfig)
-			: defaults;
+		this.config = config?.sdlcConfig ? mergeConfig(defaults, config.sdlcConfig) : defaults;
 		this.llmCaller = config?.llmCaller;
 		this.governance = config?.governance;
 		this.controlPlane = config?.controlPlane;
+		this.vetTich = config?.vetTich;
 		this.agentId = `sdlc_${randomUUID().slice(0, 8)}`;
 		this.usage = createEmptyTokenUsage();
 		this.state = {
@@ -120,16 +123,36 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 		this.state.status = "aborted";
 	}
 
-	getState(): InnerState { return { ...this.state }; }
-	getMessages(): ReadonlyArray<Message> { return [...this.messages]; }
-	getContextUsage(): ContextUsage { return createEmptyContextUsage(0); }
-	getUsage(): TokenUsage { return { ...this.usage }; }
-	getTools(): ReadonlyArray<ToolDefinition> { return []; }
-	registerTool(_tool: ToolDefinition): void { /* no-op */ }
-	unregisterTool(_name: string): void { /* no-op */ }
-	injectMessage(_message: InjectableMessage): void { /* no-op */ }
-	setSystemPromptSection(_name: string, _content: string | null): void { /* no-op */ }
-	setModel(_model: string): void { /* no-op */ }
+	getState(): InnerState {
+		return { ...this.state };
+	}
+	getMessages(): ReadonlyArray<Message> {
+		return [...this.messages];
+	}
+	getContextUsage(): ContextUsage {
+		return createEmptyContextUsage(0);
+	}
+	getUsage(): TokenUsage {
+		return { ...this.usage };
+	}
+	getTools(): ReadonlyArray<ToolDefinition> {
+		return [];
+	}
+	registerTool(_tool: ToolDefinition): void {
+		/* no-op */
+	}
+	unregisterTool(_name: string): void {
+		/* no-op */
+	}
+	injectMessage(_message: InjectableMessage): void {
+		/* no-op */
+	}
+	setSystemPromptSection(_name: string, _content: string | null): void {
+		/* no-op */
+	}
+	setModel(_model: string): void {
+		/* no-op */
+	}
 	getConfig(): InnerConfig {
 		return {
 			model: `sdlc:${this.config.execution.mode}`,
@@ -140,8 +163,12 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 	}
 
 	/** Get metrics from last run. */
-	getLastMetrics(): SDLCMetricsSnapshot | null { return this.lastMetrics; }
-	getLastComparison(): SDLCBaselineComparison | null { return this.lastComparison; }
+	getLastMetrics(): SDLCMetricsSnapshot | null {
+		return this.lastMetrics;
+	}
+	getLastComparison(): SDLCBaselineComparison | null {
+		return this.lastComparison;
+	}
 
 	/** Allow setting a pre-constructed provider for ExecutionBridge. */
 	setExecutionProvider(provider: InnerHarnessProvider): void {
@@ -168,6 +195,7 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 			llmCaller: this.llmCaller,
 			governance: this.governance,
 			controlPlane: this.controlPlane,
+			vetTich: this.vetTich,
 		};
 
 		// Session lifecycle — observer-only, must not block the pipeline.
@@ -184,7 +212,15 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 				config: this.config.modules.taskNormalizer,
 				input: rawInput,
 				context: ctx,
-				defaultOutput: { id: `task_${randomUUID().slice(0, 8)}`, rawInput, goal: rawInput, context: [], constraints: [], definitionOfDone: [], metadata: {} } satisfies SDLCTask,
+				defaultOutput: {
+					id: `task_${randomUUID().slice(0, 8)}`,
+					rawInput,
+					goal: rawInput,
+					context: [],
+					constraints: [],
+					definitionOfDone: [],
+					metadata: {},
+				} satisfies SDLCTask,
 				stage: "taskNormalizer",
 				phase: 1,
 				agentId: this.agentId,
@@ -217,33 +253,54 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 			});
 
 			// Pre-execution QA snapshot — only when detectRegression is explicitly enabled (doubles QA time)
-			const emptyExecResult: SDLCExecutionResult = { success: false, changedFiles: [], output: "", usage: createEmptyTokenUsage(), durationMs: 0, terminalReason: "skipped" };
+			const emptyExecResult: SDLCExecutionResult = {
+				success: false,
+				changedFiles: [],
+				output: "",
+				usage: createEmptyTokenUsage(),
+				durationMs: 0,
+				terminalReason: "skipped",
+			};
 			let preQaResult: SDLCValidationResult | null = null;
-			if (this.config.modules.qualityGate.enabled && this.config.modules.qualityGate.detectRegression === true) {
-				preQaResult = (await runModule({
-					builtIn: this.qualityGate,
-					config: this.config.modules.qualityGate,
-					input: emptyExecResult,
-					context: ctx,
-					defaultOutput: { passed: true, checks: [] },
-					stage: "qualityGate",
-					phase: 6,
-					agentId: this.agentId,
-				})).output;
+			if (
+				this.config.modules.qualityGate.enabled &&
+				this.config.modules.qualityGate.detectRegression === true
+			) {
+				preQaResult = (
+					await runModule({
+						builtIn: this.qualityGate,
+						config: this.config.modules.qualityGate,
+						input: emptyExecResult,
+						context: ctx,
+						defaultOutput: { passed: true, checks: [] },
+						stage: "qualityGate",
+						phase: 6,
+						agentId: this.agentId,
+					})
+				).output;
 			}
 
 			// Phase 4: Execute
 			yield this.statusEvent("Executing...");
-			let execResult = (await runModule({
-				builtIn: this.executionBridge,
-				config: this.config.modules.executionBridge,
-				input: { task: enrichedTask, plan },
-				context: ctx,
-				defaultOutput: { success: false, changedFiles: [], output: "ExecutionBridge disabled", usage: createEmptyTokenUsage(), durationMs: 0, terminalReason: "error" } satisfies SDLCExecutionResult,
-				stage: "executionBridge",
-				phase: 4,
-				agentId: this.agentId,
-			})).output;
+			let execResult = (
+				await runModule({
+					builtIn: this.executionBridge,
+					config: this.config.modules.executionBridge,
+					input: { task: enrichedTask, plan },
+					context: ctx,
+					defaultOutput: {
+						success: false,
+						changedFiles: [],
+						output: "ExecutionBridge disabled",
+						usage: createEmptyTokenUsage(),
+						durationMs: 0,
+						terminalReason: "error",
+					} satisfies SDLCExecutionResult,
+					stage: "executionBridge",
+					phase: 4,
+					agentId: this.agentId,
+				})
+			).output;
 
 			// Track usage
 			this.usage = execResult.usage;
@@ -253,36 +310,42 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 			let patchResult: SDLCValidationResult | null = null;
 			if (this.config.modules.patchValidator.enabled) {
 				yield this.statusEvent("Validating patch...");
-				patchResult = (await runModule({
-					builtIn: this.patchValidator,
-					config: this.config.modules.patchValidator,
-					input: { result: execResult, estimatedFiles: plan.estimatedFiles },
-					context: ctx,
-					defaultOutput: { passed: true, checks: [] },
-					stage: "patchValidator",
-					phase: 5,
-					agentId: this.agentId,
-				})).output;
+				patchResult = (
+					await runModule({
+						builtIn: this.patchValidator,
+						config: this.config.modules.patchValidator,
+						input: { result: execResult, estimatedFiles: plan.estimatedFiles },
+						context: ctx,
+						defaultOutput: { passed: true, checks: [] },
+						stage: "patchValidator",
+						phase: 5,
+						agentId: this.agentId,
+					})
+				).output;
 			}
 
 			// Phase 6: Quality Gate
 			let qaResult: SDLCValidationResult | null = null;
 			if (this.config.modules.qualityGate.enabled) {
 				yield this.statusEvent("Running quality gate...");
-				qaResult = (await runModule({
-					builtIn: this.qualityGate,
-					config: this.config.modules.qualityGate,
-					input: execResult,
-					context: ctx,
-					defaultOutput: { passed: true, checks: [] },
-					stage: "qualityGate",
-					phase: 6,
-					agentId: this.agentId,
-				})).output;
+				qaResult = (
+					await runModule({
+						builtIn: this.qualityGate,
+						config: this.config.modules.qualityGate,
+						input: execResult,
+						context: ctx,
+						defaultOutput: { passed: true, checks: [] },
+						stage: "qualityGate",
+						phase: 6,
+						agentId: this.agentId,
+					})
+				).output;
 
 				// M7: regression = any check that passed pre-execution now fails post-execution
 				if (preQaResult && qaResult) {
-					const prePassedNames = new Set(preQaResult.checks.filter((c) => c.passed).map((c) => c.name));
+					const prePassedNames = new Set(
+						preQaResult.checks.filter((c) => c.passed).map((c) => c.name),
+					);
 					const regression = qaResult.checks.some((c) => !c.passed && prePassedNames.has(c.name));
 					mc.record("regressionDetected", regression);
 				}
@@ -299,16 +362,23 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 					mc.record("retryCount", attempt);
 					this.state.recoveryAttempts = attempt;
 
-					const decision = (await runModule({
-						builtIn: this.retryEngine,
-						config: this.config.modules.retryEngine,
-						input: { result: execResult, validation, attempt },
-						context: ctx,
-						defaultOutput: { shouldRetry: false, strategy: "escalate" as const, maxRetries, currentAttempt: attempt },
-						stage: "retryEngine",
-						phase: 7,
-						agentId: this.agentId,
-					})).output;
+					const decision = (
+						await runModule({
+							builtIn: this.retryEngine,
+							config: this.config.modules.retryEngine,
+							input: { result: execResult, validation, attempt },
+							context: ctx,
+							defaultOutput: {
+								shouldRetry: false,
+								strategy: "escalate" as const,
+								maxRetries,
+								currentAttempt: attempt,
+							},
+							stage: "retryEngine",
+							phase: 7,
+							agentId: this.agentId,
+						})
+					).output;
 
 					if (!decision.shouldRetry) break;
 
@@ -317,29 +387,33 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 						? `${rawInput}\n\nPrevious attempt failed. ${decision.fixInstructions}`
 						: rawInput;
 
-					execResult = (await runModule({
-						builtIn: this.executionBridge,
-						config: this.config.modules.executionBridge,
-						input: { task: { ...enrichedTask, rawInput: retryInput, goal: retryInput }, plan },
-						context: ctx,
-						defaultOutput: execResult,
-						stage: "executionBridge",
-						phase: 4,
-						agentId: this.agentId,
-					})).output;
+					execResult = (
+						await runModule({
+							builtIn: this.executionBridge,
+							config: this.config.modules.executionBridge,
+							input: { task: { ...enrichedTask, rawInput: retryInput, goal: retryInput }, plan },
+							context: ctx,
+							defaultOutput: execResult,
+							stage: "executionBridge",
+							phase: 4,
+							agentId: this.agentId,
+						})
+					).output;
 
 					// Re-check QA
 					if (this.config.modules.qualityGate.enabled) {
-						qaResult = (await runModule({
-							builtIn: this.qualityGate,
-							config: this.config.modules.qualityGate,
-							input: execResult,
-							context: ctx,
-							defaultOutput: { passed: true, checks: [] },
-							stage: "qualityGate",
-							phase: 6,
-							agentId: this.agentId,
-						})).output;
+						qaResult = (
+							await runModule({
+								builtIn: this.qualityGate,
+								config: this.config.modules.qualityGate,
+								input: execResult,
+								context: ctx,
+								defaultOutput: { passed: true, checks: [] },
+								stage: "qualityGate",
+								phase: 6,
+								agentId: this.agentId,
+							})
+						).output;
 
 						if (qaResult.passed) break;
 					} else {
@@ -356,7 +430,13 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 					config: this.config.modules.outputStandardizer,
 					input: execResult,
 					context: ctx,
-					defaultOutput: { commitMessage: "", prTitle: "", prDescription: "", summary: "", changedFiles: [] },
+					defaultOutput: {
+						commitMessage: "",
+						prTitle: "",
+						prDescription: "",
+						summary: "",
+						changedFiles: [],
+					},
 					stage: "outputStandardizer",
 					phase: 8,
 					agentId: this.agentId,
@@ -374,7 +454,11 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 			this.lastMetrics = mc.finalize(execResult, plan, qaResult, patchResult);
 
 			// Baseline comparison
-			if (this.config.metrics.enabled && this.config.metrics.baseline && this.config.metrics.persistPath) {
+			if (
+				this.config.metrics.enabled &&
+				this.config.metrics.baseline &&
+				this.config.metrics.persistPath
+			) {
 				const baselinePath = `${this.config.metrics.persistPath}/baseline.json`;
 				const baseline = MetricsCollector.loadBaseline(baselinePath);
 				this.lastComparison = MetricsCollector.compare(this.lastMetrics, baseline);
@@ -382,7 +466,10 @@ export class SDLCOrchestrator implements InnerHarnessProvider {
 			}
 
 			// Store assistant message
-			this.messages.push({ role: "assistant", content: [{ type: "text", text: execResult.output }] });
+			this.messages.push({
+				role: "assistant",
+				content: [{ type: "text", text: execResult.output }],
+			});
 			this.state.messageCount = this.messages.length;
 
 			const reason = execResult.success ? "completed" : "error";
@@ -467,7 +554,10 @@ function mergeConfig(defaults: SDLCConfig, partial: Partial<SDLCConfig>): SDLCCo
 			patchValidator: { ...defaults.modules.patchValidator, ...partial.modules?.patchValidator },
 			qualityGate: { ...defaults.modules.qualityGate, ...partial.modules?.qualityGate },
 			retryEngine: { ...defaults.modules.retryEngine, ...partial.modules?.retryEngine },
-			outputStandardizer: { ...defaults.modules.outputStandardizer, ...partial.modules?.outputStandardizer },
+			outputStandardizer: {
+				...defaults.modules.outputStandardizer,
+				...partial.modules?.outputStandardizer,
+			},
 		},
 		execution: { ...defaults.execution, ...partial.execution },
 		metrics: { ...defaults.metrics, ...partial.metrics },

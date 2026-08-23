@@ -45,7 +45,13 @@ import {
 import { createHarness } from "@agentweave/sdk";
 import type { HarnessInstance } from "@agentweave/sdk";
 import { AGENTWEAVE_VERSION, LOAI_DIEM_CHAM } from "@agentweave/types";
-import type { ContentBlock, InnerEvent, Message } from "@agentweave/types";
+import type {
+	ContentBlock,
+	GovernanceHandle,
+	InnerEvent,
+	Message,
+	QualityGateCheck,
+} from "@agentweave/types";
 import type { ProcessSandboxBinding } from "@agentweave/types";
 import { type CauHinhAgent, type LuatQuyen, docCauHinhAgent } from "../lib/agent-config.js";
 import { chenFile } from "../lib/at-file.js";
@@ -473,6 +479,27 @@ export async function serveCommand(args: ServeArgs): Promise<void> {
 					}
 					traLoi({ allow: msg.allow === true, alwaysAllow: luon });
 				}
+				break;
+			}
+
+			case "pipeline": {
+				const text = typeof msg.prompt === "string" ? msg.prompt.trim() : "";
+				if (text === "") {
+					phat({ type: "error", message: "pipeline: thieu prompt" });
+					break;
+				}
+				void chayPipeline({
+					text,
+					goc,
+					model,
+					maxTurns,
+					retries: typeof msg.retries === "number" ? msg.retries : 3,
+					checks: Array.isArray(msg.checks) ? msg.checks.filter((c) => typeof c === "string") : [],
+					cauHinh,
+					dangCho,
+					layId: () => `q${++demXinQuyen}`,
+					vetTich,
+				});
 				break;
 			}
 
@@ -1052,5 +1079,170 @@ function chuyenSuKien(e: InnerEvent): void {
 			break;
 		default:
 			break;
+	}
+}
+
+// ─── Pipeline SDLC từ editor ─────────────────────────────────────
+
+interface ThamSoPipeline {
+	text: string;
+	goc: string;
+	model: string;
+	maxTurns: number;
+	retries: number;
+	/** Lệnh kiểm chất lượng, mỗi lệnh một chuỗi. Rỗng = tắt qualityGate. */
+	checks: string[];
+	cauHinh: CauHinhAgent;
+	dangCho: Map<string, (kq: { allow: boolean; alwaysAllow?: boolean }) => void>;
+	layId: () => string;
+	vetTich?: GhiVetTichTep;
+}
+
+/**
+ * Chạy pipeline SDLC theo yêu cầu của editor.
+ *
+ * VÌ SAO TÁCH HẲN KHỎI `chayMotLuot`
+ *
+ * Đây là TRỤ CỘT 2 (§13 bản đồ), một đường chạy khác hẳn: không dùng vòng lặp
+ * `AgentLoop` trực tiếp, không có rule/skill/memory, và nhịp của nó là 8 BƯỚC
+ * chứ không phải chuỗi lượt tool. Nhồi vào `chayMotLuot` thì hàm đó phải mang
+ * hai mô hình cùng lúc — mà nó vốn đã là chỗ rủi ro nhất của serve.
+ *
+ * Quyền dùng CHUNG cơ chế với chat: cùng `permission_request` + `dangCho`, nên
+ * editor không phải học thêm gì và người dùng thấy đúng hộp thoại quen thuộc.
+ */
+async function chayPipeline(t: ThamSoPipeline): Promise<void> {
+	const { createSDLCPipeline } = await import("@agentweave/inner-harness");
+	const { createSdlcGovernance } = await import("../lib/sdlc-governance.js");
+
+	const model = t.model || t.cauHinh.model || "qwen3-coder:30b";
+	const checks: QualityGateCheck[] = t.checks.map((command) => ({
+		type: "custom" as const,
+		command,
+		required: true,
+	}));
+
+	t.vetTich?.ghi({
+		tang: "user",
+		loai: LOAI_DIEM_CHAM.USER_CAU_HOI,
+		chiTiet: { lenh: "pipeline", model, soCheck: checks.length },
+		noiDungLon: { "cau-hoi.txt": t.text },
+	});
+
+	const gov = createSdlcGovernance({
+		sessionId: `serve_sdlc_${Date.now()}`,
+		// Cùng đường xin quyền với chat — xem ghi chú ở đầu hàm.
+		onAsk: async (toolName, toolInput, message) => {
+			const id = t.layId();
+			phat({
+				type: "permission_request",
+				id,
+				tool: toolName,
+				input: toolInput,
+				message,
+				diff: null,
+			});
+			return new Promise((resolve) => t.dangCho.set(id, resolve));
+		},
+	});
+
+	// ── Chuyển tiếp sự kiện BƯỚC ──
+	//
+	// `sdlc:stage_*` KHÔNG đi qua luồng generator — `module-runner` bắn thẳng
+	// vào `governance.onEvent`. Đo thật: nối `switch` theo `value.type` thì
+	// không nhận được một sự kiện bước nào, pipeline chạy xong mà editor chỉ
+	// thấy start rồi end. Nên bọc handle lại: vẫn chuyển cho bản gốc (kiểm
+	// toán, vòng đời phiên), đồng thời phát ra editor.
+	const govChuyenTiep: GovernanceHandle = {
+		onEvent: (ev) => {
+			if (ev.type === "sdlc:stage_start" || ev.type === "sdlc:stage_end") {
+				const e = ev as unknown as {
+					stage: string;
+					phase?: number;
+					ok?: boolean;
+					durationMs?: number;
+				};
+				phat({
+					type: "pipeline_stage",
+					stage: e.stage,
+					phase: e.phase ?? 0,
+					status: ev.type === "sdlc:stage_start" ? "start" : "end",
+					ok: e.ok !== false,
+					durationMs: e.durationMs ?? null,
+				});
+			}
+			gov.outer.onEvent(ev);
+		},
+		onSessionStart: (...a) => gov.outer.onSessionStart(...a),
+		onSessionEnd: (...a) => gov.outer.onSessionEnd(...a),
+	};
+
+	const pipeline = createSDLCPipeline({
+		execution: {
+			mode: "agent-loop",
+			agentLoop: {
+				model,
+				maxTurns: t.maxTurns,
+				// Cùng cách chạy như chat/serve — xem execution-bridge.
+				structuredProtocol: t.cauHinh.structuredProtocol ?? true,
+				contextWindow: t.cauHinh.contextWindow,
+				temperature: t.cauHinh.temperature,
+				topP: t.cauHinh.topP,
+				repeatPenalty: t.cauHinh.repeatPenalty,
+				seed: t.cauHinh.seed,
+			},
+		},
+		governance: govChuyenTiep,
+		controlPlane: gov.controlPlane,
+		modules: {
+			taskNormalizer: { enabled: true },
+			contextBuilder: { enabled: true, maxFiles: 15 },
+			planGenerator: { enabled: true },
+			executionBridge: { enabled: true },
+			patchValidator: { enabled: true },
+			qualityGate: { enabled: checks.length > 0, checks },
+			retryEngine: { enabled: true, maxRetries: t.retries },
+			outputStandardizer: { enabled: false },
+		},
+		metrics: { enabled: true, baseline: true, persistPath: ".agentweave/metrics" },
+		vetTich: t.vetTich,
+	});
+
+	phat({ type: "pipeline_start", model, checks: t.checks, retries: t.retries });
+
+	try {
+		const gen = pipeline.run(t.text);
+		for (;;) {
+			const { value, done } = await gen.next();
+			if (done) {
+				phat({ type: "pipeline_end", reason: value.reason, usage: value.usage ?? null });
+				break;
+			}
+			switch (value.type) {
+				case "message:assistant": {
+					const khoi = (value as unknown as { content?: Array<{ text?: string }> }).content;
+					const chu = khoi?.[0]?.text ?? "";
+					if (chu) phat({ type: "delta", text: `${chu}\n` });
+					break;
+				}
+				case "tool:requested":
+					phat({ type: "tool", name: value.toolName, input: value.toolInput });
+					break;
+				case "tool:completed":
+					phat({ type: "tool_result", ok: true, preview: String(value.result).slice(0, 400) });
+					break;
+				case "tool:failed":
+					phat({ type: "tool_result", ok: false, preview: String(value.error).slice(0, 400) });
+					break;
+				case "error":
+					phatLoi(value.error);
+					break;
+				default:
+					break;
+			}
+		}
+	} catch (e) {
+		phatLoi(e instanceof Error ? e.message : String(e));
+		phat({ type: "pipeline_end", reason: "error", usage: null });
 	}
 }

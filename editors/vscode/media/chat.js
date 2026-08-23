@@ -9,6 +9,8 @@ const oNhap = document.getElementById("o-nhap");
 
 let khoiDangChay = null; // khối chữ model đang sinh
 let chuDangChay = ""; // chữ thô, để dựng lại markdown khi đoạn kết thúc
+let khoiPipeline = null; // khối 8 bước của pipeline SDLC, null khi không chạy
+let buocPipeline = new Map(); // tên bước → dòng DOM, cập nhật tại chỗ khi thử lại
 // id các lời gọi tool bị ẩn — để ẩn nốt kết quả của chúng.
 const idToolAn = new Set();
 let dangBan = false;
@@ -408,6 +410,55 @@ window.addEventListener("message", (ev) => {
       the.appendChild(nut);
 
       oQuyen.appendChild(the);
+      break;
+    }
+
+    // ── Pipeline SDLC (trụ cột 2) ──
+    // Nhịp của nó là 8 BƯỚC, không phải chuỗi lượt tool, nên cần khối riêng.
+    // Một khối duy nhất cập nhật tại chỗ: pipeline có vòng thử lại nên cùng
+    // một bước chạy lại nhiều lần — vẽ mỗi lần một dòng thì thành bức tường.
+    case "pipeline_start": {
+      khoiPipeline = themKhoi("pipeline");
+      buocPipeline = new Map();
+      const dau = document.createElement("div");
+      dau.className = "nhan";
+      dau.textContent = `⚙ Pipeline SDLC · ${e.model}` +
+        (e.checks && e.checks.length ? ` · kiểm: ${e.checks.join(", ")}` : " · không có cổng kiểm");
+      khoiPipeline.appendChild(dau);
+      datViec("Pipeline đang chạy");
+      break;
+    }
+
+    case "pipeline_stage": {
+      if (!khoiPipeline) break;
+      let dong = buocPipeline.get(e.stage);
+      if (!dong) {
+        dong = document.createElement("div");
+        dong.className = "buoc-pipeline";
+        khoiPipeline.appendChild(dong);
+        buocPipeline.set(e.stage, dong);
+      }
+      if (e.status === "start") {
+        dong.textContent = `⏳ ${e.stage}`;
+        datViec(`Pipeline: ${e.stage}`);
+      } else {
+        const ms = typeof e.durationMs === "number" ? ` ${Math.round(e.durationMs)}ms` : "";
+        dong.textContent = `${e.ok ? "✓" : "✗"} ${e.stage}${ms}`;
+        dong.classList.toggle("hong", e.ok === false);
+      }
+      break;
+    }
+
+    case "pipeline_end": {
+      if (khoiPipeline) {
+        const cuoi = document.createElement("div");
+        cuoi.className = "nhan";
+        cuoi.textContent = `⚙ Pipeline kết thúc — ${e.reason}`;
+        khoiPipeline.appendChild(cuoi);
+      }
+      khoiPipeline = null;
+      buocPipeline = new Map();
+      datViec("");
       break;
     }
 

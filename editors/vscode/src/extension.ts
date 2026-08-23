@@ -29,6 +29,37 @@ export function activate(ctx: vscode.ExtensionContext): void {
 			batDauClient();
 			vscode.window.showInformationMessage("AgentWeave: đã khởi động lại agent");
 		}),
+		vscode.commands.registerCommand("agentweave.pipeline", async () => {
+			// Pipeline là TRỤ CỘT 2: có cổng chất lượng và vòng thử lại, nhưng
+			// KHÔNG có rule/skill/memory. Hỏi thẳng lệnh kiểm thay vì đoán, vì
+			// không có lệnh kiểm thì `qualityGate` tắt và pipeline mất đúng phần
+			// giá trị riêng của nó — lúc đó dùng khung chat còn hơn.
+			const viec = await vscode.window.showInputBox({
+				title: "AgentWeave: chạy pipeline SDLC",
+				prompt: "Việc cần làm (khép kín, có tiêu chí đạt/hỏng rõ ràng)",
+				placeHolder: "vd: thêm hàm cong(a,b) vào src/toan.js và viết test",
+			});
+			if (!viec?.trim()) return;
+
+			const lenhKiem = await vscode.window.showInputBox({
+				title: "Lệnh kiểm chất lượng",
+				prompt: "Ngăn cách bằng dấu phẩy. Bỏ trống = không có cổng chất lượng.",
+				placeHolder: "npm test, npm run typecheck",
+				value: "npm test",
+			});
+			// `undefined` = người dùng bấm Esc ở bước này → huỷ cả lệnh.
+			if (lenhKiem === undefined) return;
+
+			const checks = lenhKiem
+				.split(",")
+				.map((c) => c.trim())
+				.filter((c) => c !== "");
+
+			moKhungChat(ctx);
+			batDauClient();
+			client?.chayPipeline(viec.trim(), checks);
+			panel?.reveal();
+		}),
 		vscode.commands.registerCommand("agentweave.addFile", () => {
 			const tep = vscode.window.activeTextEditor?.document;
 			if (!tep) return;

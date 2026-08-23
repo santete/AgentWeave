@@ -16,7 +16,13 @@
  * ```
  */
 
-import type { SDLCConfig, LLMCallerFn, GovernanceHandle, ControlPlane } from "@agentweave/types";
+import type {
+	BoGhiVetTich,
+	ControlPlane,
+	GovernanceHandle,
+	LLMCallerFn,
+	SDLCConfig,
+} from "@agentweave/types";
 import { SDLCOrchestrator } from "./sdlc-orchestrator";
 import type { SDLCOrchestratorConfig } from "./sdlc-orchestrator";
 
@@ -33,6 +39,8 @@ export interface CreateSDLCPipelineOptions {
 	governance?: GovernanceHandle;
 	/** Optional ControlPlane — propagated to AgentLoop for tool-call interception. */
 	controlPlane?: ControlPlane;
+	/** Nơi nhận vết tích — truyền tiếp xuống AgentLoop. Xem `types/vet-tich.ts`. */
+	vetTich?: BoGhiVetTich;
 }
 
 /**
@@ -44,6 +52,7 @@ export function createSDLCPipeline(options?: CreateSDLCPipelineOptions): SDLCOrc
 		llmCaller: options?.llmCaller,
 		governance: options?.governance,
 		controlPlane: options?.controlPlane,
+		vetTich: options?.vetTich,
 	};
 
 	if (options?.modules || options?.execution || options?.metrics) {

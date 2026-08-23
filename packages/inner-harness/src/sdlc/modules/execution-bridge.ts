@@ -6,13 +6,13 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type {
-	SDLCModule,
-	SDLCModuleContext,
-	SDLCTask,
-	SDLCPlan,
-	SDLCExecutionResult,
 	InnerEvent,
 	InnerHarnessProvider,
+	SDLCExecutionResult,
+	SDLCModule,
+	SDLCModuleContext,
+	SDLCPlan,
+	SDLCTask,
 } from "@agentweave/types";
 import { createEmptyTokenUsage } from "@agentweave/types";
 
@@ -23,7 +23,9 @@ export interface ExecutionBridgeInput {
 	plan?: SDLCPlan;
 }
 
-export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, SDLCExecutionResult> {
+export class ExecutionBridgeModule
+	implements SDLCModule<ExecutionBridgeInput, SDLCExecutionResult>
+{
 	readonly name = "ExecutionBridge";
 
 	/** Optional pre-constructed provider (avoids dynamic import). */
@@ -34,7 +36,10 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 		this.provider = provider;
 	}
 
-	async execute(input: ExecutionBridgeInput, context: SDLCModuleContext): Promise<SDLCExecutionResult> {
+	async execute(
+		input: ExecutionBridgeInput,
+		context: SDLCModuleContext,
+	): Promise<SDLCExecutionResult> {
 		const prompt = this.buildPrompt(input.task, input.plan);
 		const mode = context.config.execution.mode;
 		const timer = context.metrics.startTimer("execution");
@@ -44,7 +49,9 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 				case "agent-loop":
 					return await this.runWithProvider(prompt, context, () => this.createAgentLoop(context));
 				case "process-adapter":
-					return await this.runWithProvider(prompt, context, () => this.createProcessAdapter(context));
+					return await this.runWithProvider(prompt, context, () =>
+						this.createProcessAdapter(context),
+					);
 				case "api-direct":
 					return await this.runApiDirect(prompt, context);
 			}
@@ -58,7 +65,7 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 		context: SDLCModuleContext,
 		factory: () => Promise<InnerHarnessProvider>,
 	): Promise<SDLCExecutionResult> {
-		const provider = this.provider ?? await factory();
+		const provider = this.provider ?? (await factory());
 		const events: InnerEvent[] = [];
 		const changedFiles: string[] = [];
 
@@ -78,7 +85,7 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 			// Track changed files from tool events
 			if (value.type === "tool:completed") {
 				const toolEvent = value as unknown as Record<string, unknown>;
-				const toolName = toolEvent.toolName as string ?? "";
+				const toolName = (toolEvent.toolName as string) ?? "";
 				if (["FileWrite", "FileEdit"].includes(toolName)) {
 					const input = toolEvent.toolInput as Record<string, string> | undefined;
 					const path = input?.path ?? input?.file_path;
@@ -88,7 +95,10 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 		}
 
 		// Fallback: use git diff if no tool events captured changed files (e.g. process-adapter mode)
-		const resolvedFiles = changedFiles.length > 0 ? changedFiles : await this.getGitChangedFiles(context.cwd, preExecSha);
+		const resolvedFiles =
+			changedFiles.length > 0
+				? changedFiles
+				: await this.getGitChangedFiles(context.cwd, preExecSha);
 
 		const usage = provider.getUsage();
 		return {
@@ -101,7 +111,10 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 		};
 	}
 
-	private async runApiDirect(prompt: string, context: SDLCModuleContext): Promise<SDLCExecutionResult> {
+	private async runApiDirect(
+		prompt: string,
+		context: SDLCModuleContext,
+	): Promise<SDLCExecutionResult> {
 		if (!context.llmCaller) {
 			return {
 				success: false,
@@ -180,6 +193,24 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 			systemPrompt: config.systemPrompt,
 			tools: BUILT_IN_TOOLS,
 			controlPlane: context.controlPlane,
+			// ── Cùng một cách chạy như `chat`/`serve` ──
+			//
+			// Năm trường dưới đây trước nay bỏ trống, nên cùng một model chạy
+			// trong pipeline lại tệ hơn chạy trong chat mà không có gì báo:
+			// rơi về đường stream (mất đòn bẩy enum), cửa sổ ngữ cảnh là số đoán,
+			// `num_ctx` không tới Ollama, và không có vết tích để mổ xẻ.
+			//
+			// `structuredProtocol` mặc định BẬT giống chat/serve — `AgentLoop` tự
+			// né sang stream khi model là đám mây hoặc lượt có ảnh.
+			structuredProtocol: config.structuredProtocol ?? true,
+			contextWindow: config.contextWindow,
+			thamSoSinh: {
+				temperature: config.temperature,
+				topP: config.topP,
+				repeatPenalty: config.repeatPenalty,
+				seed: config.seed,
+			},
+			vetTich: context.vetTich,
 		});
 	}
 
@@ -197,14 +228,20 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 			const files = new Set<string>();
 
 			// Uncommitted changes (staged + unstaged vs HEAD)
-			const { stdout: uncommitted } = await execFileAsync("git", ["diff", "--name-only", "HEAD"], { cwd });
+			const { stdout: uncommitted } = await execFileAsync("git", ["diff", "--name-only", "HEAD"], {
+				cwd,
+			});
 			for (const f of uncommitted.trim().split("\n").filter(Boolean)) files.add(f);
 
 			// Committed changes since pre-execution snapshot (handles agents that commit during execution)
 			if (preExecSha) {
 				const currentSha = await this.getHeadSha(cwd);
 				if (currentSha && currentSha !== preExecSha) {
-					const { stdout: committed } = await execFileAsync("git", ["diff", "--name-only", preExecSha, "HEAD"], { cwd });
+					const { stdout: committed } = await execFileAsync(
+						"git",
+						["diff", "--name-only", preExecSha, "HEAD"],
+						{ cwd },
+					);
 					for (const f of committed.trim().split("\n").filter(Boolean)) files.add(f);
 				}
 			}
@@ -217,7 +254,8 @@ export class ExecutionBridgeModule implements SDLCModule<ExecutionBridgeInput, S
 
 	private async createProcessAdapter(context: SDLCModuleContext): Promise<InnerHarnessProvider> {
 		const config = context.config.execution.processAdapter;
-		if (!config) throw new Error("execution.processAdapter config required for process-adapter mode");
+		if (!config)
+			throw new Error("execution.processAdapter config required for process-adapter mode");
 
 		// Dynamic import — @agentweave/adapters is optional peer dependency
 		const { ProcessAdapter } = await import("@agentweave/adapters");

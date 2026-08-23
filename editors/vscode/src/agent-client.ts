@@ -189,6 +189,17 @@ export class AgentClient extends EventEmitter {
 		this.gui({ type: "list_sessions" });
 	}
 
+	/**
+	 * Chạy pipeline SDLC — TRỤ CỘT 2, đường chạy khác hẳn `hoi()`.
+	 *
+	 * Khác biệt người dùng cần biết: pipeline có cổng chất lượng và vòng thử
+	 * lại, nhưng KHÔNG có rule/skill/memory của dự án. Nó hợp cho một việc
+	 * khép kín có tiêu chí đạt/hỏng rõ ràng, không hợp cho trò chuyện.
+	 */
+	chayPipeline(text: string, checks: string[] = [], retries = 3): void {
+		this.gui({ type: "pipeline", prompt: text, checks, retries });
+	}
+
 	/** Mở lại phiên. Bỏ trống id = phiên gần nhất. */
 	moPhien(id?: string): void {
 		this.gui(id ? { type: "resume", id } : { type: "resume" });

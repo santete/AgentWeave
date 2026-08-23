@@ -7,9 +7,9 @@
  * 10 metrics (M1-M10) measured per task with baseline comparison.
  */
 
-import type { TokenUsage } from "./metrics";
-import type { GovernanceHandle } from "./governance";
 import type { ControlPlane } from "./control-plane";
+import type { GovernanceHandle } from "./governance";
+import type { TokenUsage } from "./metrics";
 
 // ─── Structured Task ────────────────────────────────────────────
 
@@ -94,6 +94,8 @@ export interface SDLCModule<TInput = unknown, TOutput = unknown> {
 
 export type LLMCallerFn = (prompt: string, model: string) => Promise<string>;
 
+import type { BoGhiVetTich } from "./vet-tich";
+
 export interface SDLCModuleContext {
 	sessionId: string;
 	cwd: string;
@@ -105,6 +107,8 @@ export interface SDLCModuleContext {
 	governance?: GovernanceHandle;
 	/** Optional ControlPlane — propagated to AgentLoop for tool-call gating. */
 	controlPlane?: ControlPlane;
+	/** Nơi nhận vết tích, truyền tiếp xuống AgentLoop. Xem `types/vet-tich.ts`. */
+	vetTich?: BoGhiVetTich;
 }
 
 export interface MetricsHandle {
@@ -129,7 +133,7 @@ export interface SDLCMetricsSnapshot {
 	m7_regressionDetected: boolean;
 	m8_planAccuracy: number | null; // 0.0 - 1.0, null = không có kế hoạch nào
 	m9_contextUtilization: number | null; // 0.0 - 1.0, null = not measured
-	m10_codeQualityDelta: number | null;  // positive = improved, null = not measured
+	m10_codeQualityDelta: number | null; // positive = improved, null = not measured
 }
 
 export interface SDLCBaselineComparison {
@@ -193,6 +197,22 @@ export interface SDLCConfig {
 			maxTurns?: number;
 			systemPrompt?: string;
 			tools?: string[];
+			/**
+			 * Bốn trường dưới đây là những gì `chat`/`serve` vẫn truyền cho
+			 * `AgentLoop` mà pipeline TRƯỚC NAY BỎ TRỐNG.
+			 *
+			 * Hệ quả đo được với model cục bộ: pipeline rơi về đường stream (mất
+			 * đòn bẩy enum của giao thức có ràng buộc), cửa sổ ngữ cảnh là con số
+			 * đoán 65.536 nên ngưỡng nén sai, và `num_ctx` không bao giờ tới
+			 * Ollama. Cùng một model, cùng một việc, nhưng pipeline chạy tệ hơn
+			 * chat mà không có gì báo.
+			 */
+			structuredProtocol?: boolean;
+			contextWindow?: number;
+			temperature?: number;
+			topP?: number;
+			repeatPenalty?: number;
+			seed?: number;
 		};
 		processAdapter?: {
 			command: string;

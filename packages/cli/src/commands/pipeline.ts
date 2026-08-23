@@ -8,22 +8,25 @@
  */
 
 import { execSync } from "node:child_process";
-import { AGENTWEAVE_VERSION } from "@agentweave/types";
 import { createSDLCPipeline } from "@agentweave/inner-harness";
-import type { SDLCMetricsSnapshot, SDLCConfig, QualityGateCheck } from "@agentweave/types";
 import type { PolicyPaths } from "@agentweave/outer-harness";
+import { AGENTWEAVE_VERSION, LOAI_DIEM_CHAM } from "@agentweave/types";
+import type { QualityGateCheck, SDLCConfig, SDLCMetricsSnapshot } from "@agentweave/types";
+import { AGENT_PRESETS, resolveAgent } from "../agent-presets.js";
 import { loadConfig } from "../config-loader.js";
-import { resolveAgent, AGENT_PRESETS } from "../agent-presets.js";
 import {
+	buildChildEnv,
+	ensureGitignore,
 	getAgentEnv,
 	hasCredentials,
 	scrubCredentials,
-	buildChildEnv,
-	ensureGitignore,
 } from "../credential-store.js";
-import { createAdapterGovernance, type AdapterGovernance } from "../lib/adapter-governance.js";
-import { createSdlcGovernance, type SdlcGovernanceBundle } from "../lib/sdlc-governance.js";
+import { type AdapterGovernance, createAdapterGovernance } from "../lib/adapter-governance.js";
+import { docCauHinhAgent } from "../lib/agent-config.js";
+import { type SdlcGovernanceBundle, createSdlcGovernance } from "../lib/sdlc-governance.js";
+import { taoIdPhien } from "../lib/session-store.js";
 import { terminalAskPrompt } from "../lib/terminal-ask.js";
+import { GhiVetTichTep, batVetTich } from "../lib/vet-tich-tep.js";
 
 export interface PipelineRunArgs {
 	prompt: string;
@@ -341,12 +344,27 @@ export function pipelineAgentsCommand(): void {
 export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 	const startTime = Date.now();
 	let hasAgent = !!args.agent;
-	const model = args.model ?? "claude-sonnet-4-6";
 	const retries = args.retries ?? 3;
 	const metricsDir = args.metricsDir ?? ".agentweave/metrics";
 
 	// Smart auto-detect: no config + no --agent → find best available agent
 	const { config: loadedConfig, source } = loadConfig();
+
+	// ── Model và cách chạy: THEO ĐÚNG chuỗi ưu tiên của chat/serve ──
+	//
+	// Trước đây pipeline hardcode `claude-sonnet-4-6`, nên trên máy air-gap nó
+	// chết ở bước phân giải provider và thông báo lỗi không hề gợi ý rằng nguyên
+	// nhân chỉ là một giá trị mặc định. Nay: cờ > agentweave.yaml >
+	// .agentweave/agent.json > mặc định cục bộ — cùng thứ tự với mọi lệnh khác,
+	// nên một dự án khai model một lần là cả ba đường vào đều theo.
+	const { config: cauHinhDuAn } = await docCauHinhAgent(process.cwd());
+	//
+	// Dùng `||` chứ KHÔNG dùng `??`: `parseArgs` trả `model = ""` khi không có
+	// cờ (cố ý, để `agent.json` còn cửa thắng — xem chú thích ở bin.ts). Chuỗi
+	// rỗng lọt qua `??` và đi thẳng tới Ollama, nhận về 400 mà thông báo không
+	// nói gì về model. Đã đo đúng ca đó.
+	const model =
+		args.model || loadedConfig.execution.agentLoop?.model || cauHinhDuAn.model || "qwen3-coder:30b";
 	if (!hasAgent) {
 		// Check if config has agent set
 		if (
@@ -508,6 +526,28 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 			: undefined,
 	});
 
+	// Vết tích cho cả pipeline — chỉ thị "bật cho toàn bộ dự án". Trước đó đây là
+	// đường chạy DUY NHẤT không sinh vết tích, mà nó lại là đường dùng trong CI
+	// nơi không có ai ngồi nhìn màn hình.
+	const vetTich = batVetTich(cauHinhDuAn.vetTich)
+		? new GhiVetTichTep({
+				goc: process.cwd(),
+				phien: taoIdPhien(new Date()),
+				nhatKy: (m) => console.error(`⚠ ${m}`),
+			})
+		: undefined;
+	vetTich?.ghi({
+		tang: "user",
+		loai: LOAI_DIEM_CHAM.USER_CAU_HOI,
+		chiTiet: {
+			kyTu: args.prompt.length,
+			lenh: "pipeline run",
+			model,
+			cheDo: agent ? "process-adapter" : "agent-loop",
+		},
+		noiDungLon: { "cau-hoi.txt": args.prompt },
+	});
+
 	const pipeline = createSDLCPipeline({
 		execution: agent
 			? {
@@ -520,7 +560,23 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 						processTimeoutMs: ADAPTER_TIMEOUT_MS,
 					},
 				}
-			: { mode: "agent-loop", agentLoop: { model, maxTurns: 50 } },
+			: {
+					mode: "agent-loop",
+					agentLoop: {
+						model,
+						maxTurns: 50,
+						// Cùng cách chạy như chat/serve. Thiếu mấy trường này thì cùng
+						// một model chạy trong pipeline lại tệ hơn trong chat: mất đòn
+						// bẩy enum, cửa sổ ngữ cảnh là số đoán, `num_ctx` không tới
+						// Ollama — mà không có gì báo.
+						structuredProtocol: cauHinhDuAn.structuredProtocol ?? true,
+						contextWindow: cauHinhDuAn.contextWindow,
+						temperature: cauHinhDuAn.temperature,
+						topP: cauHinhDuAn.topP,
+						repeatPenalty: cauHinhDuAn.repeatPenalty,
+						seed: cauHinhDuAn.seed,
+					},
+				},
 		governance: sdlcGov.outer,
 		controlPlane: sdlcGov.controlPlane,
 		modules: {
@@ -542,6 +598,7 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 			outputStandardizer: { enabled: false },
 		},
 		metrics: { enabled: true, baseline: true, persistPath: metricsDir },
+		vetTich,
 	});
 
 	// Run pipeline

@@ -5,8 +5,13 @@
   "version": "0.1.15",
   "publisher": "agentweave",
   "license": "MIT",
-  "engines": { "vscode": "^1.90.0" },
-  "categories": ["AI", "Programming Languages"],
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages"
+  ],
   "main": "./dist/extension.js",
   "activationEvents": [],
   "contributes": {
@@ -15,6 +20,10 @@
         "command": "agentweave.chat",
         "title": "AgentWeave: Mở khung chat",
         "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "agentweave.pipeline",
+        "title": "AgentWeave: Chạy pipeline SDLC"
       },
       {
         "command": "agentweave.restart",
@@ -27,11 +36,18 @@
     ],
     "menus": {
       "editor/context": [
-        { "command": "agentweave.addFile", "group": "agentweave" }
+        {
+          "command": "agentweave.addFile",
+          "group": "agentweave"
+        }
       ]
     },
     "keybindings": [
-      { "command": "agentweave.chat", "key": "ctrl+alt+a", "mac": "cmd+alt+a" }
+      {
+        "command": "agentweave.chat",
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a"
+      }
     ],
     "configuration": {
       "title": "AgentWeave",
@@ -48,7 +64,12 @@
         },
         "agentweave.permissionMode": {
           "type": "string",
-          "enum": ["default", "strict", "permissive", "plan"],
+          "enum": [
+            "default",
+            "strict",
+            "permissive",
+            "plan"
+          ],
           "default": "default",
           "description": "default: hỏi trước khi ghi file · permissive: không hỏi · strict: siết chặt"
         },
