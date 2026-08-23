@@ -13,7 +13,7 @@
 
 ## Đợt 2026-08-23 — nhánh `feat/product-grade`
 
-Mười commit, chia làm ba nhóm: đại tu hệ điều khiển theo
+Mười một commit, chia làm ba nhóm: đại tu hệ điều khiển theo
 `RA-SOAT-DIEU-KHIEN.md`, dựng tầng vết tích, rồi sửa những lỗi mà chính vết
 tích phơi ra khi chạy thật trên một solution .NET.
 
@@ -31,6 +31,7 @@ tích phơi ra khi chạy thật trên một solution .NET.
 | `a372524` | Pipeline treo giao diện + mọi bước báo xanh | §12 §13 |
 | `887b19b` | Cổng chất lượng "đạt" mà không kiểm gì | §13 |
 | `6133bec` | `.sln` phải CÓ project mới tính là phép kiểm | §13 |
+| `ba1c0f3` | Agent trong pipeline chạy với system prompt RỖNG | §13 |
 
 ---
 
@@ -151,11 +152,33 @@ Bài học ghi thẳng vào §12: kiểm tầng hiển thị trước khi đổ 
 
 ---
 
+## 11 · `ba1c0f3` — agent trong pipeline chạy với system prompt RỖNG
+
+Đây là lý do agent "không chịu sửa file", và nó không liên quan gì tới model.
+
+| Thay đổi | § | Phải kiểm lại nếu đụng |
+|---|---|---|
+| `execution.agentLoop.systemPrompt` = câu dẫn chat/serve + cây thư mục, ở CẢ `serve.chayPipeline` lẫn `pipeline run` | §13 | `createAgentLoop` lấy `config.systemPrompt`; không ai đặt thì `getSystemPrompt()` trả RỖNG và agent chỉ còn khối giao thức |
+| `empty_patch`: `severity` warning → **error** | §13 | `allRequiredPassed` chỉ lọc `severity === "error"` — để "warning" tức là cho qua. "Chạy xong mà không đổi gì" chính là kiểu hỏng cả bộ cổng sinh ra để bắt |
+
+**Đo trước/sau, cùng việc cùng model, trên bản sao dự án .NET thật:**
+
+| | Trước | Sau |
+|---|---|---|
+| System prompt | 1.405 ký tự (chỉ giao thức) | **10.000** — có 9 luật + cây thư mục |
+| Agent đi tìm | `package.json`, `**/*.ts` | `HelpdeskSolution/**`, `.csproj`, `.cs` |
+| Số tool chạy | 3 | **15** |
+| File sửa được | **0** | **1** |
+
+Cổng vẫn báo `dat=False` — build còn hỏng thật. Đó là báo cáo trung thực, không
+phải thất bại của bản vá.
+
+---
+
 ## Còn nợ — chưa sửa, có chủ đích
 
 | Việc | § | Vì sao chưa làm |
 |---|---|---|
-| Agent trong pipeline chỉ trinh sát rồi dừng, không sửa file; `patchValidator` chạy 0ms và coi "không có patch" là hợp lệ | §13 | Cần đo thêm trước khi động vào |
 | Pipeline KHÔNG có rule/skill/memory (`napTriThuc` không được gọi) | §13 | Đổi hành vi cả hai đường vào |
 | Cây thư mục ~5.100 ký tự nằm trong system prompt, sinh lại mỗi lượt → đập prefix cache | §2 §9 | Đo được 3 bản system prompt khác nhau trong một phiên; chưa sửa |
 | `maxDurationMs` mặc định TẮT | §9 | Bật sau lưng người vận hành thì build dài hợp lệ bị cắt không rõ lý do |

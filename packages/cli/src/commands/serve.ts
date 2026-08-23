@@ -494,6 +494,7 @@ export async function serveCommand(args: ServeArgs): Promise<void> {
 					model,
 					maxTurns,
 					retries: typeof msg.retries === "number" ? msg.retries : 3,
+					cauDan,
 					checks: Array.isArray(msg.checks) ? msg.checks.filter((c) => typeof c === "string") : [],
 					cauHinh,
 					dangCho,
@@ -1093,6 +1094,8 @@ interface ThamSoPipeline {
 	/** Lệnh kiểm chất lượng, mỗi lệnh một chuỗi. Rỗng = tắt qualityGate. */
 	checks: string[];
 	cauHinh: CauHinhAgent;
+	/** Câu dẫn hệ thống — CÙNG một bản với đường chat. Xem ghi chú ở `chayPipeline`. */
+	cauDan: string;
 	dangCho: Map<string, (kq: { allow: boolean; alwaysAllow?: boolean }) => void>;
 	layId: () => string;
 	vetTich?: GhiVetTichTep;
@@ -1188,6 +1191,14 @@ async function chayPipeline(t: ThamSoPipeline): Promise<void> {
 			agentLoop: {
 				model,
 				maxTurns: t.maxTurns,
+				// CÙNG câu dẫn với đường chat, cộng cây thư mục thật.
+				//
+				// Đo thật (`vet-tich/20260823-202927`): thiếu dòng này thì agent
+				// trong pipeline chạy với system prompt 1.405 ký tự gồm ĐÚNG khối
+				// giao thức — không 9 luật, không cây thư mục, không gì. Trên một
+				// solution .NET nó đi tìm `package.json` và `**/*.ts`, vì không ai
+				// bảo nó đang đứng ở đâu. Chat/serve cho agent 12.502 ký tự.
+				systemPrompt: `${t.cauDan}\n\n${dungCayThuMuc(t.goc)}`,
 				// Cùng cách chạy như chat/serve — xem execution-bridge.
 				structuredProtocol: t.cauHinh.structuredProtocol ?? true,
 				contextWindow: t.cauHinh.contextWindow,

@@ -23,8 +23,10 @@ import {
 } from "../credential-store.js";
 import { type AdapterGovernance, createAdapterGovernance } from "../lib/adapter-governance.js";
 import { docCauHinhAgent } from "../lib/agent-config.js";
+import { dungCayThuMuc } from "../lib/cay-thu-muc.js";
 import { type SdlcGovernanceBundle, createSdlcGovernance } from "../lib/sdlc-governance.js";
 import { taoIdPhien } from "../lib/session-store.js";
+import { dungCauDanHeThong } from "../lib/system-prompt.js";
 import { terminalAskPrompt } from "../lib/terminal-ask.js";
 import { GhiVetTichTep, batVetTich } from "../lib/vet-tich-tep.js";
 
@@ -565,6 +567,14 @@ export async function pipelineRunCommand(args: PipelineRunArgs): Promise<void> {
 					agentLoop: {
 						model,
 						maxTurns: 50,
+						// CÙNG câu dẫn với chat/serve — xem ghi chú ở `serve.ts`.
+						// Thiếu nó thì agent chạy với mỗi khối giao thức và phải đoán
+						// mình đang ở loại dự án nào.
+						systemPrompt: `${dungCauDanHeThong({
+							cuaDuAn: cauHinhDuAn.systemPrompt,
+							khongMang: cauHinhDuAn.offline,
+							danhSachViec: cauHinhDuAn.danhSachViec === true,
+						})}\n\n${dungCayThuMuc(process.cwd())}`,
 						// Cùng cách chạy như chat/serve. Thiếu mấy trường này thì cùng
 						// một model chạy trong pipeline lại tệ hơn trong chat: mất đòn
 						// bẩy enum, cửa sổ ngữ cảnh là số đoán, `num_ctx` không tới
