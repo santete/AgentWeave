@@ -5,6 +5,12 @@
 >
 > Lập từ mã nguồn thật, không viết từ trí nhớ. Con số nào ghi ở đây đều trích
 > từ hằng số trong code — sửa code thì sửa luôn bảng tương ứng.
+>
+> **Tài liệu đi kèm:**
+> `NHAT-KY-THAY-DOI.md` — mỗi thay đổi đã làm, trỏ ngược về § tương ứng ở đây,
+> kèm cột "phải kiểm lại nếu đụng". Tra nó SAU khi tra §11.
+> `RA-SOAT-DIEU-KHIEN.md` — vì sao hệ ghì từng không hiệu quả.
+> `SO-TAY-VET-TICH.md` — quy trình mổ xẻ một phiên hỏng.
 
 ---
 
@@ -418,6 +424,10 @@ AGENTS.md · AGENTS.local.md       rule ở gốc dự án
 | điểm chạm vết tích (`this.vet(...)`) | §14 — **chỉ quan sát**, thêm chỗ gọi không được đổi một quyết định nào. Test `vet-tich` khoá điều này |
 | `LOAI_DIEM_CHAM` | §14 — bộ đọc khớp đúng chuỗi nhãn. Thêm nhãn thì an toàn, ĐỔI tên thì bộ đọc mất dấu |
 | bất cứ gì ở inner-harness | `npm run build` inner → sdk → cli, nếu không CLI vẫn chạy bản cũ |
+
+**Sau khi tra bảng trên, tra tiếp `NHAT-KY-THAY-DOI.md`**: vùng đó đã từng sửa
+vì lý do gì, và hàng rào nào đang giữ nó khỏi bị phá lại. Phần lớn hàng rào ở
+đó đến từ một lần hỏng thật đã đo được, không phải từ suy đoán.
 
 **Thứ tự build bắt buộc:** `types → control-plane → inner-harness → sdk → cli`.
 Bỏ qua một mắt xích thì `dist/bin.js` vẫn là bản cũ và mọi phép thử đều sai.
