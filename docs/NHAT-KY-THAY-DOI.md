@@ -31,7 +31,7 @@ tích phơi ra khi chạy thật trên một solution .NET.
 | `a372524` | Pipeline treo giao diện + mọi bước báo xanh | §12 §13 |
 | `887b19b` | Cổng chất lượng "đạt" mà không kiểm gì | §13 |
 | `6133bec` | `.sln` phải CÓ project mới tính là phép kiểm | §13 |
-| `ba1c0f3` | Agent trong pipeline chạy với system prompt RỖNG | §13 |
+| `6e4b4e9` | Agent trong pipeline chạy với system prompt RỖNG | §13 |
 
 ---
 
@@ -152,7 +152,7 @@ Bài học ghi thẳng vào §12: kiểm tầng hiển thị trước khi đổ 
 
 ---
 
-## 11 · `ba1c0f3` — agent trong pipeline chạy với system prompt RỖNG
+## 11 · `6e4b4e9` — agent trong pipeline chạy với system prompt RỖNG
 
 Đây là lý do agent "không chịu sửa file", và nó không liên quan gì tới model.
 
